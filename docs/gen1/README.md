@@ -51,7 +51,7 @@ Esse comando é apenas para desenvolver/testar o protocolo. O catálogo incluíd
 ## Diagnóstico para continuar a integração
 
 1. Abra uma instância pelo multiplayer 0.4.2, escolha Continuar e mantenha a janela renderizando.
-2. Execute `HyruleM-Native-Probe.exe --slot 1`. Use `--slot 2` para a outra instância; `--slot 0` para o sandbox normal.
+2. Execute `HyruleM-Native-Probe.exe --slot 1`. Para a outra instância use `--slot 2 --out HyruleM-native-client2.json`; `--slot 0` consulta o sandbox normal. O diagnóstico não sobrescreve um relatório já existente.
 3. Envie o `HyruleM-native-report.json` gerado. Se a porta não aparecer no log, informe `--port N`, usando a porta **de controle local** registrada no `savagewind.log`, e não a porta pública do servidor.
 
 O diagnóstico só lê metadados/hash do executável e de `extracted/exefs/main`, e consulta `version`, `help`, `sites`, `mem regions`, `pos`, `camera`, `hm_caps`. Não faz escrita de memória, não cria itens, não prepara sandbox e não lê saves ou o inventário. O relatório não inclui bytes do jogo nem caminhos completos do computador. Ele pode conter coordenadas e endereços de memória locais.
