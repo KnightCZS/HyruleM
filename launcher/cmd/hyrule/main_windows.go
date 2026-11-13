@@ -183,6 +183,7 @@ type uiEvent struct {
 	generation    uint64
 }
 type app struct {
+	layingOut          bool
 	multiplayer        *multiplayerUI
 	window, instance   uintptr
 	controls           map[int]uintptr
@@ -376,6 +377,7 @@ func (a *app) buildControls() {
 	}
 	a.buildSandboxControls()
 	a.control(idMultiplayer, "BUTTON", "Multiplayer · 2 jogadores", 0x000b)
+	a.control(141, "BUTTON", "Cancelar preparação", 0x000b)
 }
 func (a *app) fillControls() {
 	a.initial = true
@@ -415,6 +417,11 @@ func (a *app) setStatus(s string, bad bool) {
 	invalidate.Call(a.window, 0, 0)
 }
 func (a *app) layout() {
+	if a.layingOut {
+		return
+	}
+	a.layingOut = true
+	defer func() { a.layingOut = false }()
 	var r rect
 	getClientRect.Call(a.window, uintptr(unsafe.Pointer(&r)))
 	if r.Right <= 0 || r.Bottom <= 0 {
@@ -436,7 +443,11 @@ func (a *app) layout() {
 	right := r.Right - a.px(38)
 	width := right - left
 	place := func(id int, x, y, width, height int32) {
-		moveWindow.Call(a.controls[id], uintptr(x), uintptr(y-a.scroll), uintptr(width), uintptr(height), 1)
+		offset := a.scroll
+		if id == idMultiplayer || id == 141 {
+			offset = 0
+		}
+		moveWindow.Call(a.controls[id], uintptr(x), uintptr(y-offset), uintptr(width), uintptr(height), 0)
 	}
 	place(idBackend, left+a.px(24), a.px(202), width-a.px(48), a.px(160))
 	for _, row := range []struct{ edit, button, y int }{{idExe, idBrowseExe, 274}, {idData, idBrowseData, 348}, {idGame, idBrowseGame, 422}} {
@@ -452,6 +463,7 @@ func (a *app) layout() {
 	place(idSaves, left+third+a.px(10), a.px(642), third, a.px(38))
 	place(idSave, left+2*(third+a.px(10)), a.px(642), third, a.px(38))
 	place(idMultiplayer, a.px(38), a.px(460), a.px(169), a.px(62))
+	place(141, a.px(38), a.px(540), a.px(169), a.px(38))
 	a.layoutSandbox(left, right, place)
 	native := a.config.Backend == core.Native
 	for _, id := range []int{idGame, idBrowseGame} {
@@ -461,7 +473,7 @@ func (a *app) layout() {
 		}
 		showWindow.Call(a.controls[id], visible)
 	}
-	invalidate.Call(a.window, 0, 1)
+	user32.NewProc("RedrawWindow").Call(a.window, 0, 0, 0x1|0x80|0x20)
 }
 func intMax(a, b int) int {
 	if a > b {
@@ -491,6 +503,11 @@ func (a *app) refresh() {
 	if core.SetupProgram(a.config) == "" {
 		enableWindow.Call(a.controls[idSetup], 0)
 	}
+	enableCancel := uintptr(0)
+	if a.cancel != nil && (a.preparing || a.installing) {
+		enableCancel = 1
+	}
+	enableWindow.Call(a.controls[141], enableCancel)
 	a.refreshSandbox(busy)
 	if a.status == "" {
 		a.statusError = false
@@ -502,20 +519,34 @@ func (a *app) refresh() {
 			a.status = "Pronto para iniciar. O carregamento será feito pela recomp."
 		}
 	}
-	a.layout()
+	invalidate.Call(a.window, 0, 0)
 }
 func (a *app) post(e uiEvent) {
 	a.queueMu.Lock()
-	a.queue = append(a.queue, e)
+	wake := len(a.queue) == 0
+	if e.kind == "progress" && len(a.queue) > 0 && a.queue[len(a.queue)-1].kind == "progress" {
+		a.queue[len(a.queue)-1] = e
+	} else {
+		a.queue = append(a.queue, e)
+	}
 	a.queueMu.Unlock()
-	postMessage.Call(a.window, wmEvent, 0, 0)
+	if wake {
+		postMessage.Call(a.window, wmEvent, 0, 0)
+	}
 }
 func (a *app) drain() {
 	a.queueMu.Lock()
 	events := a.queue
 	a.queue = nil
 	a.queueMu.Unlock()
+	if len(events) == 0 {
+		return
+	}
+	refresh := false
 	for _, e := range events {
+		if e.kind != "progress" {
+			refresh = true
+		}
 		if strings.HasPrefix(e.kind, "control-") && e.generation != a.sandboxGeneration {
 			continue
 		}
@@ -530,6 +561,16 @@ func (a *app) drain() {
 			a.preparing = false
 			a.cancel = nil
 			a.launchSandbox(e.spec, e.port)
+		case "launch-done":
+			a.preparing = false
+			if a.session.Busy() {
+				a.setStatus(e.message, false)
+			}
+		case "launch-failed":
+			a.preparing = false
+			a.sandboxActive = false
+			a.controlPort = 0
+			a.setStatus(e.message, true)
 		case "sandbox-failed":
 			a.preparing = false
 			a.cancel = nil
@@ -574,7 +615,9 @@ func (a *app) drain() {
 			core.AppendLog(core.LogPath(a.root), e.message)
 		}
 	}
-	a.refresh()
+	if refresh {
+		a.refresh()
+	}
 }
 func (a *app) start(setup bool) {
 	if a.installing || a.preparing || a.session.Busy() || a.mpBusy() {
@@ -604,11 +647,15 @@ func (a *app) start(setup bool) {
 	a.sandboxActive = false
 	a.controlPort = 0
 	a.sandboxGeneration++
-	err = a.session.Start(spec, capture, func(e core.Event) { a.post(uiEvent{kind: e.Kind, message: e.Message}) })
-	if err != nil {
-		a.setStatus(err.Error(), true)
-		core.AppendLog(core.LogPath(a.root), err.Error())
-	}
+	a.preparing = true
+	go func() {
+		err := a.session.Start(spec, capture, func(e core.Event) { a.post(uiEvent{kind: e.Kind, message: e.Message}) })
+		if err != nil {
+			a.post(uiEvent{kind: "launch-failed", message: err.Error()})
+		} else {
+			a.post(uiEvent{kind: "launch-done", message: "Programa iniciado. Aguarde o carregamento da recomp."})
+		}
+	}()
 	a.refresh()
 }
 func (a *app) download() {
@@ -691,6 +738,16 @@ func (a *app) logs() {
 	if c.DataDir != "" {
 		body += "\r\n\r\nRECOMP: " + core.RuntimeLog(c) + "\r\n" + core.ReadLogTail(core.RuntimeLog(c), 96000)
 	}
+	for _, name := range []string{"multiplayer-1.log", "multiplayer-2.log", "multiplayer-processo-1.log", "multiplayer-processo-2.log", "servidor.log"} {
+		body += "\r\n\r\n" + name + "\r\n" + core.ReadLogTail(filepath.Join(a.root, "logs", name), 48000)
+	}
+	if c.DataDir != "" {
+		for i := 0; i < 2; i++ {
+			private := c
+			private.DataDir = core.InstanceDataDir(c, i)
+			body += "\r\n\r\nRUNTIME CLIENTE " + fmt.Sprint(i+1) + "\r\n" + core.ReadLogTail(core.RuntimeLog(private), 48000)
+		}
+	}
 	file := filepath.Join(a.root, "logs", "diagnostico.txt")
 	_ = os.MkdirAll(filepath.Dir(file), 0700)
 	if err := os.WriteFile(file, []byte(body), 0600); err != nil {
@@ -705,10 +762,12 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 		return defaultProc(h, message, w, l)
 	}
 	switch message {
+	case 0x14:
+		return 1
 	case wmPaint:
 		var ps paintStruct
 		dc, _, _ := beginPaint.Call(h, uintptr(unsafe.Pointer(&ps)))
-		a.paint(dc)
+		a.paintBuffered(dc)
 		endPaint.Call(h, uintptr(unsafe.Pointer(&ps)))
 		return 0
 	case wmSize:
@@ -720,7 +779,7 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 		// MINMAXINFO: reserved, max size, max pos, min track, max track.
 		values := (*[10]int32)(unsafe.Pointer(l))
 		values[6] = a.px(870)
-		values[7] = a.px(500)
+		values[7] = a.px(660)
 		return 0
 	case 0x115:
 		si := scrollInfo{Size: uint32(unsafe.Sizeof(scrollInfo{})), Mask: 16}
@@ -753,6 +812,7 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 		for _, control := range a.controls {
 			sendMessage.Call(control, 0x30, a.fonts["body"], 1)
 		}
+
 		suggested := (*rect)(unsafe.Pointer(l))
 		setWindowPos.Call(h, 0, uintptr(suggested.Left), uintptr(suggested.Top), uintptr(suggested.Right-suggested.Left), uintptr(suggested.Bottom-suggested.Top), 4|16)
 		a.layout()
@@ -791,6 +851,11 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 			return 0
 		}
 		switch id {
+		case 141:
+			if a.cancel != nil {
+				a.cancel()
+				a.setStatus("Cancelando preparação; aguarde a tarefa encerrar…", false)
+			}
 		case idMultiplayer:
 			a.openMultiplayer()
 		case idBrowseExe:
@@ -937,10 +1002,7 @@ func (a *app) paint(dc uintptr) {
 	if len(a.fonts) == 0 {
 		return
 	}
-	setViewport.Call(dc, 0, uintptr(-a.scroll), 0)
-	if r.Bottom < a.px(1300) {
-		r.Bottom = a.px(1300)
-	}
+	display := r
 	p := a.px
 	left := p(260)
 	right := r.Right - p(38)
@@ -952,8 +1014,12 @@ func (a *app) paint(dc uintptr) {
 	a.label(dc, "Campanha + sandbox", "button", colorGold, rect{p(54), p(210), p(202), p(252)}, 0x24)
 	a.label(dc, "SEU MUNDO", "label", colorMuted, rect{p(45), p(295), p(205), p(319)}, 0)
 	a.label(dc, "Campanha preservada.\nSandbox separado.\nExplore Hyrule.", "body", colorText, rect{p(45), p(330), p(201), p(430)}, 0x10)
-	a.label(dc, "VERSÃO "+core.Version, "small", colorMuted, rect{p(45), r.Bottom - p(84), p(205), r.Bottom - p(56)}, 0)
-	a.label(dc, "Windows · x64", "small", colorMuted, rect{p(45), r.Bottom - p(56), p(205), r.Bottom - p(30)}, 0)
+	a.label(dc, "VERSÃO "+core.Version, "small", colorMuted, rect{p(45), p(178), p(205), p(202)}, 0)
+	a.label(dc, "Windows · x64", "small", colorMuted, rect{p(45), p(586), p(205), p(610)}, 0)
+	setViewport.Call(dc, 0, uintptr(-a.scroll), 0)
+	if r.Bottom < a.px(1300) {
+		r.Bottom = a.px(1300)
+	}
 	a.label(dc, "Hyrule, do seu jeito.", "title", colorText, rect{left, p(38), right, p(86)}, 0x24)
 	a.label(dc, "Campanha offline e ferramentas para explorar o mundo livremente.", "body", colorMuted, rect{left, p(94), right, p(133)}, 0x10)
 	a.box(dc, rect{left, p(154), right, p(494)}, colorCard, colorLine, 16)
@@ -970,7 +1036,9 @@ func (a *app) paint(dc uintptr) {
 		statusColor = colorRed
 	}
 	a.paintSandbox(dc, left, right)
-	a.label(dc, a.status, "small", statusColor, rect{left, p(1210), right, r.Bottom - p(18)}, 0x10)
+	setViewport.Call(dc, 0, 0, 0)
+	a.box(dc, rect{left, display.Bottom - p(72), right, display.Bottom - p(12)}, colorBG, colorLine, 8)
+	a.label(dc, a.status, "small", statusColor, rect{left + p(12), display.Bottom - p(64), right - p(12), display.Bottom - p(18)}, 0x10)
 }
 func (a *app) paintButton(d *drawItem) {
 	background, border, foreground := rgb(31, 43, 55), colorLine, colorText

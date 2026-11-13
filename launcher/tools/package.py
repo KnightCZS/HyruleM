@@ -32,7 +32,10 @@ with zipfile.ZipFile(args.out, "w", compression=zipfile.ZIP_DEFLATED, compressle
     for name in binaries:
         add(ROOT/"dist"/name, name)
     add(REPO/"README.md", "README.md")
-    for name in ["LEIA_PRIMEIRO.txt", "LICENSE", "GO_LICENSE.txt", "THIRD_PARTY_NOTICES.md", "SANDBOX.md", "FILTRO_CAMPANHA.md", "CHANGELOG.md"]:
+    add(REPO/"CHANGELOG.md", "CHANGELOG.md")
+    for note in sorted((REPO/"releases").glob("*.md")):
+        add(note, "releases/"+note.name)
+    for name in ["LEIA_PRIMEIRO.txt", "LICENSE", "GO_LICENSE.txt", "THIRD_PARTY_NOTICES.md", "SANDBOX.md", "FILTRO_CAMPANHA.md"]:
         add(ROOT/name, name)
     for path in sorted((REPO/"docs").glob("*.md")):
         add(path, "docs/"+path.name)

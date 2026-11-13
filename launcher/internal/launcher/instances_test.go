@@ -82,3 +82,36 @@ func TestInstanceFinderNeverAdoptsOtherClient(t *testing.T) {
 		t.Fatal("lost restart")
 	}
 }
+
+type waitingFinder struct{ entered, release chan struct{} }
+
+func (f waitingFinder) Find(string, time.Time) []ProcessInfo {
+	close(f.entered)
+	<-f.release
+	return []ProcessInfo{{PID: 99}}
+}
+func TestSessionBusyDoesNotWaitForProcessScan(t *testing.T) {
+	f := waitingFinder{make(chan struct{}), make(chan struct{})}
+	session := NewSession(f)
+	result := make(chan error, 1)
+	go func() { result <- session.Start(LaunchSpec{}, filepath.Join(t.TempDir(), "log"), func(Event) {}) }()
+	<-f.entered
+	busy := make(chan bool, 1)
+	go func() { busy <- session.Busy() }()
+	select {
+	case b := <-busy:
+		if !b {
+			t.Fatal("launch reservation missing")
+		}
+	case <-time.After(300 * time.Millisecond):
+		close(f.release)
+		t.Fatal("UI query blocked behind filesystem/process scan")
+	}
+	close(f.release)
+	if <-result == nil {
+		t.Fatal("existing process allowed")
+	}
+	if session.Busy() {
+		t.Fatal("failed start kept session locked")
+	}
+}

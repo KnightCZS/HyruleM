@@ -2,7 +2,7 @@
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 
-## Estado da versão 0.4.0
+## Estado da versão 0.4.1
 
 - Menu com nome, IP, porta TCP, hospedagem e dois clientes no mesmo PC.
 - Posição real e câmera lidas pelo controle local do Savage Wind.
@@ -15,16 +15,18 @@ Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo
 
 ## Testar
 
-Use o pacote Windows 0.4.0 ou os artefatos de [Actions](../../actions). O pacote de atualização reaproveita sua instalação e os caminhos salvos pelo launcher anterior; não inclui jogo nem o runtime.
+Use o pacote Windows 0.4.1 ou os artefatos de [Actions](../../actions). O pacote de atualização reaproveita sua instalação e os caminhos salvos pelo launcher anterior; não inclui jogo nem o runtime.
 
 1. Feche o jogo e abra `HyruleLauncher.exe`. Confirme que seu sandbox já funciona.
 2. Clique em **Multiplayer · 2 jogadores**.
-3. Para testar neste PC, use IP `127.0.0.1` e porta `5050`; clique em **Hospedar servidor**.
+3. Escolha a interface do seu computador (ou Todas as interfaces), informe uma porta TCP livre e clique em **Hospedar servidor**. O endereço para conectar aparece no menu. Para testar neste PC com Todas as interfaces, também pode usar `127.0.0.1`.
 4. Escolha os nomes e conecte o cliente 1 e o cliente 2. Cada botão abre sua própria instância.
 5. Em cada jogo escolha **Continuar**. Pare o personagem e aguarde o teleporte automático para posições próximas em Hateno.
 6. Clique em **Organizar 2 janelas**. Mova um personagem e gire a câmera do outro para observá-lo. O teclado controla o jogo em foco.
 
-Para dois PCs, hospede apenas em um; no outro informe o IP desse PC e a mesma porta. Autorize a porta TCP escolhida no firewall do anfitrião. Em redes diferentes, use uma VPN entre os PCs ou configure o encaminhamento da porta. O protótipo não tem autenticação ou criptografia: use com pessoas de confiança.
+Para dois PCs, hospede apenas em um; no outro informe o IP desse PC e a mesma porta. Com Radmin, selecione o adaptador Radmin do anfitrião e use esse IP no convidado. Autorize a porta TCP escolhida no firewall do anfitrião. Em redes diferentes, use uma VPN entre os PCs ou configure o encaminhamento da porta. O protótipo não tem autenticação ou criptografia: use com pessoas de confiança.
+
+[Baixar Releases](https://github.com/KnightCZS/HyruleM/releases) · [Alterações, adições e correções](CHANGELOG.md)
 
 [Instruções e diagnóstico](docs/MULTIPLAYER.md) · [Pesquisa e decisões técnicas](docs/PESQUISA_MULTIPLAYER.md) · [Validação](docs/VALIDACAO_0.4.md)
 

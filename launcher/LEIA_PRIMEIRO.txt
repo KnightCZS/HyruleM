@@ -1,3 +1,24 @@
+HYRULEM 0.4.1 - CORRECOES
+
+Baixe novas versoes em https://github.com/KnightCZS/HyruleM/releases
+Extraia em uma nova pasta; os caminhos e saves anteriores sao reaproveitados.
+Nao apague nem recrie saves para atualizar.
+
+No menu Multiplayer, escolha sua interface para hospedar e uma porta TCP.
+Com Radmin, selecione o IP do adaptador Radmin e passe esse IP e porta ao amigo.
+O amigo precisa estar na mesma rede Radmin. Autorize HyruleM no firewall.
+Para dois clientes neste PC, use o endereco indicado no menu.
+
+Uma falha na preparacao aparece com o motivo original. Carregamento do jogo
+e falha de teleporte mantem a rede conectada. Use Reunir em Hateno para repetir.
+Cancelar preparacao permite interromper a geracao do filtro.
+Abra Diagnostico no menu para reunir os logs dos dois clientes e do servidor.
+
+O remoto ainda e um avatar externo sem colisao/oclusao. Teste real com duas
+sessoes de BOTW e rede Radmin precisa ser confirmado na maquina com o jogo.
+
+INFORMACOES DA BASE 0.4.0:
+
 HYRULEM 0.4.0 - MULTIPLAYER VISUAL EXPERIMENTAL
 
 Execute HyruleLauncher.exe e clique Multiplayer - 2 jogadores.

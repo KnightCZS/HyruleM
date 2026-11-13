@@ -1,3 +1,5 @@
+> Correções 0.4.1: [histórico](../CHANGELOG.md), [release](../releases/v0.4.1.md) e [guia](../docs/MULTIPLAYER.md).
+
 > Versão 0.4.0: menu multiplayer visual experimental para dois jogadores. Consulte [README principal](../README.md), [guia](../docs/MULTIPLAYER.md) e [limitações/validação](../docs/VALIDACAO_0.4.md). O avatar remoto ainda não é um ator nativo do jogo.
 
 # Hyrule Launcher 0.3.0 — Windows x64

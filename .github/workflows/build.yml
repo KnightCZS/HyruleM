@@ -19,6 +19,9 @@ jobs:
           cache: false
       - run: go test -race -count=1 ./internal/...
   windows:
+    needs: test
+    permissions:
+      contents: write
     runs-on: windows-latest
     defaults:
       run:
@@ -32,6 +35,8 @@ jobs:
           cache: false
       - name: Test including Windows directory junctions
         run: go test -count=1 ./internal/...
+      - name: Regression test native UI, scrolling and sandbox start
+        run: go test -count=1 -timeout 60s -v ./cmd/hyrule
       - name: Build native Windows applications
         run: |
           $env:CGO_ENABLED='0'
@@ -51,9 +56,49 @@ jobs:
           Write-Output $result
           if ($result -notmatch 'multiplayer-controls=([1-9][0-9]+)') { throw 'Multiplayer menu did not initialize' }
       - name: Package update without game or runtime
-        run: python tools/package.py --update-only --out dist/HyruleM_0.4.0_Windows_x64.zip
+        id: package
+        run: |
+          $version = [regex]::Match((Get-Content internal/launcher/config.go -Raw), 'const Version = "([^"]+)"').Groups[1].Value
+          if (-not $version) { throw 'Version missing' }
+          $archive = "dist/HyruleM_$($version)_Windows_x64.zip"
+          python tools/package.py --update-only --out $archive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "version=$version" | Add-Content $env:GITHUB_OUTPUT
+          "archive=$archive" | Add-Content $env:GITHUB_OUTPUT
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: HyruleM-0.4.0-Windows-x64
-          path: launcher/dist/HyruleM_0.4.0_Windows_x64.zip
+          name: HyruleM-${{ steps.package.outputs.version }}-Windows-x64
+          path: launcher/${{ steps.package.outputs.archive }}
           if-no-files-found: error
+      - name: Publish versioned releases
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_VERSION: ${{ steps.package.outputs.version }}
+          RELEASE_ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "v$($env:RELEASE_VERSION)"
+          $existing = gh release view $tag --json targetCommitish --jq .targetCommitish 2>$null
+          if ($LASTEXITCODE -eq 0 -and $existing -ne $env:RELEASE_COMMIT) {
+            Write-Output "Release $tag already published. Bump the version for a new release."
+            exit 0
+          }
+          if (-not $existing) {
+            gh release create $tag --target $env:RELEASE_COMMIT --title "HyruleM $($env:RELEASE_VERSION) - Correções e melhorias" --notes-file "../releases/$tag.md" --draft
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $archive = $env:RELEASE_ARCHIVE
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+          "$hash  $(Split-Path $archive -Leaf)" | Set-Content -Encoding ascii 'dist/SHA256SUMS.txt'
+          gh release upload $tag $archive 'dist/SHA256SUMS.txt' --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit $tag --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release view v0.4.0 --json tagName 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create v0.4.0 --target a3059128a6c1445b872088e166a9fd279f9ed072 --title 'HyruleM 0.4.0 - Protótipo visual inicial (histórico)' --notes-file ../releases/v0.4.0.md --prerelease --latest=false
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }

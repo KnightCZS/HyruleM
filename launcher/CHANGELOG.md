@@ -1,3 +1,7 @@
+# 0.4.1 — correções de conexão, sandbox e interface
+
+Veja [histórico completo](../CHANGELOG.md) e [notas da versão](../releases/v0.4.1.md). Inclui seleção de interface/IP/porta, erros preservados, rede mantida durante carregamento/falha de teleporte, início assíncrono e pintura com buffer.
+
 # 0.4.0 — multiplayer visual experimental
 
 Menu nome/IP/porta; servidor TCP para dois jogadores; cliente 1 e 2 no mesmo launcher com saves/dados/controle isolados; ponte de telemetria e avatar procedural projetado sobre cada janela. Não é ator nativo de BOTW. Veja `../docs/MULTIPLAYER.md` e `../docs/VALIDACAO_0.4.md`.

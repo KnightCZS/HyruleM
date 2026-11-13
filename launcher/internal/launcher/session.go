@@ -43,17 +43,24 @@ func (s *Session) Start(spec LaunchSpec, logPath string, notify func(Event)) err
 		s.mu.Unlock()
 		return fmt.Errorf("já existe uma sessão iniciada pelo launcher")
 	}
+	s.busy = true
+	s.mu.Unlock()
+	launched := false
+	defer func() {
+		if !launched {
+			s.mu.Lock()
+			s.busy = false
+			s.mu.Unlock()
+		}
+	}()
 	if s.finder != nil && len(s.finder.Find(spec.Executable, time.Time{})) > 0 {
-		s.mu.Unlock()
 		return fmt.Errorf("essa recomp já está em execução")
 	}
 	if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
-		s.mu.Unlock()
 		return err
 	}
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
-		s.mu.Unlock()
 		return err
 	}
 	cmd := exec.Command(spec.Executable, spec.Args...)
@@ -65,14 +72,12 @@ func (s *Session) Start(spec LaunchSpec, logPath string, notify func(Event)) err
 	started := time.Now()
 	if err = cmd.Start(); err != nil {
 		f.Close()
-		s.mu.Unlock()
 		return fmt.Errorf("não foi possível iniciar: %w", err)
 	}
 	if tracker, ok := s.finder.(interface{ TrackPID(int) }); ok {
 		tracker.TrackPID(cmd.Process.Pid)
 	}
-	s.busy = true
-	s.mu.Unlock()
+	launched = true
 	notify(Event{Kind: "started", PID: cmd.Process.Pid, Message: "Programa iniciado. Aguarde o carregamento da recomp."})
 	go func() {
 		err := cmd.Wait()

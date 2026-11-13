@@ -22,6 +22,7 @@ type Client struct {
 	frames    []Frame
 	latest    uint64
 	connected bool
+	reason    string
 	done      chan struct{}
 	once      sync.Once
 	onStatus  func(string)
@@ -67,6 +68,7 @@ func Connect(ctx context.Context, address, name string, onStatus func(string)) (
 	go cl.heartbeat()
 	return cl, nil
 }
+func (c *Client) Reason() string        { c.mu.Lock(); defer c.mu.Unlock(); return c.reason }
 func (c *Client) Welcome() Welcome      { return c.welcome }
 func (c *Client) Connected() bool       { c.mu.Lock(); defer c.mu.Unlock(); return c.connected }
 func (c *Client) Done() <-chan struct{} { return c.done }
@@ -100,6 +102,7 @@ func (c *Client) fail(reason string) {
 	c.once.Do(func() {
 		c.mu.Lock()
 		c.connected = false
+		c.reason = reason
 		c.frames = nil
 		c.mu.Unlock()
 		close(c.done)
@@ -115,7 +118,7 @@ func (c *Client) read(r *bufio.Reader) {
 		c.conn.SetReadDeadline(time.Now().Add(8 * time.Second))
 		m, e := ReadMessage(r)
 		if e != nil {
-			c.fail("Servidor desconectado")
+			c.fail("Conexão com o servidor encerrada: " + e.Error())
 			return
 		}
 		if m.Type != "snapshot" || m.Protocol != Protocol || len(m.Players) > MaxPlayers {

@@ -17,14 +17,15 @@ type GameControl interface {
 	Close()
 }
 type Bridge struct {
-	Client  *Client
-	control GameControl
-	cancel  context.CancelFunc
-	done    chan struct{}
-	mu      sync.Mutex
-	camera  Camera
-	fov     float64
-	status  func(string)
+	Client       *Client
+	control      GameControl
+	cancel       context.CancelFunc
+	done         chan struct{}
+	mu           sync.Mutex
+	camera       Camera
+	fov          float64
+	status       func(string)
+	spawnRequest chan struct{}
 }
 
 func NewBridge(parent context.Context, c *Client, game GameControl, fov float64, status func(string)) *Bridge {
@@ -32,9 +33,15 @@ func NewBridge(parent context.Context, c *Client, game GameControl, fov float64,
 		fov = 40
 	}
 	ctx, cancel := context.WithCancel(parent)
-	b := &Bridge{Client: c, control: game, cancel: cancel, done: make(chan struct{}), fov: fov, status: status}
+	b := &Bridge{Client: c, control: game, cancel: cancel, done: make(chan struct{}), fov: fov, status: status, spawnRequest: make(chan struct{}, 1)}
 	go b.run(ctx)
 	return b
+}
+func (b *Bridge) RequestSpawn() {
+	select {
+	case b.spawnRequest <- struct{}{}:
+	default:
+	}
 }
 func (b *Bridge) Close()                { b.cancel(); b.Client.Close() }
 func (b *Bridge) Done() <-chan struct{} { return b.done }
@@ -150,6 +157,8 @@ func (b *Bridge) run(ctx context.Context) {
 	var at time.Time
 	var phase, yaw float64
 	joined := false
+	lastIssue := ""
+	lastIssueAt := time.Time{}
 	stable := 0
 	cameraProbe := time.Time{}
 	autoFOV := 0.0
@@ -157,6 +166,15 @@ func (b *Bridge) run(ctx context.Context) {
 	for ctx.Err() == nil && b.Client.Connected() {
 		var pos Vec3
 		if e := b.command(ctx, "pos", &pos); e != nil || !pos.Valid() {
+			issue := "Aguardando mundo válido. Escolha Continuar no jogo."
+			if e != nil {
+				issue += " Controle local: " + e.Error()
+			}
+			if issue != lastIssue || time.Since(lastIssueAt) > 15*time.Second {
+				b.say("Conectado à rede · " + issue)
+				lastIssue = issue
+				lastIssueAt = time.Now()
+			}
 			_ = b.Client.Publish(Pose{})
 			stable = 0
 			at = time.Time{}
@@ -168,6 +186,12 @@ func (b *Bridge) run(ctx context.Context) {
 			}
 			continue
 		}
+		select {
+		case <-b.spawnRequest:
+			joined = false
+			stable = 0
+		default:
+		}
 		if !joined {
 			stable++
 			if stable < 3 {
@@ -178,8 +202,10 @@ func (b *Bridge) run(ctx context.Context) {
 			}
 			b.say("Mundo carregado. Posicionando jogador em Hateno…")
 			if e := b.teleport(ctx); e != nil {
-				b.say("Falha ao reunir jogadores: " + e.Error() + ". Reconecte quando estiver parado no mundo.")
-				return
+				lastIssue = "spawn-failed"
+				b.say("Conectado à rede; posicionamento falhou: " + e.Error() + ". Fique parado no mundo e clique Reunir em Hateno. Sua posição atual será transmitida.")
+			} else {
+				lastIssue = ""
 			}
 			// These are private per-client video settings. An owned desktop overlay
 			// requires a composited window, and its projection uses full view.
@@ -188,7 +214,9 @@ func (b *Bridge) run(ctx context.Context) {
 			_ = b.command(ctx, "set hdr off", nil)
 			joined = true
 			at = time.Time{}
-			b.say("Sincronizando movimento · avatar visual provisório")
+			if lastIssue != "spawn-failed" {
+				b.say("Sincronizando movimento · avatar visual provisório")
+			}
 			continue
 		}
 		now := time.Now()

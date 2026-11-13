@@ -154,10 +154,6 @@ func (a *app) startSandbox(rebuild bool) {
 		a.setStatus("Prepare e teste o jogo no modo campanha antes de criar o sandbox.", true)
 		return
 	}
-	if len((core.SystemFinder{}).Find(c.Executable, time.Time{})) > 0 {
-		a.setStatus("Feche a recomp antes de preparar o sandbox.", true)
-		return
-	}
 	a.preparing = true
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
@@ -165,9 +161,17 @@ func (a *app) startSandbox(rebuild bool) {
 	a.refresh()
 	go func() {
 		defer cancel()
+		if len((core.SystemFinder{}).Find(c.Executable, time.Time{})) > 0 {
+			a.post(uiEvent{kind: "sandbox-failed", message: "Feche a recomp antes de preparar o sandbox."})
+			return
+		}
 		m, err := core.PrepareSandbox(c, rebuild)
 		if err != nil {
 			a.post(uiEvent{kind: "sandbox-failed", message: err.Error()})
+			return
+		}
+		if ctx.Err() != nil {
+			a.post(uiEvent{kind: "sandbox-failed", message: "Preparação cancelada. O save original foi preservado."})
 			return
 		}
 		core.AppendLog(core.LogPath(a.root), fmt.Sprintf("Sandbox: %s; origem SHA256 %s; %d flags preparadas; opcionais ausentes %v; backup %s", core.SandboxDir(c), m.SourceSHA256, len(m.Patched), m.MissingOptional, m.Backup))
@@ -178,6 +182,10 @@ func (a *app) startSandbox(rebuild bool) {
 				return
 			}
 			core.AppendLog(core.LogPath(a.root), filterSummary(r))
+		}
+		if ctx.Err() != nil {
+			a.post(uiEvent{kind: "sandbox-failed", message: "Preparação cancelada."})
+			return
 		}
 		port, err := core.LocalControlPort()
 		if err != nil {
@@ -207,10 +215,6 @@ func (a *app) rebuildFilter() {
 		a.setStatus("Prepare o jogo antes de gerar o filtro.", true)
 		return
 	}
-	if len((core.SystemFinder{}).Find(c.Executable, time.Time{})) > 0 {
-		a.setStatus("Feche a recomp antes de gerar o filtro.", true)
-		return
-	}
 	a.preparing = true
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
@@ -218,6 +222,10 @@ func (a *app) rebuildFilter() {
 	a.refresh()
 	go func() {
 		defer cancel()
+		if len((core.SystemFinder{}).Find(c.Executable, time.Time{})) > 0 {
+			a.post(uiEvent{kind: "sandbox-failed", message: "Feche a recomp antes de gerar o filtro."})
+			return
+		}
 		r, err := core.PrepareCampaignFilter(ctx, c, true, func(p core.Progress) { a.post(uiEvent{kind: "progress", progress: p}) })
 		if err != nil {
 			a.post(uiEvent{kind: "sandbox-failed", message: err.Error()})
@@ -230,15 +238,16 @@ func (a *app) launchSandbox(spec core.LaunchSpec, port int) {
 	a.sandboxGeneration++
 	a.sandboxActive = true
 	a.controlPort = port
-	err := a.session.Start(spec, filepath.Join(a.root, "logs", "sandbox-processo.log"), func(e core.Event) { a.post(uiEvent{kind: e.Kind, message: e.Message}) })
-	if err != nil {
-		a.sandboxActive = false
-		a.controlPort = 0
-		a.setStatus(err.Error(), true)
-		return
-	}
-	a.setStatus("Sandbox iniciado. Escolha Continuar na recomp; seu save de campanha está separado.", false)
-	core.AppendLog(core.LogPath(a.root), fmt.Sprintf("Sandbox iniciado: %s; controle local %d", spec.Executable, port))
+	a.preparing = true
+	go func() {
+		err := a.session.Start(spec, filepath.Join(a.root, "logs", "sandbox-processo.log"), func(e core.Event) { a.post(uiEvent{kind: e.Kind, message: e.Message}) })
+		if err != nil {
+			a.post(uiEvent{kind: "launch-failed", message: err.Error()})
+			return
+		}
+		a.post(uiEvent{kind: "launch-done", message: "Sandbox iniciado. Escolha Continuar na recomp; sua campanha permanece separada."})
+		core.AppendLog(core.LogPath(a.root), fmt.Sprintf("Sandbox iniciado: %s; controle local %d", spec.Executable, port))
+	}()
 }
 func (a *app) applySandbox(teleport bool) {
 	if !a.sandboxActive || !a.session.Busy() || a.controlPort == 0 || a.controlBusy {

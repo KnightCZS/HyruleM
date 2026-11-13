@@ -321,6 +321,9 @@ func (cat *filterCatalog) patch(name string, blob []byte, p CampaignPolicy, r *F
 	return gamefmt.Repack(raw, z), len(raw), true, nil
 }
 func filterCandidates(c Config) ([]filterSource, []filterInput, error) {
+	return filterCandidatesContext(context.Background(), c)
+}
+func filterCandidatesContext(ctx context.Context, c Config) ([]filterSource, []filterInput, error) {
 	sources := []filterSource{{Root: filepath.Join(c.DataDir, "extracted", "romfs"), ID: "romfs"}}
 	if !IsFile(filepath.Join(sources[0].Root, "Pack", "Bootup.pack")) || !IsFile(filepath.Join(sources[0].Root, "Pack", "TitleBG.pack")) {
 		return nil, nil, fmt.Errorf("não encontrei Pack/Bootup.pack e Pack/TitleBG.pack em extracted/romfs; o filtro precisa dos arquivos extraídos usados pelo Savage Wind")
@@ -338,6 +341,9 @@ func filterCandidates(c Config) ([]filterSource, []filterInput, error) {
 	var inputs []filterInput
 	for index, src := range sources {
 		e := filepath.WalkDir(src.Root, func(full string, de fs.DirEntry, err error) error {
+			if e := ctx.Err(); e != nil {
+				return e
+			}
 			if err != nil {
 				return err
 			}
@@ -366,7 +372,7 @@ func filterCandidates(c Config) ([]filterSource, []filterInput, error) {
 					return e
 				}
 				h := sha256.New()
-				_, e = io.Copy(h, f)
+				_, e = io.Copy(h, cancelReader{ctx: ctx, reader: f})
 				closeErr := f.Close()
 				if e != nil {
 					return e
@@ -390,6 +396,18 @@ func filterCandidates(c Config) ([]filterSource, []filterInput, error) {
 		return inputs[i].Source < inputs[j].Source
 	})
 	return sources, inputs, nil
+}
+
+type cancelReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r cancelReader) Read(b []byte) (int, error) {
+	if e := r.ctx.Err(); e != nil {
+		return 0, e
+	}
+	return r.reader.Read(b)
 }
 func isPackage(name string) bool {
 	return strings.HasSuffix(name, ".pack") || strings.HasSuffix(name, ".sbeventpack") || strings.HasSuffix(name, ".sbactorpack")
@@ -439,6 +457,12 @@ func safeRelative(s string) bool {
 }
 func PrepareCampaignFilter(ctx context.Context, c Config, force bool, notify func(Progress)) (FilterReport, error) {
 	var report FilterReport
+	if e := ctx.Err(); e != nil {
+		return report, e
+	}
+	if notify != nil {
+		notify(Progress{Stage: "Conferindo arquivos e cache do filtro…"})
+	}
 	if c.Backend != Savage {
 		return report, fmt.Errorf("o filtro exige Savage Wind")
 	}
@@ -446,7 +470,7 @@ func PrepareCampaignFilter(ctx context.Context, c Config, force bool, notify fun
 	if e != nil {
 		return report, e
 	}
-	sources, inputs, e := filterCandidates(c)
+	sources, inputs, e := filterCandidatesContext(ctx, c)
 	if e != nil {
 		return report, e
 	}
@@ -820,7 +844,7 @@ func PrepareCampaignFilter(ctx context.Context, c Config, force bool, notify fun
 		return report, fmt.Errorf("nenhum EventInfo foi alterado; filtro não publicado")
 	}
 	// Source folders must stay stable throughout preparation.
-	againSources, again, e := filterCandidates(c)
+	againSources, again, e := filterCandidatesContext(ctx, c)
 	if e != nil {
 		return report, e
 	}

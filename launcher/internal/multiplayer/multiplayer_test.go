@@ -143,10 +143,12 @@ func TestInterpolationAndProjection(t *testing.T) {
 // Fake control has real runtime JSON shapes; bridges, TCP relay, interpolation
 // and renderer are real. This is not a claim that BOTW was run in CI.
 type fakeGame struct {
-	mu       sync.Mutex
-	position Vec3
-	commands []string
-	closed   bool
+	mu         sync.Mutex
+	position   Vec3
+	commands   []string
+	closed     bool
+	notLoaded  bool
+	spawnError bool
 }
 
 func (f *fakeGame) Close() { f.mu.Lock(); f.closed = true; f.mu.Unlock() }
@@ -154,6 +156,9 @@ func (f *fakeGame) Command(ctx context.Context, cmd string) (core.ControlReply, 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.commands = append(f.commands, cmd)
+	if cmd == "pos" && f.notLoaded {
+		return core.ControlReply{}, fmt.Errorf("No world loaded")
+	}
 	var data any
 	switch {
 	case cmd == "pos":
@@ -161,6 +166,9 @@ func (f *fakeGame) Command(ctx context.Context, cmd string) (core.ControlReply, 
 	case cmd == "camera":
 		data = map[string]float64{"x": f.position.X, "y": f.position.Y + 2, "z": f.position.Z + 10, "dx": 0, "dy": 0, "dz": -1}
 	case strings.HasPrefix(cmd, "goto "):
+		if f.spawnError {
+			return core.ControlReply{}, fmt.Errorf("teleport unavailable")
+		}
 		fmt.Sscanf(cmd, "goto %f %f %f", &f.position.X, &f.position.Y, &f.position.Z)
 		data = map[string]string{"state": "already_there"}
 	case strings.HasPrefix(cmd, "set "):
@@ -221,5 +229,68 @@ func TestServerCloseDuringHandshake(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("unidentified socket blocks shutdown")
+	}
+}
+
+func TestLoadingAndFailedTeleportDoNotDisconnect(t *testing.T) {
+	s := testServer(t)
+	a := testClient(t, s, "Loading")
+	b := testClient(t, s, "Observer")
+	game := &fakeGame{position: Vec3{3437, 236, 2101}, notLoaded: true, spawnError: true}
+	bridge := NewBridge(context.Background(), a, game, 40, nil)
+	defer bridge.Close()
+	// Longer than both the hello timeout and the server's idle deadline.
+	time.Sleep(8500 * time.Millisecond)
+	if !a.Connected() || s.Count() != 2 {
+		t.Fatal("loading dropped network", a.Reason())
+	}
+	game.mu.Lock()
+	game.notLoaded = false
+	game.mu.Unlock()
+	eventually(t, func() bool { return len(b.Remote(time.Now())) == 1 })
+	if !a.Connected() {
+		t.Fatal("failed teleport disconnected player", a.Reason())
+	}
+	game.mu.Lock()
+	game.spawnError = false
+	game.mu.Unlock()
+	bridge.RequestSpawn()
+	eventually(t, func() bool {
+		game.mu.Lock()
+		defer game.mu.Unlock()
+		return game.position.Sub(a.Welcome().Spawn).Len() < 0.001
+	})
+}
+func TestListenOnComputerInterfaceWithChosenPort(t *testing.T) {
+	addresses, e := LocalAddresses()
+	if e != nil {
+		t.Logf("adapter enumeration unavailable in this runtime: %v; still testing TCP listener", e)
+	}
+	for _, a := range addresses {
+		address, e := BindAddress(a.IP, "5057")
+		if e != nil || address != net.JoinHostPort(a.IP, "5057") {
+			t.Fatal(address, e)
+		}
+	}
+	if _, e := BindAddress("192.0.2.123", "5057"); e == nil {
+		t.Fatal("non-local hosting address accepted")
+	}
+	s, e := Listen("0.0.0.0:0", ServerConfig{Spawn: Vec3{X: 3437, Y: 236, Z: 2101}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	port := s.Addr().(*net.TCPAddr).Port
+	host := "127.0.0.1"
+	if len(addresses) > 0 {
+		host = addresses[0].IP
+	}
+	c, e := Connect(context.Background(), net.JoinHostPort(host, fmt.Sprint(port)), "LAN client", nil)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer c.Close()
+	if !c.Connected() {
+		t.Fatal("could not connect through local network adapter")
 	}
 }
