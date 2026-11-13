@@ -82,5 +82,12 @@
     "kind": "ref",
     "pattern": "90000008/9f00001f 91000108/ffc003ff f94007e0 f9400108 f9401501 94000000/fc000000 36000000/fff8001f aa1303e0",
     "at": 1
+  },
+  {
+    "name": "hm_map_hash_init",
+    "address": "0x70010a3ef8",
+    "kind": "code",
+    "pattern": "d10103ff a9027bfd a9034ff4 910083fd aa0003f4 9100a000 aa0103f3 94000000/fc000000",
+    "at": 0
   }
 ]

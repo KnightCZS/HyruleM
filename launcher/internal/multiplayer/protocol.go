@@ -1,5 +1,6 @@
 // Package multiplayer implements HyruleM's two-player visual prototype. The
-// protocol carries presence and movement only, never inventories or world AI.
+// protocol carries presence and opt-in nearby map-enemy health convergence.
+// Inventory, player health and enemy AI are never copied by this protocol.
 package multiplayer
 
 import (
@@ -15,8 +16,8 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 1
-const MaxLine = 16384
+const Protocol = 3
+const MaxLine = 65536
 const MaxPlayers = 2
 
 type Vec3 struct{ X, Y, Z float64 }
@@ -60,16 +61,17 @@ type Player struct {
 	Pose Pose   `json:"pose"`
 }
 type Message struct {
-	Type     string   `json:"type"`
-	Protocol int      `json:"protocol,omitempty"`
-	Name     string   `json:"name,omitempty"`
-	ID       string   `json:"id,omitempty"`
-	Slot     int      `json:"slot,omitempty"`
-	Spawn    *Vec3    `json:"spawn,omitempty"`
-	Pose     *Pose    `json:"pose,omitempty"`
-	Players  []Player `json:"players,omitempty"`
-	Sequence uint64   `json:"sequence,omitempty"`
-	Error    string   `json:"error,omitempty"`
+	Type     string        `json:"type"`
+	Protocol int           `json:"protocol,omitempty"`
+	Name     string        `json:"name,omitempty"`
+	ID       string        `json:"id,omitempty"`
+	Slot     int           `json:"slot,omitempty"`
+	Spawn    *Vec3         `json:"spawn,omitempty"`
+	Pose     *Pose         `json:"pose,omitempty"`
+	Players  []Player      `json:"players,omitempty"`
+	Sequence uint64        `json:"sequence,omitempty"`
+	Error    string        `json:"error,omitempty"`
+	Enemies  []EnemyHealth `json:"enemies,omitempty"`
 }
 
 func NormalizeName(s string) (string, error) {

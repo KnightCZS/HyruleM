@@ -29,19 +29,26 @@ def apply(root):
     module = root / "tools/game_sites.py"
     code = module.read_text()
     marker = "# HyruleM native preview sites"
-    if marker not in code:
-        entries = [f"    Site({s['name']!r}, {s['kind']!r}, {s['pattern']!r}, {s['at']})," for s in sites]
-        group = repr(tuple(s["name"] for s in sites))
-        addition = marker + "\nSITES += [\n" + "\n".join(entries) + "\n]\nOPTIONAL_GROUPS.append(" + group + ")\n"
-        # No KNOWN fallback for this optional group. Each signature must match.
+    entries = [f"    Site({s['name']!r}, {s['kind']!r}, {s['pattern']!r}, {s['at']})," for s in sites]
+    group = repr(tuple(s["name"] for s in sites))
+    addition = marker + "\nSITES += [\n" + "\n".join(entries) + "\n]\nOPTIONAL_GROUPS.append(" + group + ")\n"
+    # No KNOWN fallback for this optional group. Each signature must match.
+    if marker in code:
+        start=code.index(marker)
+        end=code.index("OPTIONAL = {n for g in OPTIONAL_GROUPS for n in g}",start)
+        code=code[:start]+addition+"\n"+code[end:]
+    else:
         code = code.replace("OPTIONAL = {n for g in OPTIONAL_GROUPS for n in g}", addition + "\nOPTIONAL = {n for g in OPTIONAL_GROUPS for n in g}")
         if marker not in code:
             raise ValueError("Unsupported game_sites.py")
-        module.write_text(code)
+    module.write_text(code)
     header = root / "runtime/game_sites.h"
     h = header.read_text()
-    if "X(hm_create)" not in h:
-        entries = " \\\n".join("    X(" + s["name"] + ")" for s in sites)
+    entries = " \\\n".join("    X(" + s["name"] + ")" for s in sites)
+    if "X(hm_create)" in h:
+        start=h.index("    X(hm_create)");end=h.index("\n\n",start)
+        h=h[:start]+entries+h[end:]
+    else:
         h = h.replace("    X(actor_info)\n", "    X(actor_info) \\\n" + entries + "\n")
         if "X(hm_create)" not in h:
             raise ValueError("Unsupported game_sites.h")

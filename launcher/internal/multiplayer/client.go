@@ -21,6 +21,7 @@ type Client struct {
 	welcome   Welcome
 	frames    []Frame
 	latest    uint64
+	enemies   []EnemyHealth
 	connected bool
 	reason    string
 	done      chan struct{}
@@ -125,6 +126,18 @@ func (c *Client) read(r *bufio.Reader) {
 			c.fail("Pacote do servidor inválido")
 			return
 		}
+		if len(m.Enemies) > MaxSharedEnemies {
+			c.fail("snapshot de monstros excessivo")
+			return
+		}
+		seenEnemies := map[string]bool{}
+		for _, e := range m.Enemies {
+			if !e.Valid() || seenEnemies[e.key()] {
+				c.fail("snapshot de monstro inválido")
+				return
+			}
+			seenEnemies[e.key()] = true
+		}
 		ids := map[string]bool{}
 		slots := map[int]bool{}
 		for _, p := range m.Players {
@@ -141,6 +154,7 @@ func (c *Client) read(r *bufio.Reader) {
 		}
 		c.mu.Lock()
 		if m.Sequence > c.latest {
+			c.enemies = append([]EnemyHealth(nil), m.Enemies...)
 			c.latest = m.Sequence
 			c.frames = append(c.frames, Frame{At: time.Now(), Players: append([]Player(nil), m.Players...)})
 			if len(c.frames) > 6 {

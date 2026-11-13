@@ -64,6 +64,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go build -trimpath -ldflags '-s -w' -o ../preview/HyruleM-Server.exe ./cmd/hyrulem-server
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-s -w' -o ../preview/HyruleM-Native-Probe.exe ./cmd/hyrulem-native-probe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
       - uses: msys2/setup-msys2@v2
         with:
@@ -88,6 +90,8 @@ jobs:
           cp runtime/cpu.h runtime/simd.h runtime/simd_fp.h runtime/simd_softfma.h runtime/gamelib.h tools/gamelib_entry.c runtime/hle/hle_symbols.txt ../preview/runtime-update/gamelib-src/
           cp LICENSE ../preview/runtime-update/SavageWind-LICENSE.txt
           cp ../native/README.md ../preview/LEIA-ME.md
+          cp ../native/RESEARCH_SYNC.md ../preview/
+          cp ../docs/gen1/Diagnosticar.cmd ../preview/
           cp ../native/Iniciar-Nativo.cmd ../native/Instalar-Nativo.cmd ../preview/
           cp ../native/Install-NativePreview.ps1 ../preview/
       - name: Verify installer with the existing official runtime dependencies
@@ -123,3 +127,33 @@ jobs:
             HyruleM-NativePreview-Windows-x64.zip
             SHA256.txt
           if-no-files-found: error
+  publish-preview:
+    needs: windows-runtime
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/native-world-gen1'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@v4
+        with:
+          name: HyruleM-NativePreview-Windows-x64
+          path: release-assets
+      - name: Publish explicitly experimental prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag=v0.5.0-preview.2
+          existing=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish 2>/dev/null || true)
+          if [ -n "$existing" ] && [ "$existing" != "$RELEASE_SHA" ]; then
+            echo 'This preview tag already points at another commit; bump the version for another release.'
+            exit 0
+          fi
+          if [ -z "$existing" ]; then
+            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.2 — callback e vida dos monstros' --notes-file releases/v0.5.0-preview.2.md --prerelease --latest=false --draft
+          fi
+          gh release upload "$tag" release-assets/HyruleM-NativePreview-Windows-x64.zip release-assets/SHA256.txt --clobber
+          gh release edit "$tag" --draft=false --prerelease --latest=false

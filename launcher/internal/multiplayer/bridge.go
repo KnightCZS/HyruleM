@@ -160,6 +160,7 @@ func (b *Bridge) run(ctx context.Context) {
 	var at time.Time
 	var phase, yaw float64
 	joined := false
+	manualSpawn := false
 	lastIssue := ""
 	lastIssueAt := time.Time{}
 	stable := 0
@@ -212,6 +213,7 @@ func (b *Bridge) run(ctx context.Context) {
 		case <-b.spawnRequest:
 			joined = false
 			stable = 0
+			manualSpawn = true
 		default:
 		}
 		if !joined {
@@ -222,13 +224,19 @@ func (b *Bridge) run(ctx context.Context) {
 				}
 				continue
 			}
-			b.say("Mundo carregado. Posicionando jogador em Hateno…")
-			if e := b.teleport(ctx); e != nil {
-				lastIssue = "spawn-failed"
-				b.say("Conectado à rede; posicionamento falhou: " + e.Error() + ". Fique parado no mundo e clique Reunir em Hateno. Sua posição atual será transmitida.")
-			} else {
-				lastIssue = ""
+			// Joining native presence must never move the local player. Reunir em
+			// Hateno remains an explicit action; the old automatic slot offset was
+			// perceived as a push when the second client joined.
+			if !b.native || manualSpawn {
+				b.say("Mundo carregado. Posicionando jogador em Hateno…")
+				if e := b.teleport(ctx); e != nil {
+					lastIssue = "spawn-failed"
+					b.say("Conectado à rede; posicionamento falhou: " + e.Error() + ". Fique parado no mundo e clique Reunir em Hateno. Sua posição atual será transmitida.")
+				} else {
+					lastIssue = ""
+				}
 			}
+			manualSpawn = false
 			// These are private per-client video settings. An owned desktop overlay
 			// requires a composited window, and its projection uses full view.
 			if !b.native {
@@ -271,6 +279,10 @@ func (b *Bridge) run(ctx context.Context) {
 		if native != nil {
 			if err := b.updateNative(ctx, native, now); err != nil {
 				b.say("Integração nativa interrompida: " + err.Error())
+				return
+			}
+			if err := b.updateWorldHealth(ctx, native, now); err != nil {
+				b.say("Sincronização do mundo interrompida: " + err.Error())
 				return
 			}
 			if !wait(ctx, 80*time.Millisecond) {

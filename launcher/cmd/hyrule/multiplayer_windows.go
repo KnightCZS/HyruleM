@@ -172,7 +172,7 @@ func (u *multiplayerUI) build() {
 	native := os.Getenv(core.NativePreviewEnv) == "1"
 	if native {
 		u.label("MULTIPLAYER · TESTE DE PRESENÇA NATIVA", 28, 24, 800, 28)
-		u.label("Teste experimental em Hateno. Combate, coleta e IA ainda indisponíveis.\r\nUse Hospedar servidor neste menu e mantenha o launcher aberto.", 28, 62, 805, 48)
+		u.label("Preview 2: presença nativa e vida de monstros em teste. PvP, coleta e IA pendentes.\r\nEntrar preserva sua posição. Use Reunir em Hateno quando precisar.", 28, 62, 805, 48)
 	} else {
 		u.label("MULTIPLAYER · PRIMEIRO PROTÓTIPO", 28, 24, 800, 28)
 		u.label("Avatares visuais provisórios. Inicie no mundo aberto de Hateno.\r\nMantenha este launcher aberto e os jogos em modo janela.", 28, 62, 805, 48)

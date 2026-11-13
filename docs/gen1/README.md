@@ -40,7 +40,7 @@ go build -o dist/HyruleM-Gen1-Server.exe ./cmd/hyrulem-gen1-server
 go build -o dist/HyruleM-Native-Probe.exe ./cmd/hyrulem-native-probe
 ```
 
-Em Windows, os executáveis são gerados pelo Actions e publicados como **artefato de desenvolvimento separado**. O servidor Gen1 usa protocolo 2 e, por padrão, porta 5051. O menu visual 0.4.x continua com protocolo 1/porta escolhida pelo usuário e não conecta nesse servidor.
+Em Windows, os executáveis são gerados pelo Actions. O servidor Gen1 usa protocolo 2 e, por padrão, porta 5051. Preview 2 usa protocolo 3 e o servidor do menu multiplayer, com porta escolhida pelo usuário; não conecta no servidor Gen1 separado. O build estável 0.4.x anterior usava protocolo 1 e deve ser atualizado nos dois clientes e no servidor.
 
 ```powershell
 .\HyruleM-Gen1-Server.exe --listen 0.0.0.0:5051 --catalog .\catalog.test.json --allow-simulation

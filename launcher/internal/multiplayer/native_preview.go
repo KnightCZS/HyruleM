@@ -4,17 +4,20 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 )
 
-// This adapter only carries native presence over protocol 1. The combat/world
-// authority protocol remains gated until its real game hooks exist.
+// Native presence and nearby map-enemy health use protocol 3. Full Gen1 combat
+// and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
-	session    string
-	sequence   uint64
-	lastStatus time.Time
-	state      string
+	session      string
+	sequence     uint64
+	lastStatus   time.Time
+	state        string
+	waitingSince time.Time
+	lastWorld    time.Time
 }
 
 func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
@@ -23,12 +26,16 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 		GameVersion   string `json:"game_version"`
 		PreviewABI    int    `json:"preview_abi"`
 		NativePreview bool   `json:"native_preview"`
+		SharedHealth  bool   `json:"shared_enemy_health"`
 	}
 	if err := b.command(ctx, "hm_caps", &caps); err != nil {
 		return nil, fmt.Errorf("o runtime não possui o adaptador nativo: %w", err)
 	}
-	if caps.Runtime != "SavageWind-HyruleM" || caps.GameVersion != "1.9.0" || caps.PreviewABI != 1 || !caps.NativePreview {
+	if caps.Runtime != "SavageWind-HyruleM" || caps.GameVersion != "1.9.0" || caps.PreviewABI != 2 || !caps.NativePreview {
 		return nil, fmt.Errorf("runtime incompatível ou assinaturas nativas incompletas")
+	}
+	if !caps.SharedHealth {
+		return nil, fmt.Errorf("o adaptador de mundo não foi carregado; reconstrua a biblioteca com o novo runtime")
 	}
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
@@ -37,6 +44,25 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 	n := &nativePreview{session: hex.EncodeToString(nonce[:])}
 	if err := b.command(ctx, "hm_native_open "+n.session, nil); err != nil {
 		return nil, err
+	}
+	deadline := time.Now().Add(6 * time.Second)
+	for {
+		var status struct {
+			Ticks uint64 `json:"game_ticks"`
+			Age   int64  `json:"tick_age_ms"`
+		}
+		if err := b.command(ctx, "hm_native_status", &status); err != nil {
+			return nil, err
+		}
+		if status.Ticks > 0 && status.Age >= 0 && status.Age < 2000 {
+			break
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("o callback nativo não está executando; reconstrua a biblioteca do jogo com este runtime e mantenha o mundo sem pausa")
+		}
+		if !wait(ctx, 100*time.Millisecond) {
+			return nil, ctx.Err()
+		}
 	}
 	return n, nil
 }
@@ -60,10 +86,14 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Time) error {
 	remotes := b.Client.Remote(now)
 	if len(remotes) == 0 {
+		n.waitingSince = time.Time{}
 		if err := b.clearNative(ctx, n); err != nil {
 			return err
 		}
 	} else {
+		if n.waitingSince.IsZero() {
+			n.waitingSince = now
+		}
 		n.sequence++
 		command, err := nativePoseCommand(n.session, n.sequence, remotes[0].Pose)
 		if err != nil {
@@ -78,10 +108,14 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 	}
 	n.lastStatus = now
 	var status struct {
-		State   string `json:"state"`
-		Error   string `json:"error"`
-		Active  bool   `json:"active"`
-		Applied uint64 `json:"applied_sequence"`
+		State     string `json:"state"`
+		Error     string `json:"error"`
+		Active    bool   `json:"active"`
+		Applied   uint64 `json:"applied_sequence"`
+		Model     bool   `json:"model_ready"`
+		Animation bool   `json:"animation_ready"`
+		TickAge   int64  `json:"tick_age_ms"`
+		Paused    bool   `json:"game_paused"`
 	}
 	if err := b.command(ctx, "hm_native_status", &status); err != nil {
 		return err
@@ -89,12 +123,62 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 	if status.State == "error" {
 		return fmt.Errorf("ator remoto: %s", status.Error)
 	}
+	if status.Paused {
+		n.waitingSince = now
+		return nil
+	}
+	if status.TickAge < 0 || status.TickAge > 3000 {
+		return fmt.Errorf("a atualização nativa parou; estado %s", status.State)
+	}
+	if len(remotes) > 0 && !status.Active && now.Sub(n.waitingSince) > 18*time.Second {
+		return fmt.Errorf("o jogo não confirmou o ator remoto (estado %s); a conexão foi interrompida para evitar presença invisível", status.State)
+	}
+	if status.Active && (!status.Model || !status.Animation) {
+		return fmt.Errorf("o ator remoto não confirmou modelo e animação")
+	}
 	if status.State != n.state {
 		n.state = status.State
 		if status.Active {
-			b.say("Ator remoto criado no jogo · teste nativo de presença; combate e monstros ainda indisponíveis")
+			b.say("Ator remoto criado · modelo registrado · sincronização de vida dos monstros em teste")
 		} else if status.State == "spawning" {
 			b.say("O jogo está criando o Link remoto…")
+		}
+	}
+	return nil
+}
+
+// Send health observations separately from remote-player poses. Only native
+// enemies with matching map hash, actor and original placement can be changed.
+func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now time.Time) error {
+	if now.Sub(n.lastWorld) < 250*time.Millisecond {
+		return nil
+	}
+	n.lastWorld = now
+	var raw struct {
+		Enemies string `json:"enemies_json"`
+	}
+	if err := b.command(ctx, "hm_world_status", &raw); err != nil {
+		return err
+	}
+	var local []EnemyHealth
+	if err := json.Unmarshal([]byte(raw.Enemies), &local); err != nil {
+		return fmt.Errorf("snapshot nativo de monstros inválido: %w", err)
+	}
+	if err := b.Client.PublishEnemyHealth(local); err != nil {
+		return err
+	}
+	byKey := map[string]EnemyHealth{}
+	for _, e := range b.Client.SharedEnemyHealth() {
+		byKey[e.key()] = e
+	}
+	for _, e := range local {
+		shared, ok := byKey[e.key()]
+		if !ok || shared.Health >= e.Health {
+			continue
+		}
+		cmd := fmt.Sprintf("hm_enemy_health %s %d %s %.3f %.3f %.3f %d", n.session, e.Hash, e.Actor, e.Spawn.X, e.Spawn.Y, e.Spawn.Z, shared.Health)
+		if err := b.command(ctx, cmd, nil); err != nil {
+			return err
 		}
 	}
 	return nil

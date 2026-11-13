@@ -2,9 +2,11 @@
 
 ## Adaptador experimental de presença
 
+Preview 2 corrige o receptor do callback: `PlayerDamage` contém o ator dono em `this + 0x18`; o receptor não é o próprio Player. Agora exige heartbeat da thread do jogo e confirma modelo/animação antes de anunciar criação. Acrescenta convergência limitada de vida de inimigos do mapa no protocolo 3, sem copiar vida/inventário de jogadores. A Gen1 completa abaixo continua bloqueada; IA por proximidade, PvP e coleta ainda não estão integrados.
+
 O código em [`native/`](../../native/README.md) implementa a primeira fila de operações nativas no ciclo de atualização do jogador, com criação assíncrona de um ator separado, referência retida, transformação/animação e remoção. Os recursos são gerados privadamente a partir da instalação do usuário. O build inclui o gerador modificado e exige reconstrução da biblioteca local.
 
-Esse caminho usa o protocolo 1 para testar presença. Não atende ao contrato completo abaixo: os hooks de coleta, dano e autoridade de monstros permanecem pendentes. `hm_caps` mantém as capacidades Gen1 desativadas. A máquina de estados e a preservação da CPU foram testadas com memória sintética; a inicialização/aparência do ator ainda exige validação no jogo.
+Esse caminho usa agora o protocolo 3 para presença e convergência limitada de vida dos inimigos do mapa. Não atende ao contrato completo abaixo: coleta, PvP e autoridade de IA permanecem pendentes. `hm_caps` mantém as capacidades Gen1 desativadas. A máquina de estados e a preservação da CPU foram testadas com memória sintética; a aparência do ator ainda exige validação no jogo.
 
 ## Pesquisa sobre o runtime
 

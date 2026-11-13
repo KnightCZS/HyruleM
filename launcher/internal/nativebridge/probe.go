@@ -149,7 +149,7 @@ func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port in
 	r.Port = port
 	c := core.ControlClient{Port: port, Timeout: 2 * time.Second}
 	playerLoaded := false
-	for _, command := range []string{"version", "help", "sites", "mem regions", "pos", "camera", "hm_caps"} {
+	for _, command := range []string{"version", "help", "sites", "mem regions", "pos", "camera", "hm_caps", "hm_native_status", "hm_world_status"} {
 		if ctx.Err() != nil {
 			r.NativeError = ctx.Err().Error()
 			break
