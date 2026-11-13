@@ -1,0 +1,86 @@
+[
+  {
+    "name": "hm_create",
+    "address": "0x7001535b10",
+    "kind": "code",
+    "pattern": "d10183ff a9017bfd f90013f9 a9035ff8 a90457f6 a9054ff4 910043fd 90000008/9f00001f aa0003f9",
+    "at": 0
+  },
+  {
+    "name": "hm_handle_ready",
+    "address": "0x7001516820",
+    "kind": "code",
+    "pattern": "f9400008 b4000008/ff00001f b9400108 7100091f 1a9f17e0 d65f03c0 2a1f03e0 d65f03c0",
+    "at": 0
+  },
+  {
+    "name": "hm_handle_failed",
+    "address": "0x7001516840",
+    "kind": "code",
+    "pattern": "39402008 34000008/ff00001f 52800020 d65f03c0 f9400008 b4000008/ff00001f b9400109 71000d3f",
+    "at": 0
+  },
+  {
+    "name": "hm_handle_get",
+    "address": "0x7001516a5c",
+    "kind": "code",
+    "pattern": "f9400008 b4000008/ff00001f f9400900 d65f03c0 aa1f03e0 d65f03c0",
+    "at": 0
+  },
+  {
+    "name": "hm_handle_wake",
+    "address": "0x7001516b74",
+    "kind": "code",
+    "pattern": "a9be7bfd f9000bf3 910003fd aa0003f3 f9400000 b4000000/ff00001f b9400008 7100091f 54000000/ff00001f aa1f03e0 f9400bf3 a8c27bfd d65f03c0 aa1303e1 52800022",
+    "at": 0
+  },
+  {
+    "name": "hm_handle_delete",
+    "address": "0x7001516908",
+    "kind": "call",
+    "pattern": "94000000/fc000000 91234260 91230274 94000000/fc000000 aa1403e0 94000000/fc000000 aa1303e0 a9414ff4",
+    "at": 0
+  },
+  {
+    "name": "hm_param_add",
+    "address": "0x7001126168",
+    "kind": "code",
+    "pattern": "79c00408 0b080068 11002508 7103011f 54000008/ff00001f a9bc7bfd a9015ff8 a90257f6",
+    "at": 0
+  },
+  {
+    "name": "hm_set_mtx",
+    "address": "0x70015337ac",
+    "kind": "code",
+    "pattern": "a9bd7bfd a90157f6 a9024ff4 910003fd 2a0303f3 aa0103f4 aa0003f5 36000002/fff8001f",
+    "at": 0
+  },
+  {
+    "name": "hm_delete_actor",
+    "address": "0x7001514bac",
+    "kind": "code",
+    "pattern": "a9bb7bfd f9000bf9 a9025ff8 a90357f6 a9044ff4 910003fd 39419008 71000d1f 54000000/ff00001f b9407808 aa0003f4 37000008/fff8001f aa1403f5",
+    "at": 0
+  },
+  {
+    "name": "hm_play_as",
+    "address": "0x700149f24c",
+    "kind": "call",
+    "pattern": "94000000/fc000000 b95f7268 1e204100 1e204101 f942b260 90000009/9f00001f 91000129/ffc003ff 9000000a/9f00001f 9100014a/ffc003ff 910003e1 2a1403e2 52800083",
+    "at": 0
+  },
+  {
+    "name": "hm_creator",
+    "address": "0x7001e95430",
+    "kind": "ref",
+    "pattern": "90000008/9f00001f 91000108/ffc003ff f9400115 f8420e88 aa1403e0 f9400d08 d63f0100 90000008/9f00001f",
+    "at": 1
+  },
+  {
+    "name": "hm_heap_mgr",
+    "address": "0x7001e14cd8",
+    "kind": "ref",
+    "pattern": "90000008/9f00001f 91000108/ffc003ff f94007e0 f9400108 f9401501 94000000/fc000000 36000000/fff8001f aa1303e0",
+    "at": 1
+  }
+]

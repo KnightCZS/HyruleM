@@ -4,7 +4,7 @@ Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo
 
 ## Estado da versão 0.4.2
 
-**Desenvolvimento da geração nativa:** esta branch adiciona regras de mundo, vida/inventário privados, coleta exclusiva e seleção do alvo mais próximo no servidor. O backend de atores de BOTW ainda está pendente; não é uma release jogável com dois Links nativos. Veja [Gen1: estado e diagnóstico](docs/gen1/README.md).
+**Desenvolvimento da geração nativa:** esta branch contém as regras autoritativas e agora um [adaptador experimental de presença nativa](native/README.md), com build próprio do runtime, criação/movimento/remoção de ator e geração local dos recursos. Esse caminho ainda não foi validado com dois jogos e não implementa combate/coleta/IA completos. Não é a Gen1 jogável. O pacote estável 0.4.2 continua sendo o protótipo visual descrito abaixo. Veja também [Gen1: estado e diagnóstico](docs/gen1/README.md).
 
 Hotfix dos [issues #1](https://github.com/KnightCZS/HyruleM/issues/1) e [#2](https://github.com/KnightCZS/HyruleM/issues/2): leitura de fluxos EVFL válidos sem entradas e preparação automática do filtro antes de conectar. [Notas 0.4.2](releases/v0.4.2.md).
 

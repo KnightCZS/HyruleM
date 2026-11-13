@@ -1,6 +1,6 @@
 # Módulo recebido: BOTW Switch 1.9.0
 
-**Análise estática concluída; chamadas no jogo e criação do Link remoto ainda não validadas.** Os resultados identificam pontos para o port. Não constituem um backend jogável.
+**Análise estática concluída e objetos confirmados pelo relatório do processo; criação do Link remoto ainda não validada em gameplay.** Os resultados sustentam o adaptador experimental, sem constituir uma Gen1 jogável completa.
 
 O RAR fornecido contém `main`, `main.npdm`, `rtld`, `sdk` e `subsdk0`. Foi extraído em uma área privada de pesquisa, fora da árvore versionada. Nenhum desses arquivos, imagem descomprimida ou disassembly completo entra no repositório ou no pacote.
 
@@ -51,8 +51,8 @@ O verificador recusa outro SHA256, confere funções/assinaturas e destinos de c
 
 ## Próximo passo de integração
 
-Confirmar os objetos no processo real com o relatório corrigido. Depois implementar a fila de operações na thread do jogo, resolver o ciclo de vida do ator remoto e validar uma criação/remoção isolada no sandbox. As rotinas identificadas não podem ser chamadas diretamente do socket nem tratadas como funções x64: são endereços AArch64 do módulo, que exigem a interface de execução e o contexto CPU do recompilador.
+O relatório posterior confirmou os hashes das funções no processo, jogador local, vida e 620 atores registrados. O adaptador em `native/` já implementa fila na thread do jogo, criação assíncrona, referências, transformação/animação e remoção. Doze assinaturas adicionais foram verificadas como únicas no módulo fornecido. O gerador privado de recursos foi conferido também por um parser independente: os 7.944 registros originais de atores foram preservados e um novo registro foi adicionado.
 
-O backend de animação, colisão, acertos, bolsa e troca de alvo de cada monstro ainda está pendente. A flag de capacidades nativas permanece desativada; não foi publicada uma release jogável dessa geração.
+Continuam pendentes o teste real de criação/renderização/colisão e a integração nativa dos eventos de coleta, dano e IA. A presença experimental usa protocolo 1 e não declara as capacidades completas exigidas pelo servidor Gen1. Nenhuma criação foi executada no processo do usuário durante a análise.
 
 Referências fixadas: [Savage Wind](https://github.com/Revivedx/SavageWindRecomp/tree/740b18025fe11ba03c117dbb56668db304b5043e) e [zeldaret/botw](https://github.com/zeldaret/botw/tree/a0fae63049c578629fdcc8173d8ef888dd4d9e5a), especialmente ActorCreator, PlayerInfo, InstParamPack e a tabela de funções. A versão 1.5.0 é referência de interpretação; os fingerprints foram obtidos e verificados no módulo 1.9.0 fornecido.

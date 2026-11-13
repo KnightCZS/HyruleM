@@ -67,7 +67,7 @@ func findGameWindow(pid int) uintptr {
 func (u *multiplayerUI) tick() {
 	for i := range u.slots {
 		s := &u.slots[i]
-		if s.bridge == nil {
+		if s.bridge == nil || s.bridge.NativePreview() {
 			if s.overlay != 0 {
 				showWindow.Call(s.overlay, 0)
 			}

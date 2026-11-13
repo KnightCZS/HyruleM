@@ -1,5 +1,11 @@
 # Backend nativo: contrato e bloqueios
 
+## Adaptador experimental de presença
+
+O código em [`native/`](../../native/README.md) implementa a primeira fila de operações nativas no ciclo de atualização do jogador, com criação assíncrona de um ator separado, referência retida, transformação/animação e remoção. Os recursos são gerados privadamente a partir da instalação do usuário. O build inclui o gerador modificado e exige reconstrução da biblioteca local.
+
+Esse caminho usa o protocolo 1 para testar presença. Não atende ao contrato completo abaixo: os hooks de coleta, dano e autoridade de monstros permanecem pendentes. `hm_caps` mantém as capacidades Gen1 desativadas. A máquina de estados e a preservação da CPU foram testadas com memória sintética; a inicialização/aparência do ator ainda exige validação no jogo.
+
 ## Pesquisa sobre o runtime
 
 Referência fixada: [Revivedx/SavageWindRecomp, commit 740b180](https://github.com/Revivedx/SavageWindRecomp/tree/740b18025fe11ba03c117dbb56668db304b5043e), versão 0.5.3-alpha.5.
