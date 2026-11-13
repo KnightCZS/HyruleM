@@ -1,0 +1,23 @@
+# Generated binaries and local data
+launcher/dist/
+*.exe
+*.zip
+*.dll
+*.log
+__pycache__/
+# Never commit game dumps, generated game code or personal saves
+extracted/
+romfs/
+exefs/
+save/
+save-profiles/
+hyrule-sandbox*/
+hyrulem/
+*.sav
+*.bfttf
+*.xci
+*.nsp
+*.rpx
+launch-flags.txt
+config.json
+multiplayer.json

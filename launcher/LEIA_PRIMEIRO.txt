@@ -1,0 +1,48 @@
+HYRULEM 0.4.0 - MULTIPLAYER VISUAL EXPERIMENTAL
+
+Execute HyruleLauncher.exe e clique Multiplayer - 2 jogadores.
+Pacote de atualizacao: reaproveita o Savage Wind instalado; nao inclui jogo.
+No mesmo PC: IP 127.0.0.1, porta 5050, Hospedar; conectar clientes 1 e 2.
+Em cada jogo escolha Continuar, fique parado e aguarde a sincronizacao.
+Depois clique Organizar 2 janelas e olhe na direcao do outro jogador.
+
+IMPORTANTE: o avatar remoto e procedural, desenhado sobre a janela.
+Ainda nao e um segundo Link/ator nativo do jogo. Nao tem colisao ou
+oclusao por paredes. Primeiro teste em Hateno, mundo aberto, janela/SDR.
+A integracao ainda precisa ser confirmada em duas sessoes reais de BOTW.
+
+Leia README.md e docs/MULTIPLAYER.md para instrucoes e limitacoes.
+O launcher usa configuracao/caminhos ja salvos pelas versoes anteriores.
+Saves originais preservados; dois clientes recebem copias separadas.
+
+HyruleM-Server.exe e opcional (Hospedar ja inicia o servidor).
+
+INSTRUCOES ANTERIORES DO LAUNCHER:
+
+HYRULE LAUNCHER 0.3.0 — WINDOWS X64
+
+ATUALIZAR O SANDBOX EXISTENTE
+1. Feche a recomp e o launcher anterior.
+2. Extraia este ZIP e abra HyruleLauncher.exe.
+3. Seus caminhos e seu save atual serão reaproveitados.
+4. Role até Sandbox e deixe Campanha bloqueada · secundárias e santuários.
+5. Use Jogar sandbox e aguarde a preparação inicial do filtro.
+6. Na recomp, escolha Continuar.
+
+NÃO precisa usar Novo + backup para atualizar.
+O filtro é gerado no seu PC a partir do jogo já instalado. Não recompila a DLL.
+
+O filtro retira missões principais das tabelas, substitui os fluxos narrativos
+identificados e remove suas EventTags de mapa. Preserva secundárias,
+missões de santuário e eventos comuns de gameplay.
+Não força desbloqueio de runas ou torres.
+
+Se houver problema, escolha Compatibilidade · manter campanha original para
+abrir o mesmo sandbox sem o filtro. Use Abrir logs para gerar o diagnóstico.
+
+A execução do filtro 0.3 dentro do BOTW real ainda precisa de confirmação.
+Veja FILTRO_CAMPANHA.md para detalhes, configuração e limites.
+
+O pacote de atualização não inclui a recomp; reaproveita sua instalação.
+O pacote completo oferece Instalar Savage Wind > Preparar jogo.
+O jogo não está incluído. O launcher não exige Python, Node ou Go.

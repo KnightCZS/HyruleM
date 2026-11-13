@@ -1,0 +1,48 @@
+name: Build and test HyruleM
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: launcher/go.mod
+          cache: false
+      - run: go test -race -count=1 ./internal/...
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: launcher
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: launcher/go.mod
+          cache: false
+      - name: Test including Windows directory junctions
+        run: go test -count=1 ./internal/...
+      - name: Build native Windows applications
+        run: |
+          $env:CGO_ENABLED='0'
+          go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/HyruleLauncher.exe ./cmd/hyrule
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-s -w' -o dist/HyruleM-Server.exe ./cmd/hyrulem-server
+          exit $LASTEXITCODE
+      - name: Package update without game or runtime
+        run: python tools/package.py --update-only --out dist/HyruleM_0.4.0_Windows_x64.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyruleM-0.4.0-Windows-x64
+          path: launcher/dist/HyruleM_0.4.0_Windows_x64.zip
+          if-no-files-found: error
