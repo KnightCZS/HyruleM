@@ -319,6 +319,7 @@ func main() {
 	updateWindow.Call(a.window)
 	setTimer.Call(a.window, 1, 1000, 0)
 	if a.smokePath != "" {
+		a.openMultiplayer()
 		setTimer.Call(a.window, 2, 2500, 0)
 	}
 	var m msg
@@ -872,7 +873,11 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 		return 0
 	case 0x113:
 		if w == 2 && a.smokePath != "" {
-			_ = os.WriteFile(a.smokePath, []byte("window-created\ncontrols="+fmt.Sprint(len(a.controls))+"\nstatus="+a.status+"\n"), 0600)
+			mpCount := 0
+			if a.multiplayer != nil && a.multiplayer.window != 0 {
+				mpCount = len(a.multiplayer.controls)
+			}
+			_ = os.WriteFile(a.smokePath, []byte("window-created\ncontrols="+fmt.Sprint(len(a.controls))+"\nmultiplayer-controls="+fmt.Sprint(mpCount)+"\nstatus="+a.status+"\n"), 0600)
 			destroyWindow.Call(h)
 			return 0
 		}

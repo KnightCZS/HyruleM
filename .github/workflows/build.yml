@@ -39,6 +39,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go build -trimpath -ldflags '-s -w' -o dist/HyruleM-Server.exe ./cmd/hyrulem-server
           exit $LASTEXITCODE
+      - name: Smoke test native launcher and multiplayer menu
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'hyrulem-ui-smoke.txt'
+          $process = Start-Process -FilePath './dist/HyruleLauncher.exe' -ArgumentList '--smoke-test', $report -PassThru
+          if (-not $process.WaitForExit(15000)) {
+            Stop-Process -Id $process.Id
+            throw 'Launcher smoke test timed out'
+          }
+          $result = Get-Content $report -Raw
+          Write-Output $result
+          if ($result -notmatch 'multiplayer-controls=([1-9][0-9]+)') { throw 'Multiplayer menu did not initialize' }
       - name: Package update without game or runtime
         run: python tools/package.py --update-only --out dist/HyruleM_0.4.0_Windows_x64.zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
