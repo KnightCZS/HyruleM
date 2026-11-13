@@ -87,8 +87,9 @@ func PrepareMultiplayerInstance(c Config, slot, port int, baseEnv []string) (Mul
 	if err != nil {
 		return result, fmt.Errorf("não foi possível vincular extracted: %w", err)
 	}
-	real, err := filepath.EvalSymlinks(link)
-	if err != nil || !SamePath(real, target) {
+	linkedInfo, linkErr := os.Stat(link)
+	targetInfo, targetErr := os.Stat(target)
+	if linkErr != nil || targetErr != nil || !os.SameFile(linkedInfo, targetInfo) {
 		return result, fmt.Errorf("o vínculo extracted desta instância aponta para outra instalação; pasta preservada: %s", link)
 	}
 	// Only ordinary bounded settings files are copied once. Launch flags and the

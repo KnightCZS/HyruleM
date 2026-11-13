@@ -38,9 +38,10 @@ func TestMultiplayerInstancesIsolateSavesAndSettings(t *testing.T) {
 		if _, e := os.Lstat(filepath.Join(inst.Config.DataDir, "launch-flags.txt")); !os.IsNotExist(e) {
 			t.Fatal("copied launch flags")
 		}
-		real, e := filepath.EvalSymlinks(filepath.Join(inst.Config.DataDir, "extracted"))
-		if e != nil || !SamePath(real, filepath.Join(c.DataDir, "extracted")) {
-			t.Fatal("game assets not linked", real, e)
+		linked, e := os.Stat(filepath.Join(inst.Config.DataDir, "extracted"))
+		target, targetErr := os.Stat(filepath.Join(c.DataDir, "extracted"))
+		if e != nil || targetErr != nil || !os.SameFile(linked, target) {
+			t.Fatal("game assets not linked", e, targetErr)
 		}
 	}
 	path := filepath.Join(sandboxSlot(a.Config), "game_data.sav")
