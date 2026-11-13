@@ -90,6 +90,25 @@ jobs:
           cp ../native/README.md ../preview/LEIA-ME.md
           cp ../native/Iniciar-Nativo.cmd ../native/Instalar-Nativo.cmd ../preview/
           cp ../native/Install-NativePreview.ps1 ../preview/
+      - name: Verify installer with the existing official runtime dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'official-runtime.zip'
+          Invoke-WebRequest 'https://github.com/Revivedx/SavageWindRecomp/releases/download/v0.5.3-alpha.5/SavageWind-0.5.3-alpha.5-windows.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '667c4909a8ed72c002e5aa40a00d38720627eebf48b860beb5cd8805421f1285') { throw 'Official runtime hash mismatch' }
+          $root = Join-Path $env:RUNNER_TEMP 'native-install-test'
+          Expand-Archive -LiteralPath $archive -DestinationPath $root
+          $target = Join-Path $root 'Savage Wind'
+          $exe = Join-Path $target 'savagewind.exe'
+          $original = (Get-FileHash $exe -Algorithm SHA256).Hash
+          $sentinel = Join-Path $target 'save/synthetic-preservation.txt'
+          New-Item -ItemType Directory -Path (Split-Path $sentinel) -Force | Out-Null
+          Set-Content -LiteralPath $sentinel -Value 'synthetic save sentinel'
+          & ./preview/Install-NativePreview.ps1 -RuntimeDir $target
+          $backup = Get-ChildItem -LiteralPath $target -Directory -Filter 'HyruleM-runtime-backup-*' | Select-Object -First 1
+          if (-not $backup -or (Get-FileHash (Join-Path $backup.FullName 'savagewind.exe') -Algorithm SHA256).Hash -ne $original) { throw 'Original runtime backup missing' }
+          if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne 'synthetic save sentinel') { throw 'Unrelated save file changed' }
       - name: Package experimental runtime update without game assets
         shell: pwsh
         run: |

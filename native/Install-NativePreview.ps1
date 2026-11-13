@@ -38,6 +38,14 @@ try {
         $installed += $item.Name
         Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse
     }
+    # This entry point exits before graphics or game initialization. It proves
+    # that the user's existing runtime DLLs can load the new executable.
+    $check = Start-Process -FilePath $exe -ArgumentList '--update-health' -WorkingDirectory $RuntimeDir -WindowStyle Hidden -PassThru
+    if (-not $check.WaitForExit(15000)) {
+        Stop-Process -Id $check.Id -Force
+        throw 'O teste do runtime excedeu 15 segundos. Restaurando o backup.'
+    }
+    if ($check.ExitCode -ne 73) { throw "O runtime nao carregou suas dependencias (codigo $($check.ExitCode)). Restaurando o backup." }
 } catch {
     foreach ($name in $installed) {
         $target = Join-Path $RuntimeDir $name
