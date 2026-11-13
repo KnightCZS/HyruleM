@@ -1,5 +1,16 @@
 # Histórico do HyruleM
 
+## Em desenvolvimento — geração nativa 1
+
+- Servidor separado, protocolo 2, dois jogadores, IP/porta configuráveis, estado de vida/inventário individual e recuperação da sessão em memória por dez minutos.
+- Coleta exclusiva, equipamento/descarte próprios, ataque corpo a corpo com alcance/cooldown e durabilidade individual no servidor.
+- Criatura seleciona o jogador mais próximo em alcance; transferência de autoridade invalida mensagens antigas e preserva o cooldown.
+- Interface validada para futuro backend na thread do jogo; diagnóstico Windows de somente leitura e artefato de desenvolvimento separado no Actions.
+- Testes concorrentes, transporte TCP real, privacidade entre destinatários, mundos distintos e negociação de capacidades.
+- **Pendente:** implementar e validar criação de Link, animação, colisão, bolsa/vida e IA no runtime BOTW. Não é release jogável com atores nativos. A versão estável segue em 0.4.2.
+
+[Estado, diagnóstico e limitações Gen1](docs/gen1/README.md).
+
 ## 0.4.2 — 13/11/2026 · hotfix
 
 ### Correções

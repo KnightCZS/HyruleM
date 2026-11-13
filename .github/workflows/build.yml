@@ -43,7 +43,29 @@ jobs:
           go build -trimpath -ldflags '-s -w -H=windowsgui' -o dist/HyruleLauncher.exe ./cmd/hyrule
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go build -trimpath -ldflags '-s -w' -o dist/HyruleM-Server.exe ./cmd/hyrulem-server
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-s -w' -o dist/HyruleM-Gen1-Server.exe ./cmd/hyrulem-gen1-server
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-s -w' -o dist/HyruleM-Native-Probe.exe ./cmd/hyrulem-native-probe
           exit $LASTEXITCODE
+      - name: Check Gen1 development commands
+        run: |
+          ./dist/HyruleM-Gen1-Server.exe --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./dist/HyruleM-Native-Probe.exe --help
+          exit $LASTEXITCODE
+      - name: Package native integration development tools
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/gen1-development | Out-Null
+          Copy-Item dist/HyruleM-Gen1-Server.exe, dist/HyruleM-Native-Probe.exe dist/gen1-development/
+          Copy-Item ../docs/gen1/* dist/gen1-development/
+          Copy-Item LICENSE, GO_LICENSE.txt dist/gen1-development/
+          Compress-Archive -Path dist/gen1-development/* -DestinationPath dist/HyruleM-Gen1-Development-Windows-x64.zip -Force
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: HyruleM-Gen1-Development-Windows-x64
+          path: launcher/dist/HyruleM-Gen1-Development-Windows-x64.zip
+          if-no-files-found: error
       - name: Smoke test native launcher and multiplayer menu
         run: |
           $report = Join-Path $env:RUNNER_TEMP 'hyrulem-ui-smoke.txt'
