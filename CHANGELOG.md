@@ -2,6 +2,9 @@
 
 ## Em desenvolvimento — geração nativa 1
 
+- Diagnóstico `gen1-diag.2`: corrige o caminho do log de processo do launcher, respeita configuração personalizada e separação de clientes; relatórios com data/hora e botão `Diagnosticar.cmd`.
+- Análise estática do módulo 1.9.0 enviado: mapa de 14 funções, fingerprints e cinco relações de chamada verificadas. Inspeção somente de leitura confirma o código carregado antes de acessar objetos/vida do Link e contagem de atores. Isso não habilita criação de atores.
+
 - Servidor separado, protocolo 2, dois jogadores, IP/porta configuráveis, estado de vida/inventário individual e recuperação da sessão em memória por dez minutos.
 - Coleta exclusiva, equipamento/descarte próprios, ataque corpo a corpo com alcance/cooldown e durabilidade individual no servidor.
 - Criatura seleciona o jogador mais próximo em alcance; transferência de autoridade invalida mensagens antigas e preserva o cooldown.

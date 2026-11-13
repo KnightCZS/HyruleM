@@ -29,15 +29,18 @@ type ProbeCommand struct {
 	Error   string          `json:"error,omitempty"`
 }
 type Report struct {
-	Schema       int                `json:"schema"`
-	Created      string             `json:"created_utc"`
-	Slot         int                `json:"slot"`
-	Port         int                `json:"control_port"`
-	NativeReady  bool               `json:"native_ready"`
-	NativeError  string             `json:"native_error,omitempty"`
-	Capabilities *gen1.Capabilities `json:"capabilities,omitempty"`
-	Files        []FileMetadata     `json:"files"`
-	Queries      []ProbeCommand     `json:"queries"`
+	Schema        int                `json:"schema"`
+	ProbeVersion  string             `json:"probe_version"`
+	Created       string             `json:"created_utc"`
+	Slot          int                `json:"slot"`
+	Port          int                `json:"control_port"`
+	ControlSource string             `json:"control_source,omitempty"`
+	NativeReady   bool               `json:"native_ready"`
+	NativeError   string             `json:"native_error,omitempty"`
+	Capabilities  *gen1.Capabilities `json:"capabilities,omitempty"`
+	Files         []FileMetadata     `json:"files"`
+	Queries       []ProbeCommand     `json:"queries"`
+	Inspection    *NativeInspection  `json:"native_inspection,omitempty"`
 }
 
 // FileInfo exports metadata only, never the game module or save bytes.
@@ -83,10 +86,39 @@ func ControlPort(log string) (int, error) {
 	return p, nil
 }
 
+func discoverPort(cfg core.Config, appRoot string, slot int) (int, string, error) {
+	private := cfg
+	name := "sandbox-processo.log"
+	if slot > 0 {
+		private.DataDir = core.InstanceDataDir(cfg, slot-1)
+		name = fmt.Sprintf("multiplayer-processo-%d.log", slot)
+	}
+	// Session.Start captures stdout/stderr in the launcher's logs directory.
+	// The runtime's optional own log is only a fallback, not the primary source.
+	paths := []string{}
+	if appRoot != "" {
+		paths = append(paths, filepath.Join(appRoot, "logs", name))
+	}
+	paths = append(paths, core.RuntimeLog(private))
+	for _, path := range paths {
+		if port, err := ControlPort(core.ReadLogTail(path, 256*1024)); err == nil {
+			return port, filepath.Base(path), nil
+		}
+	}
+	return 0, "", fmt.Errorf("porta do cliente %d não encontrada; abra essa instância pelo launcher e aguarde carregar, ou informe --port", slot)
+}
+
 // Probe only calls this fixed read-only command list. It never starts the game,
 // prepares a sandbox, writes memory, grants items or edits a save.
 func Probe(ctx context.Context, cfg core.Config, slot, port int) (Report, error) {
-	r := Report{Schema: 1, Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
+	root, _ := core.AppDir()
+	return ProbeAt(ctx, cfg, root, slot, port)
+}
+
+// ProbeAt uses the folder of the selected config.json for launcher capture logs,
+// including when --config points outside the default AppDir.
+func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port int) (Report, error) {
+	r := Report{Schema: 1, ProbeVersion: "gen1-diag.2", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
 	if cfg.DataDir == "" || slot < 0 || slot > 2 {
 		return r, fmt.Errorf("configuração/pasta de dados ou instância inválida")
 	}
@@ -103,17 +135,20 @@ func Probe(ctx context.Context, cfg core.Config, slot, port int) (Report, error)
 	}
 	if port == 0 {
 		var err error
-		port, err = ControlPort(core.ReadLogTail(filepath.Join(data, "savagewind.log"), 256*1024))
+		port, r.ControlSource, err = discoverPort(cfg, appRoot, slot)
 		if err != nil {
 			r.NativeError = err.Error()
 			return r, nil
 		}
+	} else {
+		r.ControlSource = "--port"
 	}
 	if port < 1024 || port > 65535 {
 		return r, fmt.Errorf("porta deve ficar entre 1024 e 65535")
 	}
 	r.Port = port
 	c := core.ControlClient{Port: port, Timeout: 2 * time.Second}
+	playerLoaded := false
 	for _, command := range []string{"version", "help", "sites", "mem regions", "pos", "camera", "hm_caps"} {
 		if ctx.Err() != nil {
 			r.NativeError = ctx.Err().Error()
@@ -125,6 +160,9 @@ func Probe(ctx context.Context, cfg core.Config, slot, port int) (Report, error)
 			q.Error = err.Error()
 		}
 		r.Queries = append(r.Queries, q)
+		if command == "pos" && err == nil {
+			playerLoaded = true
+		}
 		if command == "version" && err != nil {
 			r.NativeError = "Controle indisponível; mantenha a janela do jogo renderizando. " + err.Error()
 			break
@@ -144,6 +182,9 @@ func Probe(ctx context.Context, cfg core.Config, slot, port int) (Report, error)
 				r.NativeReady = true
 			}
 		}
+	}
+	if playerLoaded && ctx.Err() == nil {
+		r.Inspection = inspectNative(ctx, r.Files[1].SHA256, controlMemory{client: c})
 	}
 	return r, nil
 }

@@ -16,6 +16,8 @@ Os testes são do servidor, transporte TCP, proteção da interface nativa e dia
 - Runtime incompleto ou simulado não passa como nativo; snapshot não inicializado não limpa a bolsa; estado pessoal de outro destinatário não pode ser aplicado.
 - Planos não duplicam o ator local, não criam remoto em outro mapa e ativam IA apenas no dono vigente.
 - Diagnóstico usa apenas a lista fixa de consultas e metadados; NSO sintético verifica hash/Build ID sem copiar bytes ao relatório; falta de `hm_caps` é reportada como incompatibilidade.
+- Regressão da detecção de porta no arquivo que o launcher realmente captura, uso de `--config`, separação de logs dos clientes 1/2 e log de sandbox.
+- Inspeção nativa limitada: módulo desconhecido não dispara leituras; código divergente interrompe a cadeia; ponteiro nulo não é seguido; decoder de vida rejeita chamadas e registradores estranhos. Os testes usam instruções sintéticas próprias, sem bytes extraídos do jogo.
 
 ## Comandos
 
@@ -28,4 +30,4 @@ O Actions executa também os testes no Windows, a regressão da interface 0.4.2 
 
 ## Testes reais pendentes
 
-Criação e descarte de Link nativo, animação, colisão, eventos reais de acerto/coleta, reconciliação da bolsa e vida, troca do alvo real de IA, estabilidade de GPU/runtime, dois jogos reais simultâneos e LAN/Radmin. Falta o módulo `extracted/exefs/main` da instalação para investigar os pontos nativos. Não há evidência desses itens concluídos.
+Criação e descarte de Link nativo, animação, colisão, eventos reais de acerto/coleta, reconciliação da bolsa e vida, troca do alvo real de IA, estabilidade de GPU/runtime, dois jogos reais simultâneos e LAN/Radmin. O módulo fornecido já foi analisado estaticamente; a inspeção ao vivo e as chamadas de criação ainda precisam de validação. Não há evidência desses itens concluídos.

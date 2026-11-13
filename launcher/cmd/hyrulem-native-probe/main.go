@@ -16,7 +16,7 @@ func run() error {
 	config := flag.String("config", "", "config.json do launcher; padrão: configuração já salva")
 	slot := flag.Int("slot", 1, "0 = sandbox, 1/2 = instância multiplayer")
 	port := flag.Int("port", 0, "porta de controle local; 0 procura no log da instância")
-	out := flag.String("out", "HyruleM-native-report.json", "arquivo de diagnóstico a criar (não sobrescreve)")
+	out := flag.String("out", "", "arquivo de diagnóstico; padrão com data/hora, sem sobrescrever")
 	flag.Parse()
 	if *config == "" {
 		dir, err := launcher.AppDir()
@@ -31,9 +31,12 @@ func run() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	report, err := nativebridge.Probe(ctx, cfg, *slot, *port)
+	report, err := nativebridge.ProbeAt(ctx, cfg, filepath.Dir(*config), *slot, *port)
 	if err != nil {
 		return err
+	}
+	if *out == "" {
+		*out = "HyruleM-native-report-" + time.Now().UTC().Format("20060102-150405") + ".json"
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {

@@ -50,15 +50,19 @@ Esse comando é apenas para desenvolver/testar o protocolo. O catálogo incluíd
 
 ## Diagnóstico para continuar a integração
 
-1. Abra uma instância pelo multiplayer 0.4.2, escolha Continuar e mantenha a janela renderizando.
-2. Execute `HyruleM-Native-Probe.exe --slot 1`. Para a outra instância use `--slot 2 --out HyruleM-native-client2.json`; `--slot 0` consulta o sandbox normal. O diagnóstico não sobrescreve um relatório já existente.
-3. Envie o `HyruleM-native-report.json` gerado. Se a porta não aparecer no log, informe `--port N`, usando a porta **de controle local** registrada no `savagewind.log`, e não a porta pública do servidor.
+1. Abra uma instância pelo multiplayer 0.4.2, escolha Continuar e mantenha a janela renderizando, sem minimizar.
+2. Abra `Diagnosticar.cmd` na pasta extraída. Ele executa o diagnóstico do cliente 1 e mantém a janela aberta. Pelo terminal, o equivalente é `HyruleM-Native-Probe.exe --slot 1`.
+3. Envie o novo `HyruleM-native-report-DATA-HORA.json` gerado nessa pasta. Para a outra instância use `--slot 2`; `--slot 0` consulta o sandbox normal. O diagnóstico não sobrescreve relatórios existentes.
 
-O diagnóstico só lê metadados/hash do executável e de `extracted/exefs/main`, e consulta `version`, `help`, `sites`, `mem regions`, `pos`, `camera`, `hm_caps`. Não faz escrita de memória, não cria itens, não prepara sandbox e não lê saves ou o inventário. O relatório não inclui bytes do jogo nem caminhos completos do computador. Ele pode conter coordenadas e endereços de memória locais.
+O diagnóstico `gen1-diag.2` corrige a detecção de porta: a saída do processo multiplayer fica em `logs/multiplayer-processo-N.log` junto da configuração do launcher. No sandbox fica em `logs/sandbox-processo.log`. O log próprio do runtime é somente uma alternativa. `--config` também muda a pasta onde se procuram esses logs; um cliente nunca usa o log do outro. `--port N` continua disponível para uma porta de controle explícita, diferente da porta pública do servidor.
+
+O diagnóstico lê metadados/hash do executável e de `extracted/exefs/main`, e consulta `version`, `help`, `sites`, `mem regions`, `pos`, `camera`, `hm_caps`. Para o módulo 1.9.0 já analisado, com personagem carregado, compara fingerprints de três funções em execução e então lê um conjunto limitado de ponteiros: PlayerInfo, ator local, getter de vida e ActorCreator/contagem de atores. Registra a vida somente se o getter for uma soma simples validável. O relatório não inclui as instruções lidas.
+
+Não faz escrita de memória, não cria itens, não prepara sandbox e não lê saves ou inventário. Um módulo diferente, código divergente ou ponteiro inválido interrompe a inspeção. O relatório pode conter vida do jogador, coordenadas e endereços de memória locais. `functions_verified` é somente a comparação das funções lidas; **não habilita nem comprova criação de atores ou multiplayer nativo**.
 
 É esperado que o Savage Wind oficial responda **unknown command** para `hm_caps`: isso identifica a falta do backend. Um relatório não torna o backend disponível.
 
-Para investigar criação de atores e alvo de IA, o arquivo necessário é **somente `extracted/exefs/main`** da instalação utilizada, acompanhado do relatório. Nenhum dump completo é necessário. Esse módulo deve ser enviado por arquivo/canal privado para análise, sem incluí-lo no Git público. Não adivinhar offsets com base em Cemu/Wii U: este runtime usa BOTW Switch 1.9.0.
+O usuário já forneceu o módulo da instalação, e a análise estática confirmou o build 1.9.0 e os pontos descritos em [ANALISE_190.md](ANALISE_190.md). Os arquivos enviados permanecem fora do Git público. A próxima confirmação depende da inspeção no processo em execução e de implementar/validar o backend, sem usar offsets de Cemu/Wii U.
 
 ## Limites atuais
 

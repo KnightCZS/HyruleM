@@ -141,9 +141,30 @@ func TestProbeCollectsMetadataAndOnlyReadOnlyCommands(t *testing.T) {
 	}()
 	_, port, _ := net.SplitHostPort(listener.Addr().String())
 	n, _ := strconv.Atoi(port)
-	report, err := Probe(context.Background(), core.Config{DataDir: dir}, 0, n)
+	appRoot := filepath.Join(dir, "launcher-state")
+	if err := os.MkdirAll(filepath.Join(appRoot, "logs"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Regression: 0.4.2 puts captured runtime output here, not in DataDir.
+	log := fmt.Sprintf("[control] listening on 127.0.0.1:%d\n", n)
+	if err := os.WriteFile(filepath.Join(appRoot, "logs", "multiplayer-processo-1.log"), []byte(log), 0600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := ProbeAt(context.Background(), core.Config{DataDir: dir}, appRoot, 1, 0)
 	if err != nil || report.NativeReady || !strings.Contains(report.NativeError, "unknown command") {
 		t.Fatal("unsupported native runtime reported ready", report, err)
+	}
+	if report.Port != n || report.ControlSource != "multiplayer-processo-1.log" {
+		t.Fatal("did not detect launcher capture", report)
+	}
+	if _, _, err := discoverPort(core.Config{DataDir: dir}, appRoot, 2); err == nil {
+		t.Fatal("slot 2 reused slot 1 endpoint")
+	}
+	if err := os.WriteFile(filepath.Join(appRoot, "logs", "sandbox-processo.log"), []byte(log), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if port, source, err := discoverPort(core.Config{DataDir: dir}, appRoot, 0); err != nil || port != n || source != "sandbox-processo.log" {
+		t.Fatal("sandbox capture not found", port, source, err)
 	}
 	want := []string{"version", "help", "sites", "mem regions", "pos", "camera", "hm_caps"}
 	if got := <-commands; !reflect.DeepEqual(got, want) {
