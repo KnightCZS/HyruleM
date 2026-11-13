@@ -9,7 +9,7 @@ import (
 )
 
 func syntheticLink() []byte {
-	keys := []string{"ProfileUser", "AIProgramUser", "AIScheduleUser", "AttentionUser", "AwarenessUser", "BoneControlUser", "ChemicalUser", "ElinkUser", "SlinkUser", "XlinkUser"}
+	keys := []string{"ProfileUser", "AIProgramUser", "AIScheduleUser", "AttentionUser", "AwarenessUser", "BoneControlUser", "ChemicalUser", "ElinkUser", "SlinkUser", "XlinkUser", "PhysicsUser", "DamageParamUser", "RgBlendWeightUser", "RgConfigListUser"}
 	d := make([]byte, 0x44+len(keys)*8+8)
 	e := binary.LittleEndian
 	copy(d, "AAMP")

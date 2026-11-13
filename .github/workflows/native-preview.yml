@@ -88,7 +88,7 @@ jobs:
           cp runtime/cpu.h runtime/simd.h runtime/simd_fp.h runtime/simd_softfma.h runtime/gamelib.h tools/gamelib_entry.c runtime/hle/hle_symbols.txt ../preview/runtime-update/gamelib-src/
           cp LICENSE ../preview/runtime-update/SavageWind-LICENSE.txt
           cp ../native/README.md ../preview/LEIA-ME.md
-          cp ../native/Iniciar-Nativo.cmd ../preview/
+          cp ../native/Iniciar-Nativo.cmd ../native/Instalar-Nativo.cmd ../preview/
           cp ../native/Install-NativePreview.ps1 ../preview/
       - name: Package experimental runtime update without game assets
         shell: pwsh

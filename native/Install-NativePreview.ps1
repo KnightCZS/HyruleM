@@ -1,5 +1,24 @@
-param([Parameter(Mandatory=$true)][string]$RuntimeDir)
+param([string]$RuntimeDir = '')
 $ErrorActionPreference = 'Stop'
+if (-not $RuntimeDir) {
+    $configPath = Join-Path $env:LOCALAPPDATA 'HyruleLauncher/config.json'
+    if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+        try {
+            $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+            if ($config.Executable -and (Test-Path -LiteralPath $config.Executable -PathType Leaf)) {
+                $RuntimeDir = Split-Path -Parent $config.Executable
+            }
+        } catch { $RuntimeDir = '' }
+    }
+}
+if (-not $RuntimeDir) {
+    Add-Type -AssemblyName System.Windows.Forms
+    $picker = New-Object System.Windows.Forms.FolderBrowserDialog
+    $picker.Description = 'Selecione a pasta onde esta savagewind.exe'
+    if ($picker.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { exit 1 }
+    $RuntimeDir = $picker.SelectedPath
+    $picker.Dispose()
+}
 $RuntimeDir = (Resolve-Path -LiteralPath $RuntimeDir).Path
 $exe = Join-Path $RuntimeDir 'savagewind.exe'
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Selecione a pasta da instalação existente do Savage Wind.' }

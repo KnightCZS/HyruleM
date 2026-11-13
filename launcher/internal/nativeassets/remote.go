@@ -15,7 +15,7 @@ const InfoPath = "Actor/ActorInfo.product.sbyml"
 const RSTBPath = "System/Resource/ResourceSizeTable.product.srsizetable"
 
 // BuildRemote is experimental: resource validation does not prove that the
-// engine can initialize a DemoNPC with Link's model, AS list and physics.
+// engine can initialize a DemoNPC with Link's model and AS list.
 func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, error) {
 	bg, err := gamefmt.ReadSARC(title)
 	if err != nil {
@@ -41,6 +41,9 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		"ProfileUser": "DemoNPC", "AIProgramUser": "Dummy", "AIScheduleUser": "Dummy",
 		"AttentionUser": "Dummy", "AwarenessUser": "Dummy", "BoneControlUser": "Dummy",
 		"ChemicalUser": "Dummy", "ElinkUser": "Dummy", "SlinkUser": "Dummy", "XlinkUser": "Dummy",
+		// A Player controller/damage handler may assume the concrete local Player
+		// class. The presence test deliberately has no collision/damage component.
+		"PhysicsUser": "Dummy", "DamageParamUser": "Dummy", "RgBlendWeightUser": "Dummy", "RgConfigListUser": "Dummy",
 	})
 	if err != nil {
 		return nil, err

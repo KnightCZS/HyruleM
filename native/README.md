@@ -7,7 +7,7 @@ O modelo é montado localmente com os recursos do seu BOTW Switch 1.9.0. O pacot
 ## Instalação do teste
 
 1. Feche os dois jogos. Extraia este pacote em uma pasta própria.
-2. No PowerShell, execute `powershell -ExecutionPolicy Bypass -File .\Install-NativePreview.ps1 -RuntimeDir 'C:\caminho\Savage Wind'`, apontando para sua instalação existente do Savage Wind 0.5.3-alpha.5. O instalador guarda backup dos componentes substituídos e preserva jogo, configurações e saves.
+2. Abra **Instalar-Nativo.cmd**. Ele usa a instalação já salva no launcher; se não encontrar, permite selecionar a pasta do Savage Wind 0.5.3-alpha.5. O instalador guarda backup dos componentes substituídos e preserva jogo, configurações e saves. Também aceita `powershell -ExecutionPolicy Bypass -File .\Install-NativePreview.ps1 -RuntimeDir 'C:\caminho\Savage Wind'`.
 3. Abra a configuração do Savage Wind e deixe a biblioteca do jogo ser reconstruída com o gerador atualizado. Não renomeie nem edite o arquivo `.id` para forçar compatibilidade.
 4. Abra **Iniciar-Nativo.cmd**. Use o menu multiplayer existente, IP, porta e nomes. O primeiro lançamento gera automaticamente o overlay privado; o segundo reutiliza esse overlay e continua com save e porta de controle próprios.
 5. Inicie o servidor de presença existente (protocolo 1, porta padrão 5050) e conecte os dois clientes. Escolha Continuar nos jogos e aguarde o posicionamento em Hateno. O modo nativo não desenha o boneco externo da versão anterior.
@@ -19,7 +19,7 @@ Fechar a conexão remove apenas o ator administrado pelo HyruleM. Um timeout tam
 ## Validação e limites
 
 - Validados: assinaturas únicas no módulo fornecido; leitura e escrita dos recursos conferidas por parser independente; os 7.944 registros originais do ActorInfo permanecem intactos; testes com memória sintética para fila, referências, remoção, rejeição de replay e preservação dos registradores.
-- Pendente: inicialização do DemoNPC com os recursos do Link, aparência/animação em GPU real, transições de mapa, colisões e interação.
+- Pendente: inicialização do DemoNPC com os recursos do Link, aparência/animação em GPU real, transições de mapa, colisões e interação. A presença experimental não carrega o controlador de física nem o manipulador de dano do Player local.
 - Vida, inventário e regras de alvo já têm testes no servidor autoritativo, mas ainda não estão ligados aos eventos nativos de combate/coleta/IA. O teste usa o protocolo de presença, que não sincroniza esses sistemas.
 
 Código do runtime base: [Savage Wind Recomp](https://github.com/Revivedx/SavageWindRecomp), commit `740b18025fe11ba03c117dbb56668db304b5043e`, licença MIT. Aplicação reproduzível: `python native/apply_runtime.py /caminho/do/source`; reconstruir o executável e `make gen-helper`. Nenhum código gerado do jogo deve ser enviado ao repositório.

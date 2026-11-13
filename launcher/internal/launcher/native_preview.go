@@ -70,7 +70,7 @@ func prepareNativePreview(c Config, running bool) error {
 	if err != nil {
 		return err
 	}
-	inputs["policy"] = "remote-demo-npc-v1"
+	inputs["policy"] = "remote-demo-npc-v2-no-player-physics"
 	if !c.KeepCampaign {
 		err = filepath.WalkDir(FilterOverlay(c), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
