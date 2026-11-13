@@ -28,7 +28,7 @@ Para dois PCs, hospede apenas em um; no outro informe o IP desse PC e a mesma po
 
 [Baixar Releases](https://github.com/KnightCZS/HyruleM/releases) · [Alterações, adições e correções](CHANGELOG.md)
 
-[Instruções e diagnóstico](docs/MULTIPLAYER.md) · [Pesquisa e decisões técnicas](docs/PESQUISA_MULTIPLAYER.md) · [Validação](docs/VALIDACAO_0.4.md)
+[Análise das correções 0.4.1](docs/CORRECOES_0.4.1.md) · [Instruções e diagnóstico](docs/MULTIPLAYER.md) · [Pesquisa e decisões técnicas](docs/PESQUISA_MULTIPLAYER.md) · [Validação](docs/VALIDACAO_0.4.md)
 
 ## Compilar
 

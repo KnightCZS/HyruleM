@@ -97,8 +97,3 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           gh release edit $tag --draft=false --latest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release view v0.4.0 --json tagName 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create v0.4.0 --target a3059128a6c1445b872088e166a9fd279f9ed072 --title 'HyruleM 0.4.0 - Protótipo visual inicial (histórico)' --notes-file ../releases/v0.4.0.md --prerelease --latest=false
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
