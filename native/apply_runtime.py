@@ -72,7 +72,7 @@ def apply(root):
     replace_once(root / "runtime/control_game.c", "void control_game_init(void) {",
         "void control_hyrulem_init(void);\nvoid control_game_init(void) {\n    control_hyrulem_init();")
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
-    stamp = {"upstream": UPSTREAM, "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
+    stamp = {"upstream": UPSTREAM, "preview_abi": 2, "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
     (root / "hyrulem-build.json").write_text(json.dumps(stamp, indent=2) + "\n")
 
 

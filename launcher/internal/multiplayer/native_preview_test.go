@@ -31,6 +31,32 @@ type fakeNativeGame struct {
 	active bool
 }
 
+type legacyNativeGame struct{ *fakeNativeGame }
+
+func (f *legacyNativeGame) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
+	if cmd == "hm_caps" {
+		return core.ControlReply{OK: true, Data: json.RawMessage(`{"runtime":"SavageWind-HyruleM","game_version":"1.9.0","preview_abi":1,"native_preview":true}`)}, nil
+	}
+	return f.fakeNativeGame.Command(ctx, cmd)
+}
+
+func TestOldRuntimeRejectionSurvivesDisconnectCleanup(t *testing.T) {
+	t.Setenv(core.NativePreviewEnv, "1")
+	s := testServer(t)
+	c := testClient(t, s, "Local")
+	game := &legacyNativeGame{&fakeNativeGame{fakeGame: &fakeGame{position: Vec3{3400, 236, 2100}}}}
+	b := NewBridge(context.Background(), c, game, 40, nil)
+	defer b.Close()
+	select {
+	case <-b.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("old runtime was not rejected")
+	}
+	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 2") {
+		t.Fatal("specific native failure replaced by generic disconnection", c.Reason())
+	}
+}
+
 func (f *fakeNativeGame) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
 	if !strings.HasPrefix(cmd, "hm_") {
 		return f.fakeGame.Command(ctx, cmd)

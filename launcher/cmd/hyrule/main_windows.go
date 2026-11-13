@@ -236,6 +236,14 @@ var (
 func (a *app) px(n int) int32 { return int32(float64(n) * a.dpi) }
 func main() {
 	runtime.LockOSThread()
+	executable, err := os.Executable()
+	if err == nil {
+		err = core.EnablePackagedNativePreview(executable)
+	}
+	if err != nil {
+		messageBox.Call(0, uintptr(unsafe.Pointer(wide(err.Error()))), uintptr(unsafe.Pointer(wide("HyruleM · pacote nativo"))), 0x10)
+		return
+	}
 	root, err := core.AppDir()
 	if err != nil {
 		return
@@ -258,7 +266,7 @@ func main() {
 	defer ole32.NewProc("CoUninitialize").Call()
 	mutex, _, mutexErr := createMutex.Call(0, 0, uintptr(unsafe.Pointer(wide("Local\\HyruleLauncher-Offline-v01"))))
 	if mutexErr == syscall.Errno(183) {
-		messageBox.Call(0, uintptr(unsafe.Pointer(wide("O Hyrule Launcher já está aberto."))), uintptr(unsafe.Pointer(wide("Hyrule Launcher"))), 0x40)
+		messageBox.Call(0, uintptr(unsafe.Pointer(wide("Já existe um Hyrule Launcher aberto. Feche a janela anterior e reabra o launcher deste pacote para usar a versão nova."))), uintptr(unsafe.Pointer(wide("Hyrule Launcher"))), 0x40)
 		if mutex != 0 {
 			syscall.CloseHandle(syscall.Handle(mutex))
 		}
@@ -942,7 +950,7 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 			if a.multiplayer != nil && a.multiplayer.window != 0 {
 				mpCount = len(a.multiplayer.controls)
 			}
-			_ = os.WriteFile(a.smokePath, []byte("window-created\ncontrols="+fmt.Sprint(len(a.controls))+"\nmultiplayer-controls="+fmt.Sprint(mpCount)+"\nstatus="+a.status+"\n"), 0600)
+			_ = os.WriteFile(a.smokePath, []byte("window-created\ncontrols="+fmt.Sprint(len(a.controls))+"\nmultiplayer-controls="+fmt.Sprint(mpCount)+"\nnative-preview="+os.Getenv(core.NativePreviewEnv)+"\nstatus="+a.status+"\n"), 0600)
 			destroyWindow.Call(h)
 			return 0
 		}

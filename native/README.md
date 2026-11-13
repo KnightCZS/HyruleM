@@ -1,6 +1,6 @@
-# HyruleM 0.5.0-preview.2
+# HyruleM 0.5.0-preview.3
 
-Corrige a rotina que ignorava os pedidos de criação do Link remoto: o callback recebe um controlador de dano, cujo dono fica em `this + 0x18`. A versão anterior comparava o controlador diretamente com o jogador e saía antes da fila. A relação foi conferida no módulo 1.9.0 e os testes reproduzem agora a chamada real.
+Mantém a correção da rotina que ignorava os pedidos de criação do Link remoto: o callback recebe um controlador de dano, cujo dono fica em `this + 0x18`. A implementação inicial comparava o controlador diretamente com o jogador e saía antes da fila. A relação foi conferida no módulo 1.9.0 e os testes reproduzem agora a chamada real.
 
 Inclui a primeira integração de mundo: convergência de vida dos monstros próximos, identificados por hash do mapa, nome e posição original. Uma observação antiga não cura um monstro nem altera a vida do jogador. Conectar deixa de teleportar seu Link; **Reunir em Hateno** é manual.
 
@@ -8,14 +8,19 @@ Inclui a primeira integração de mundo: convergência de vida dos monstros pró
 
 ## Instalar
 
-1. Feche os jogos, extraia o ZIP novo e abra **Instalar-Nativo.cmd**. Ele usa a instalação salva ou permite selecionar o Savage Wind 0.5.3-alpha.5. Guarda backup, testa a abertura do runtime e restaura os componentes anteriores em falha.
-2. Abra a configuração do Savage Wind e **reconstrua a biblioteca do jogo** com o gerador atualizado. Não edite o arquivo `.id` para forçar compatibilidade.
-3. Abra **Iniciar-Nativo.cmd** e o menu multiplayer. Use **Hospedar servidor** do pacote novo, sua interface/IP e a porta escolhida. **Os dois computadores precisam desta versão:** protocolo 3, incompatível com o servidor antigo e com o servidor Gen1 separado.
-4. Conecte os clientes e escolha **Continuar**. Ambos devem estar na mesma área do mundo aberto. Use **Reunir em Hateno** se necessário; conectar sozinho não desloca o personagem.
+Os relatórios da [issue #4](https://github.com/KnightCZS/HyruleM/issues/4) mostram ABI 1 e um executável diferente do pacote da prévia 2. O teste usou o runtime antigo. Esta atualização confere a instalação selecionada e exige ABI 2 antes de preparar o multiplayer.
 
-O menu exige atualização da thread do jogo e só anuncia o ator após confirmar criação e componentes de modelo/animação. Modelo registrado não é prova de visibilidade na GPU. Falha de recursos, rotina parada ou tempo excedido geram erro explícito.
+1. Feche os jogos **e o launcher antigo**. Extraia o ZIP novo inteiro em uma pasta nova.
+2. Execute **Iniciar-Nativo.cmd**. Ele confere todos os componentes do pacote na instalação salva no launcher e atualiza os que não correspondem, guardando backup. Em falha, restaura os componentes anteriores e não abre o launcher. A confirmação mostra o executável instalado e ABI 2.
+3. Se estava usando ABI 1, abra a configuração do Savage Wind e **reconstrua a biblioteca do jogo** com o gerador atualizado. Não edite o arquivo `.id` para forçar compatibilidade.
+4. Volte ao launcher deste pacote, use **Hospedar servidor** e conecte os clientes. **Os dois computadores precisam da atualização:** protocolo 3, incompatível com o servidor antigo e com o servidor Gen1 separado.
+5. Escolha **Continuar** nos jogos. Ambos devem estar na mesma área do mundo aberto. **Reunir em Hateno** é manual.
 
-Em falha, mantenha o Cliente 1 aberto e execute **Diagnosticar.cmd**. O relatório inclui `game_ticks`, estado da criação, modelo/animação e monstros observados. `native_ready=false` refere-se à Gen1 completa, que continua incompleta.
+Abrir `HyruleLauncher.exe` diretamente dentro deste pacote também ativa o modo nativo pelo manifesto `hyrulem-preview.json`; o modo não depende mais de uma variável definida só pelo atalho. Se o runtime selecionado não corresponde ao pacote, o menu informa o caminho e exige atualização. Extraia todos os arquivos juntos; copiar apenas o EXE não constitui uma atualização completa.
+
+O menu exige atualização da thread do jogo e só anuncia o ator após confirmar criação e componentes de modelo/animação. Modelo registrado não é prova de visibilidade na GPU. A causa de uma falha nativa permanece após desconectar.
+
+Em falha, mantenha os dois clientes abertos e execute **Diagnosticar.cmd**. Ele gera um relatório por cliente com `native-preview-diag.3`. O campo `preview` distingue runtime antigo, biblioteca sem atualização, callback parado e estado do ator. Dois relatórios antigos tinham conexão de controle recusada: esses relatórios não observavam um jogo acessível naquele momento. `native_ready=false` continua referindo-se à Gen1 completa, não à compatibilidade desta prévia.
 
 ## O que compartilha
 

@@ -3,6 +3,8 @@ package launcher
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -38,6 +40,15 @@ func (p *MultiplayerPreparer) Prepare(ctx context.Context, c Config, slot, port 
 	}
 	if c.Backend != Savage || PreparationNeeded(c) {
 		return result, fmt.Errorf("prepare e teste o Savage Wind antes de entrar")
+	}
+	if nativePreviewRequested(env) {
+		exe, err := os.Executable()
+		if err != nil {
+			return result, err
+		}
+		if err = VerifyNativeRuntime(c, filepath.Dir(exe)); err != nil {
+			return result, err
+		}
 	}
 	say := func(s string) {
 		if notify != nil {

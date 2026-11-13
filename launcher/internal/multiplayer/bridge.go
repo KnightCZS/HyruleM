@@ -61,6 +61,12 @@ func (b *Bridge) say(s string) {
 		b.status(s)
 	}
 }
+func (b *Bridge) fail(s string) {
+	// Preserve this cause when the UI observes Done; generic cleanup must not
+	// replace an ABI/actor error with just "Desconectado".
+	b.Client.fail(s)
+	b.say(s)
+}
 func (b *Bridge) command(ctx context.Context, cmd string, out any) error {
 	r, e := b.control.Command(ctx, cmd)
 	if e != nil {
@@ -205,7 +211,7 @@ func (b *Bridge) run(ctx context.Context) {
 			var err error
 			native, err = b.openNative(ctx)
 			if err != nil {
-				b.say("Modo nativo indisponível: " + err.Error())
+				b.fail("Modo nativo indisponível: " + err.Error())
 				return
 			}
 		}
@@ -278,11 +284,11 @@ func (b *Bridge) run(ctx context.Context) {
 		}
 		if native != nil {
 			if err := b.updateNative(ctx, native, now); err != nil {
-				b.say("Integração nativa interrompida: " + err.Error())
+				b.fail("Integração nativa interrompida: " + err.Error())
 				return
 			}
 			if err := b.updateWorldHealth(ctx, native, now); err != nil {
-				b.say("Sincronização do mundo interrompida: " + err.Error())
+				b.fail("Sincronização do mundo interrompida: " + err.Error())
 				return
 			}
 			if !wait(ctx, 80*time.Millisecond) {

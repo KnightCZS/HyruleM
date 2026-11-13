@@ -94,6 +94,12 @@ jobs:
           cp ../docs/gen1/Diagnosticar.cmd ../preview/
           cp ../native/Iniciar-Nativo.cmd ../native/Instalar-Nativo.cmd ../preview/
           cp ../native/Install-NativePreview.ps1 ../preview/
+      - name: Seal the native package and select native mode for direct launches
+        shell: pwsh
+        run: |
+          $version = [regex]::Match((Get-Content launcher/internal/launcher/config.go -Raw), 'const Version = "([^"]+)"').Groups[1].Value
+          if (-not $version) { throw 'Launcher version missing' }
+          @{ schema = 1; version = $version; preview_abi = 2; runtime_sha256 = (Get-FileHash preview/runtime-update/savagewind.exe -Algorithm SHA256).Hash.ToLower() } | ConvertTo-Json | Set-Content -Encoding utf8NoBOM preview/hyrulem-preview.json
       - name: Verify installer with the existing official runtime dependencies
         shell: pwsh
         run: |
@@ -101,7 +107,7 @@ jobs:
           $archive = Join-Path $env:RUNNER_TEMP 'official-runtime.zip'
           Invoke-WebRequest 'https://github.com/Revivedx/SavageWindRecomp/releases/download/v0.5.3-alpha.5/SavageWind-0.5.3-alpha.5-windows.zip' -OutFile $archive
           if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '667c4909a8ed72c002e5aa40a00d38720627eebf48b860beb5cd8805421f1285') { throw 'Official runtime hash mismatch' }
-          $root = Join-Path $env:RUNNER_TEMP 'native-install-test'
+          $root = Join-Path $env:RUNNER_TEMP 'native-instalação-test'
           Expand-Archive -LiteralPath $archive -DestinationPath $root
           $target = Join-Path $root 'Savage Wind'
           $exe = Join-Path $target 'savagewind.exe'
@@ -109,10 +115,47 @@ jobs:
           $sentinel = Join-Path $target 'save/synthetic-preservation.txt'
           New-Item -ItemType Directory -Path (Split-Path $sentinel) -Force | Out-Null
           Set-Content -LiteralPath $sentinel -Value 'synthetic save sentinel'
-          & ./preview/Install-NativePreview.ps1 -RuntimeDir $target
+          $configPath = Join-Path $root 'config.json'
+          @{ Schema = 1; Executable = $exe; DataDir = $target } | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+          $configHash = (Get-FileHash $configPath -Algorithm SHA256).Hash
+          # Use the same Windows PowerShell 5.1 as Iniciar-Nativo.cmd, including
+          # UTF-8 configuration paths and the configured target (issue #4).
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./preview/Install-NativePreview.ps1 -ConfigPath $configPath -Ensure
+          if ($LASTEXITCODE -ne 0) { throw 'Automatic configured installation failed' }
           $backup = Get-ChildItem -LiteralPath $target -Directory -Filter 'HyruleM-runtime-backup-*' | Select-Object -First 1
           if (-not $backup -or (Get-FileHash (Join-Path $backup.FullName 'savagewind.exe') -Algorithm SHA256).Hash -ne $original) { throw 'Original runtime backup missing' }
+          $installedHash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          if ($installedHash -ne (Get-FileHash preview/runtime-update/savagewind.exe -Algorithm SHA256).Hash) { throw 'Configured runtime was not updated' }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./preview/Install-NativePreview.ps1 -ConfigPath $configPath -Ensure
+          if ($LASTEXITCODE -ne 0) { throw 'Repeated start failed' }
+          if (@(Get-ChildItem -LiteralPath $target -Directory -Filter 'HyruleM-runtime-backup-*').Count -ne 1) { throw 'Ensure rewrote an unchanged installation' }
+          # Failed runtime load must restore the exact previous executable.
+          $broken = Join-Path $root 'broken-preview'
+          New-Item -ItemType Directory -Path (Join-Path $broken 'runtime-update') -Force | Out-Null
+          Copy-Item preview/Install-NativePreview.ps1 $broken
+          Copy-Item preview/runtime-update/hyrulem-build.json (Join-Path $broken 'runtime-update')
+          [IO.File]::WriteAllBytes((Join-Path $broken 'runtime-update/savagewind.exe'), [byte[]](1,2,3,4))
+          $badManifest = Get-Content preview/hyrulem-preview.json -Raw | ConvertFrom-Json
+          $badManifest.runtime_sha256 = (Get-FileHash (Join-Path $broken 'runtime-update/savagewind.exe') -Algorithm SHA256).Hash.ToLower()
+          $badManifest | ConvertTo-Json | Set-Content -Encoding utf8NoBOM (Join-Path $broken 'hyrulem-preview.json')
+          $ErrorActionPreference = 'Continue'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $broken 'Install-NativePreview.ps1') -ConfigPath $configPath -Ensure
+          $failedExit = $LASTEXITCODE
+          $ErrorActionPreference = 'Stop'
+          if ($failedExit -eq 0) { throw 'Broken runtime reported successful installation' }
+          if ((Get-FileHash $exe -Algorithm SHA256).Hash -ne $installedHash) { throw 'Failed installation did not restore the runtime' }
+          if ((Get-FileHash $configPath -Algorithm SHA256).Hash -ne $configHash) { throw 'Installer rewrote the launcher configuration' }
           if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne 'synthetic save sentinel') { throw 'Unrelated save file changed' }
+          exit 0
+      - name: Smoke test direct native launcher without an environment switch
+        shell: pwsh
+        run: |
+          Remove-Item Env:HYRULEM_NATIVE_PREVIEW -ErrorAction SilentlyContinue
+          $report = Join-Path $env:RUNNER_TEMP 'native-package-ui.txt'
+          $process = Start-Process -FilePath './preview/HyruleLauncher.exe' -ArgumentList '--smoke-test', $report -PassThru
+          if (-not $process.WaitForExit(15000)) { Stop-Process -Id $process.Id; throw 'Native launcher timed out' }
+          $result = Get-Content $report -Raw
+          if ($result -notmatch 'native-preview=1' -or $result -notmatch 'multiplayer-controls=([1-9][0-9]+)') { throw 'Direct executable did not select native multiplayer' }
       - name: Package experimental runtime update without game assets
         shell: pwsh
         run: |
@@ -146,14 +189,14 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          tag=v0.5.0-preview.2
+          tag=v0.5.0-preview.3
           existing=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish 2>/dev/null || true)
           if [ -n "$existing" ] && [ "$existing" != "$RELEASE_SHA" ]; then
             echo 'This preview tag already points at another commit; bump the version for another release.'
             exit 0
           fi
           if [ -z "$existing" ]; then
-            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.2 — callback e vida dos monstros' --notes-file releases/v0.5.0-preview.2.md --prerelease --latest=false --draft
+            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.3 — instalação nativa e diagnóstico' --notes-file releases/v0.5.0-preview.3.md --prerelease --latest=false --draft
           fi
           gh release upload "$tag" release-assets/HyruleM-NativePreview-Windows-x64.zip release-assets/SHA256.txt --clobber
           gh release edit "$tag" --draft=false --prerelease --latest=false

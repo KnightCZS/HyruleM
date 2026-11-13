@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	core "hyrulelauncher/internal/launcher"
 	"time"
 )
 
@@ -31,8 +32,11 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 	if err := b.command(ctx, "hm_caps", &caps); err != nil {
 		return nil, fmt.Errorf("o runtime não possui o adaptador nativo: %w", err)
 	}
-	if caps.Runtime != "SavageWind-HyruleM" || caps.GameVersion != "1.9.0" || caps.PreviewABI != 2 || !caps.NativePreview {
-		return nil, fmt.Errorf("runtime incompatível ou assinaturas nativas incompletas")
+	if caps.PreviewABI != core.NativePreviewABI {
+		return nil, fmt.Errorf("o jogo está usando o runtime ABI %d; este launcher exige ABI %d. Feche os jogos e abra Iniciar-Nativo.cmd do pacote novo", caps.PreviewABI, core.NativePreviewABI)
+	}
+	if caps.Runtime != "SavageWind-HyruleM" || caps.GameVersion != "1.9.0" || !caps.NativePreview {
+		return nil, fmt.Errorf("runtime incompatível, modo nativo desativado ou assinaturas incompletas")
 	}
 	if !caps.SharedHealth {
 		return nil, fmt.Errorf("o adaptador de mundo não foi carregado; reconstrua a biblioteca com o novo runtime")

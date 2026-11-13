@@ -36,7 +36,7 @@ func run() error {
 		return err
 	}
 	if *out == "" {
-		*out = "HyruleM-native-report-" + time.Now().UTC().Format("20060102-150405") + ".json"
+		*out = fmt.Sprintf("HyruleM-native-report-cliente%d-%s.json", *slot, time.Now().UTC().Format("20060102-150405"))
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -55,9 +55,8 @@ func run() error {
 		return closeErr
 	}
 	fmt.Println("Relatório criado:", *out)
-	if !report.NativeReady {
-		fmt.Println(report.NativeError)
-	}
+	fmt.Println("Diagnóstico da prévia:", report.Preview.Message)
+	fmt.Println("Gen1 completa (combate/IA):", report.NativeReady)
 	fmt.Println("Somente leitura. Não contém dump, saves ou inventário.")
 	return nil
 }

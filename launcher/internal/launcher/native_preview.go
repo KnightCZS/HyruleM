@@ -30,9 +30,6 @@ func NativePreviewOverlay(c Config) string {
 // The native layer includes the campaign layer so one RomFS overlay cannot
 // silently disable the other. Never replace a layer while either game uses it.
 func prepareNativePreview(c Config, running bool) error {
-	if !IsFile(filepath.Join(filepath.Dir(c.Executable), "hyrulem-build.json")) {
-		return fmt.Errorf("o modo nativo exige o runtime HyruleM experimental; o Savage Wind original não possui o adaptador")
-	}
 	out := NativePreviewOverlay(c)
 	manifestPath := filepath.Join(out, "hyrulem-native-overlay.json")
 	if running {

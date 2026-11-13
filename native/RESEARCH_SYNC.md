@@ -12,3 +12,9 @@ O relato do teste anterior confirmou conexão sem visibilidade do outro Link. A 
 Cemu usa Wii U/PowerPC, enquanto nosso runtime usa Switch 1.9.0/AArch64. Endereços e estruturas não são intercambiáveis. A implementação do HyruleM é original; nenhum código ou recurso do Milk Bar, cuja licença reserva todos os direitos, foi incorporado.
 
 Vida compartilhada é uma primeira camada. IA por proximidade, coleta exclusiva, dano entre jogadores e objetos exigem callbacks adicionais. As regras Gen1 no servidor não tornam essas funcionalidades prontas no jogo.
+
+## Retorno da issue #4
+
+O relatório acessível informa `preview_abi: 1`, `hm_native_status` sem contadores de atualização e comando `hm_world_status` desconhecido. O SHA-256 do executável informado difere do binário publicado na prévia 2. Os outros dois relatórios tiveram conexão de controle recusada. Esses dados demonstram uso do adaptador antigo; não demonstram que a correção ABI 2 tenha executado.
+
+A prévia 3 trata a instalação como parte do fluxo: atalho confere e instala no destino configurado, modo do EXE é selecionado pelo pacote, launcher exige identidade correspondente e a mensagem de falha sobrevive à limpeza da conexão. O instalador lê JSON UTF-8 explicitamente no Windows PowerShell. Não muda a implementação do ator nem anuncia confirmação de renderização.

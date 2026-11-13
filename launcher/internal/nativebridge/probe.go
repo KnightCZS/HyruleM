@@ -37,6 +37,7 @@ type Report struct {
 	ControlSource string             `json:"control_source,omitempty"`
 	NativeReady   bool               `json:"native_ready"`
 	NativeError   string             `json:"native_error,omitempty"`
+	Preview       PreviewDiagnostic  `json:"preview"`
 	Capabilities  *gen1.Capabilities `json:"capabilities,omitempty"`
 	Files         []FileMetadata     `json:"files"`
 	Queries       []ProbeCommand     `json:"queries"`
@@ -118,7 +119,7 @@ func Probe(ctx context.Context, cfg core.Config, slot, port int) (Report, error)
 // ProbeAt uses the folder of the selected config.json for launcher capture logs,
 // including when --config points outside the default AppDir.
 func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port int) (Report, error) {
-	r := Report{Schema: 1, ProbeVersion: "gen1-diag.2", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
+	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.3", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
 	if cfg.DataDir == "" || slot < 0 || slot > 2 {
 		return r, fmt.Errorf("configuração/pasta de dados ou instância inválida")
 	}
@@ -138,6 +139,7 @@ func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port in
 		port, r.ControlSource, err = discoverPort(cfg, appRoot, slot)
 		if err != nil {
 			r.NativeError = err.Error()
+			r.Preview = DiagnosePreview(r.Queries)
 			return r, nil
 		}
 	} else {
@@ -183,6 +185,7 @@ func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port in
 			}
 		}
 	}
+	r.Preview = DiagnosePreview(r.Queries)
 	if playerLoaded && ctx.Err() == nil {
 		r.Inspection = inspectNative(ctx, r.Files[1].SHA256, controlMemory{client: c})
 	}
