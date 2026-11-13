@@ -1,3 +1,7 @@
+# 0.4.2 — hotfix dos issues #1 e #2
+
+Fluxos EVFL válidos sem entradas deixam de bloquear o filtro. O multiplayer prepara o filtro ausente antes de conectar, com fila compartilhada para os dois clientes e proteção durante jogo em execução. [Notas completas](../releases/v0.4.2.md).
+
 # 0.4.1 — correções de conexão, sandbox e interface
 
 Veja [histórico completo](../CHANGELOG.md) e [notas da versão](../releases/v0.4.1.md). Inclui seleção de interface/IP/porta, erros preservados, rede mantida durante carregamento/falha de teleporte, início assíncrono e pintura com buffer.

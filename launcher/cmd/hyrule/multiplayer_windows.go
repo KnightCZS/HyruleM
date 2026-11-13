@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -76,6 +77,7 @@ type multiplayerUI struct {
 	dpi          float64
 	bodyFont     uintptr
 	hostStopping bool
+	preparer     *core.MultiplayerPreparer
 	mu           sync.Mutex
 	queue        []func()
 	closed       bool
@@ -102,7 +104,7 @@ func (a *app) openMultiplayer() {
 	if !a.save() {
 		return
 	}
-	u := &multiplayerUI{a: a, controls: map[int]uintptr{}, placements: map[int]rect{}, settings: mpSettings{IP: "127.0.0.1", Port: 5050, BindIP: "0.0.0.0", Names: [2]string{"Jogador 1", "Jogador 2"}, FOV: 40}}
+	u := &multiplayerUI{a: a, controls: map[int]uintptr{}, placements: map[int]rect{}, preparer: core.NewMultiplayerPreparer(), settings: mpSettings{IP: "127.0.0.1", Port: 5050, BindIP: "0.0.0.0", Names: [2]string{"Jogador 1", "Jogador 2"}, FOV: 40}}
 	if b, e := os.ReadFile(filepath.Join(a.root, "multiplayer.json")); e == nil {
 		_ = json.Unmarshal(b, &u.settings)
 	}
@@ -390,7 +392,25 @@ func (u *multiplayerUI) join(i int) {
 					u.say(i, "Preparando dados e save deste cliente…")
 				}
 			})
-			inst, e = core.PrepareMultiplayerInstance(cfg, i, port, os.Environ())
+			lastProgress := time.Time{}
+			lastStage := ""
+			inst, e = u.preparer.Prepare(ctx, cfg, i, port, os.Environ(), func(p core.Progress) {
+				now := time.Now()
+				if p.Stage == lastStage && now.Sub(lastProgress) < 150*time.Millisecond {
+					return
+				}
+				lastProgress = now
+				lastStage = p.Stage
+				label := p.Stage
+				if p.Total > 0 {
+					label += fmt.Sprintf(" · %d%%", 100*p.Done/p.Total)
+				}
+				u.post(func() {
+					if s.generation == gen {
+						u.say(i, label)
+					}
+				})
+			})
 		}
 		if e != nil || ctx.Err() != nil {
 			u.post(func() {

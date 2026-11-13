@@ -1,8 +1,8 @@
-# Usar o protótipo 0.4.1
+# Usar o protótipo 0.4.2
 
 ## Antes de conectar
 
-O launcher usa o mesmo `config.json` das versões anteriores, em `%LOCALAPPDATA%\HyruleLauncher`. O sandbox original precisa existir e funcionar. O filtro de campanha, se habilitado, precisa estar preparado na tela principal. A configuração de backend deve ser Savage Wind, não Cemu/BotW-Native.
+O launcher usa o mesmo `config.json` das versões anteriores, em `%LOCALAPPDATA%\HyruleLauncher`. O jogo deve estar preparado e existir um save base válido. A partir da 0.4.2, o menu multiplayer prepara o sandbox e o filtro necessários antes de conectar, reaproveitando os existentes. Essa preparação não recria saves válidos. A configuração de backend deve ser Savage Wind, não Cemu/BotW-Native.
 
 O ZIP de atualização pode ser extraído em uma nova pasta. Execute o novo launcher. Não é necessário sobrescrever seus arquivos do jogo. O servidor separado é opcional: o botão Hospedar já executa o mesmo servidor dentro do launcher.
 
@@ -62,3 +62,7 @@ Logs em `%LOCALAPPDATA%\HyruleLauncher\logs`: `multiplayer-1.log`, `multiplayer-
 ## Atualização 0.4.1
 
 O diagnóstico aberto pelo menu inclui os dois clientes e o servidor. Uma falha na preparação aparece antes de tentar conexão; uma falha ao abrir o processo preserva a mensagem original. O carregamento do jogo mantém a rede viva. A preparação do sandbox e o início do processo ocorrem fora da interface, com progresso agregado e botão de cancelamento. Consulte o [histórico](../CHANGELOG.md) e as [notas da versão](../releases/v0.4.1.md).
+
+## Hotfix 0.4.2
+
+A correção aceita fluxos EVFL válidos com zero entradas, que antes interrompiam a geração. O multiplayer gera o filtro ausente antes de conectar e compartilha essa preparação entre os dois clientes. Feche os jogos para gerar/reparar uma camada ausente ou inválida; o segundo cliente pode reutilizar uma camada válida durante a execução. Não há liberação silenciosa de campanha em caso de falha. [Notas](../releases/v0.4.2.md).

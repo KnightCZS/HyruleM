@@ -282,14 +282,17 @@ func NoopDemo() []byte {
 
 // FlowEntries reads names without decoding event actions. Internal sub-flow
 // entry points need replacement too, even when they have no EventInfo record.
+// A valid quest flow may have no entry points (an empty DIC with its root).
 func FlowEntries(d []byte) (string, []string, error) {
-	bad := func() (string, []string, error) { return "", nil, fmt.Errorf("EVFL: tabela de entradas inválida") }
+	bad := func(reason string) (string, []string, error) {
+		return "", nil, fmt.Errorf("EVFL: tabela de entradas inválida (%s)", reason)
+	}
 	if len(d) < 0x48 || string(d[:8]) != "BFEVFL\x00\x00" {
-		return bad()
+		return bad("assinatura ou cabeçalho truncado")
 	}
 	e := binary.LittleEndian
 	if e.Uint16(d[8:]) != 0x300 || e.Uint16(d[12:]) != 0xfeff || e.Uint16(d[0x20:]) != 1 {
-		return bad()
+		return bad("versão, ordem de bytes ou número de fluxos não suportado")
 	}
 	fits := func(o, n uint64) bool { return o <= uint64(len(d)) && n <= uint64(len(d))-o }
 	ptr := func(at uint64) (uint64, bool) {
@@ -311,37 +314,37 @@ func FlowEntries(d []byte) (string, []string, error) {
 	}
 	a, ok := ptr(0x28)
 	if !ok {
-		return bad()
+		return bad("ponteiro da lista de fluxos fora do arquivo")
 	}
 	flow, ok := ptr(a)
 	if !ok || !fits(flow, 0x48) || string(d[flow:flow+4]) != "EVFL" {
-		return bad()
+		return bad("bloco EVFL ausente ou truncado")
 	}
 	p, ok := ptr(flow + 0x20)
 	if !ok {
-		return bad()
+		return bad("ponteiro do nome do fluxo fora do arquivo")
 	}
 	name, ok := str(p)
 	if !ok {
-		return bad()
+		return bad("nome do fluxo inválido")
 	}
 	dic, ok := ptr(flow + 0x38)
 	if !ok || !fits(dic, 24) || string(d[dic:dic+4]) != "DIC " {
-		return bad()
+		return bad("dicionário DIC ausente ou truncado")
 	}
 	count := uint64(e.Uint16(d[flow+0x18:]))
-	if count == 0 || count > 4096 || uint64(e.Uint32(d[dic+4:])) != count || !fits(dic+24, count*16) {
-		return bad()
+	if count > 4096 || uint64(e.Uint32(d[dic+4:])) != count || !fits(dic+24, count*16) {
+		return bad("contagem de entradas inconsistente ou tabela truncada")
 	}
 	entries := make([]string, 0, count)
 	for i := uint64(0); i < count; i++ {
 		p, ok := ptr(dic + 24 + i*16 + 8)
 		if !ok {
-			return bad()
+			return bad("ponteiro de nome de entrada fora do arquivo")
 		}
 		entry, ok := str(p)
 		if !ok {
-			return bad()
+			return bad("nome de entrada inválido")
 		}
 		entries = append(entries, entry)
 	}

@@ -2,7 +2,9 @@
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 
-## Estado da versão 0.4.1
+## Estado da versão 0.4.2
+
+Hotfix dos [issues #1](https://github.com/KnightCZS/HyruleM/issues/1) e [#2](https://github.com/KnightCZS/HyruleM/issues/2): leitura de fluxos EVFL válidos sem entradas e preparação automática do filtro antes de conectar. [Notas 0.4.2](releases/v0.4.2.md).
 
 - Menu com nome, IP, porta TCP, hospedagem e dois clientes no mesmo PC.
 - Posição real e câmera lidas pelo controle local do Savage Wind.
@@ -15,7 +17,7 @@ Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo
 
 ## Testar
 
-Use o pacote Windows 0.4.1 ou os artefatos de [Actions](../../actions). O pacote de atualização reaproveita sua instalação e os caminhos salvos pelo launcher anterior; não inclui jogo nem o runtime.
+Use o pacote Windows 0.4.2 ou os artefatos de [Actions](../../actions). O pacote de atualização reaproveita sua instalação e os caminhos salvos pelo launcher anterior; não inclui jogo nem o runtime.
 
 1. Feche o jogo e abra `HyruleLauncher.exe`. Confirme que seu sandbox já funciona.
 2. Clique em **Multiplayer · 2 jogadores**.

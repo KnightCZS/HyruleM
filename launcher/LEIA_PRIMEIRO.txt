@@ -1,3 +1,21 @@
+HYRULEM 0.4.2 - HOTFIX DOS ISSUES #1 E #2
+
+Corrigida a rejeicao de fluxos EVFL validos sem entradas.
+O multiplayer agora prepara automaticamente o filtro ausente antes de conectar.
+Dois clientes locais aguardam a mesma fila de preparacao.
+
+Extraia este pacote em outra pasta e abra o novo HyruleLauncher.exe.
+Nao use Novo sandbox para atualizar: seus saves anteriores sao reaproveitados.
+Feche os jogos antes da primeira geracao/atualizacao do filtro. Depois, voce
+pode conectar o segundo cliente usando a camada ja preparada.
+
+A primeira preparacao pode demorar; o progresso aparece no menu.
+Se a entrada falhar, abra Diagnostico para ver o motivo original.
+
+Notas: https://github.com/KnightCZS/HyruleM/releases/tag/v0.4.2
+
+INFORMACOES DA BASE 0.4.1:
+
 HYRULEM 0.4.1 - CORRECOES
 
 Baixe novas versoes em https://github.com/KnightCZS/HyruleM/releases

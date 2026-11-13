@@ -1,5 +1,21 @@
 # Histórico do HyruleM
 
+## 0.4.2 — 13/11/2026 · hotfix
+
+### Correções
+
+- Issue #1: o leitor EVFL rejeitava fluxos válidos com zero entradas. Esses fluxos agora são aceitos, mantendo a validação de ponteiros, assinatura e contagens. O filtro não cria um substituto sem entradas para um evento já vazio.
+- Issue #2: o multiplayer exigia `filter.json` pronto, mesmo quando a preparação anterior havia falhado. Agora confere/prepara sandbox e filtro antes de conectar; dois clientes locais compartilham uma fila de preparação cancelável.
+- Um filtro ausente ou inválido não é reconstruído enquanto um jogo o utiliza; é necessário fechar os jogos nesse caso. Um filtro publicado válido pode ser reutilizado pelo segundo cliente.
+- Erros de leitura EVFL passam a identificar qual parte da tabela falhou.
+
+### Validação
+
+- Fixtures EVFL V3 sintéticas geradas e lidas por uma biblioteca independente; o caso vazio reproduzia a falha antes da correção.
+- Filtro completo com missão principal de fluxo vazio, preservação dos arquivos originais e de missões secundárias.
+- Preparação a partir de uma pasta sem `filter.json`, aplicação do overlay, cache, dois clientes simultâneos, cancelamento e proteção de um jogo em execução.
+- Sem arquivos Nintendo nos novos testes ou no pacote. A confirmação no jogo real continua necessária.
+
 ## 0.4.1 — 13/11/2026
 
 ### Adições

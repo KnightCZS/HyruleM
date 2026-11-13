@@ -551,6 +551,12 @@ func PrepareCampaignFilter(ctx context.Context, c Config, force bool, notify fun
 		if declared != id {
 			return fmt.Errorf("nome interno de fluxo diferente do arquivo: %s", name)
 		}
+		// Empty quest flows are valid. Keep any EventInfo declarations already
+		// collected, but do not invent an entry-less replacement for a graph
+		// that has no runnable entry in the original either (issue #1).
+		if len(entries) == 0 {
+			return nil
+		}
 		if catalog.entries[id] == nil {
 			catalog.entries[id] = map[string]bool{}
 		}
