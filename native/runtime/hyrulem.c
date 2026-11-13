@@ -235,10 +235,16 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     }
     if (failed) return; // An engine rejection requires a new session, never a spawn loop.
     if (spawning) {
-        if (call(c,g_site.hm_handle_failed,storage+HANDLE,0,0,0,0,0,0) || now_ms()-spawning_at>15000) {
-            remove_remote(c); failed=true; publish("error","native-spawn-failed-or-timeout",applied,false); return;
+        if (call(c,g_site.hm_handle_failed,storage+HANDLE,0,0,0,0,0,0)) {
+            remove_remote(c); failed=true; publish("error","native-spawn-failed",applied,false); return;
         }
-        if (!call(c,g_site.hm_handle_ready,storage+HANDLE,0,0,0,0,0,0)) { publish("spawning","",applied,false); return; }
+        // A ready handle wins over wall-clock timeout after a long pause.
+        if (!call(c,g_site.hm_handle_ready,storage+HANDLE,0,0,0,0,0,0)) {
+            if (now_ms()-spawning_at>15000) {
+                remove_remote(c); failed=true; publish("error","native-spawn-timeout",applied,false); return;
+            }
+            publish("spawning","",applied,false); return;
+        }
         uint64_t a=call(c,g_site.hm_handle_get,storage+HANDLE,0,0,0,0,0,0);
         if (!range(a,0x600) || a==local ||
             !call(c,g_site.actor_index_assign,storage+INDEX,a,1,0,0,0,0)) {

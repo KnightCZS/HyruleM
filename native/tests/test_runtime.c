@@ -60,6 +60,7 @@ int main(void) {
     cpu.x[0]=mock_actor;rt_hyrulem_tick(&cpu,0);assert(calls==0);cpu=before; // only local update may drain
     cpu.x[0]=HEAP_BASE+0x1000;rt_hyrulem_tick(&cpu,0);assert(calls==0);cpu=before; // regression: Actor != damage component
     rt_hyrulem_tick(&cpu,0x7000001000);assert(creates==1 && spawning);assert(!memcmp(&before,&cpu,sizeof cpu));
+    spawning_at=now_ms()-16000; // Ready handle must survive a long menu/loading pause.
     rt_hyrulem_tick(&cpu,0x7000001000);assert(published.active && moves==1 && plays==1);assert(!memcmp(&before,&cpu,sizeof cpu));
     r.failed=false;remote(8,pose,&r);assert(r.failed); // replay cannot resurrect or move
     char *wrong[]={"hm_native_clear","ffffffffffffffff","2"};r.failed=false;clear_remote(3,wrong,&r);assert(r.failed);
