@@ -1,0 +1,161 @@
+{
+  "schema": 1,
+  "game_version": "1.9.0",
+  "module_sha256": "f6f0b20bb1f2b67d164c24871cd473147eef1d285f12e7bd492e3126c6022e27",
+  "build_id": "cd57b23fa4bbad65803d9788c01821ee",
+  "main_base": "0x7000000000",
+  "text_size": 22682724,
+  "status": "static_verified_runtime_pending",
+  "native_backend_ready": false,
+  "functions": {
+    "actor_create_sync": {
+      "address": "0x7001535900",
+      "size": 84,
+      "sha256": "fd40e6a23857b67aa2c2756790d4f3b6942763cdf7db53b4436f331fa954bf62",
+      "pattern": "a9be7bfd f9000bf3 910003fd 94000000/fc000000 aa0003f3 94000000/fc000000 b4000013/ff00001f f9400268 aa0003e1 aa1303e0 f9400908 d63f0100 37000000/fff8001f aa1303e0",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "actor_create_profile_helper": {
+      "address": "0x7001535954",
+      "size": 180,
+      "sha256": "9a3e17b23530ce4e2462ea1841488ac433bc70ec0c3c8ae652a7bfe92f38d552",
+      "pattern": "d10143ff a9017bfd f90013f7 a90357f6 a9044ff4 910043fd 2a0403f6 aa0303f3",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "actor_create_internal": {
+      "address": "0x7001535798",
+      "size": 360,
+      "sha256": "4bbb07b970a9fe6555072e3e19ec70783d64066023a27c052c978a94e0991d13",
+      "pattern": "d103c3ff a9097bfd a90a6ffc a90b67fa a90c5ff8 a90d57f6 a90e4ff4 910243fd 120000a8",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "actor_request_async": {
+      "address": "0x7001535b10",
+      "size": 184,
+      "sha256": "8e5175ebb6b0968b6ac3f0731454b090d83bb33c7297d154b247eba5d5451ebf",
+      "pattern": "d10183ff a9017bfd f90013f9 a9035ff8 a90457f6 a9054ff4 910043fd 90000008/9f00001f aa0003f9",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "actor_request_internal": {
+      "address": "0x7001535a08",
+      "size": 264,
+      "sha256": "f413ff002fd6faeeb358e83ff2539c8b1b17e76350e0b43bd83dc10bf0f24be3",
+      "pattern": "39416408 34000008/ff00001f 2a1f03e0 12000000 d65f03c0 d10383ff a9087bfd f9004bfb",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "actor_creator_ctor": {
+      "address": "0x7001534fd4",
+      "size": 144,
+      "sha256": "6a6974673bc528b7ef7f3a009e2ab437f2fb7fa1e71eee2bacdd009dacee3935",
+      "pattern": "a9be7bfd f9000bf3 910003fd 90000008/9f00001f 91000108/ffc003ff f900501f f9000008 b2607fe8",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "player_actor_get": {
+      "address": "0x7000cc6fd0",
+      "size": 68,
+      "sha256": "db122be6c55196f9a818055ffaddd580ff920b39657292b07653bd943233b270",
+      "pattern": "f9403001 b4000001/ff00001f a9be7bfd f9000bf3 910003fd 90000008/9f00001f aa0003f3 f9400108/ffc003ff aa1f03e2 f9400100 94000000/fc000000 f9403260 f9400bf3 a8c27bfd d65f03c0 aa1f03e0 d65f03c0",
+      "pattern_at": 0,
+      "pattern_unique": false
+    },
+    "player_life_get": {
+      "address": "0x7000cc7184",
+      "size": 52,
+      "sha256": "113517428ea5001dcfa6ba58f4cd2b1496589636e8c1c6c9378a920b893e32a9",
+      "pattern": "f9403000 b4000000/ff00001f a9bf7bfd 910003fd f9400008 f9415d08 d63f0100 b4000000/ff00001f",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "player_life_set": {
+      "address": "0x7000cc7150",
+      "size": 52,
+      "sha256": "d329a6c87ac39cc286b83aabaa96b88ffe59923082a99a9c8e24f909bfd57dd0",
+      "pattern": "f9403000 b4000000/ff00001f a9be7bfd f9000bf3 910003fd f9400008 2a0103f3 f9415d08",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "info_actor_profile": {
+      "address": "0x700108ee5c",
+      "size": 124,
+      "sha256": "e047f0a35bf03d72dbd3582106590607043ba22dd48b85817e382d62ba10fb32",
+      "pattern": "d10103ff a9017bfd f90013f5 a9034ff4 910043fd aa0003f4 910003e0 aa0203f5",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "template_actor_class": {
+      "address": "0x70013d12dc",
+      "size": 252,
+      "sha256": "a163ac4e52d21600a96e7ba71ea317607534210f44fd6de6b4a6f6a43e01dfe9",
+      "pattern": "d10183ff a9037bfd f90023f5 a9054ff4 9100c3fd aa0003f5 90000008/9f00001f 91000108/ffc003ff",
+      "pattern_at": 0,
+      "pattern_unique": true
+    },
+    "proc_create_sync": {
+      "address": "0x70015199ec",
+      "size": 8,
+      "sha256": "361e01e8a020def189892b0c69dd977687023f2ba594c9df0c6ef9101b2fa576",
+      "pattern": "f940a800 14000000/fc000000",
+      "pattern_at": 0,
+      "pattern_unique": false
+    },
+    "proc_request_async": {
+      "address": "0x70015199e4",
+      "size": 8,
+      "sha256": "acceafeba707e6d7474c0a3e23fce1ef98e4db51831212b59b0e2150b635cdfe",
+      "pattern": "f940a800 14000000/fc000000",
+      "pattern_at": 0,
+      "pattern_unique": false
+    },
+    "player_register_once": {
+      "address": "0x7000cc6f54",
+      "size": 76,
+      "sha256": "97aad3013b57047644ea0a6a1452005864c233314deee094af364142917131e3",
+      "pattern": "f9403008 b4000008/ff00001f d65f03c0 a9be7bfd a9014ff4 910003fd 9130e028 f100003f",
+      "pattern_at": 0,
+      "pattern_unique": true
+    }
+  },
+  "globals": {
+    "player_info": "0x7001e13ed0",
+    "actor_creator": "0x7001e95430",
+    "baseproc_mgr": "0x7001e937f8",
+    "actor_template": "0x7001e55b78"
+  },
+  "offsets": {
+    "player_info_actor": 96,
+    "actor_life_vtable_slot": 696,
+    "creator_list_count": 72,
+    "creator_list_node_offset": 76,
+    "creator_block_spawns": 89
+  },
+  "call_edges": [
+    {
+      "site": "0x700153590c",
+      "target": "actor_create_profile_helper"
+    },
+    {
+      "site": "0x7001535a00",
+      "target": "actor_create_internal"
+    },
+    {
+      "site": "0x7001535bc0",
+      "target": "actor_request_internal"
+    },
+    {
+      "site": "0x70015359a0",
+      "target": "info_actor_profile"
+    },
+    {
+      "site": "0x7001535b5c",
+      "target": "info_actor_profile"
+    }
+  ],
+  "upstream_runtime": "740b18025fe11ba03c117dbb56668db304b5043e",
+  "decomp_reference": "a0fae63049c578629fdcc8173d8ef888dd4d9e5a"
+}

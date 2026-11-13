@@ -4,6 +4,10 @@ Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo
 
 ## Estado da versão 0.4.2
 
+**Atualização experimental 0.5.0-preview.2:** corrige o callback que impedia o ator remoto de ser criado, retira o teleporte automático ao conectar e adiciona convergência de vida dos monstros próximos. Ambos os jogadores e o servidor precisam do protocolo 3. Veja [instalação, limites e validação](native/README.md). A renderização dos dois Links ainda exige confirmação em gameplay; PvP, coleta e IA compartilhada continuam pendentes. O restante desta seção descreve o protótipo visual estável 0.4.2.
+
+**Desenvolvimento da geração nativa:** esta branch contém as regras autoritativas e agora um [adaptador experimental de presença nativa](native/README.md), com build próprio do runtime, criação/movimento/remoção de ator e geração local dos recursos. Esse caminho ainda não foi validado com dois jogos e não implementa combate/coleta/IA completos. Não é a Gen1 jogável. O pacote estável 0.4.2 continua sendo o protótipo visual descrito abaixo. Veja também [Gen1: estado e diagnóstico](docs/gen1/README.md).
+
 Hotfix dos [issues #1](https://github.com/KnightCZS/HyruleM/issues/1) e [#2](https://github.com/KnightCZS/HyruleM/issues/2): leitura de fluxos EVFL válidos sem entradas e preparação automática do filtro antes de conectar. [Notas 0.4.2](releases/v0.4.2.md).
 
 - Menu com nome, IP, porta TCP, hospedagem e dois clientes no mesmo PC.
@@ -49,7 +53,7 @@ Servidor independente, caso não queira hospedar no launcher:
 HyruleM-Server.exe --listen 0.0.0.0:5050
 ```
 
-O servidor não executa BOTW e não contém os arquivos do jogo. O protocolo transporta somente presença e movimento. O futuro ator nativo poderá reutilizar esse protocolo e trocar a implementação do renderizador.
+O servidor visual não executa BOTW e não contém os arquivos do jogo. Seu protocolo transporta somente presença e movimento. A geração nativa em desenvolvimento usa um servidor/protocolo separado, com regras de mundo e integração obrigatória com atores reais.
 
 ## Licenças e arquivos
 

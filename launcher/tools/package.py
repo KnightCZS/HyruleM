@@ -37,8 +37,9 @@ with zipfile.ZipFile(args.out, "w", compression=zipfile.ZIP_DEFLATED, compressle
         add(note, "releases/"+note.name)
     for name in ["LEIA_PRIMEIRO.txt", "LICENSE", "GO_LICENSE.txt", "THIRD_PARTY_NOTICES.md", "SANDBOX.md", "FILTRO_CAMPANHA.md"]:
         add(ROOT/name, name)
-    for path in sorted((REPO/"docs").glob("*.md")):
-        add(path, "docs/"+path.name)
+    for path in sorted((REPO/"docs").rglob("*")):
+        if path.is_file() and path.suffix in {".md", ".json"}:
+            add(path, "docs/"+path.relative_to(REPO/"docs").as_posix())
     if not args.update_only:
         add(args.runtime, "runtime/SavageWind-0.5.3-alpha.5-windows.zip", stored=True)
     z.writestr(prefix+"release.json", json.dumps({"version": version, "platform": "windows-amd64", "runtime": "Savage Wind v0.5.3-alpha.5", "game_included": False, "sources_included": True, "runtime_included": not args.update_only, "multiplayer": "experimental-external-procedural-avatars", "native_game_actor": False, "real_game_validation": "pending"}, indent=2))

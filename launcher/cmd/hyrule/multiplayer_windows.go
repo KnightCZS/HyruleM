@@ -169,8 +169,14 @@ func (u *multiplayerUI) label(s string, x, y, w, h int) {
 	u.add(900+u.staticID, "STATIC", s, 0, x, y, w, h)
 }
 func (u *multiplayerUI) build() {
-	u.label("MULTIPLAYER · PRIMEIRO PROTÓTIPO", 28, 24, 800, 28)
-	u.label("Avatares visuais provisórios. Inicie no mundo aberto de Hateno.\r\nMantenha este launcher aberto e os jogos em modo janela.", 28, 62, 805, 48)
+	native := os.Getenv(core.NativePreviewEnv) == "1"
+	if native {
+		u.label("MULTIPLAYER · TESTE DE PRESENÇA NATIVA", 28, 24, 800, 28)
+		u.label("Preview 2: presença nativa e vida de monstros em teste. PvP, coleta e IA pendentes.\r\nEntrar preserva sua posição. Use Reunir em Hateno quando precisar.", 28, 62, 805, 48)
+	} else {
+		u.label("MULTIPLAYER · PRIMEIRO PROTÓTIPO", 28, 24, 800, 28)
+		u.label("Avatares visuais provisórios. Inicie no mundo aberto de Hateno.\r\nMantenha este launcher aberto e os jogos em modo janela.", 28, 62, 805, 48)
+	}
 	u.label("IP do servidor", 28, 128, 240, 20)
 	u.add(mpIP, "EDIT", u.settings.IP, 0x00810080, 28, 154, 290, 32)
 	u.label("Porta TCP", 334, 128, 130, 20)
@@ -200,8 +206,16 @@ func (u *multiplayerUI) build() {
 	u.label("FOV vertical efetivo (fallback)", 28, 610, 280, 22)
 	u.add(mpFOV, "EDIT", fmt.Sprintf("%.1f", u.settings.FOV), 0x00810080, 308, 606, 85, 32)
 	u.add(mpSetFOV, "BUTTON", "Aplicar FOV", 0x10000, 410, 606, 130, 34)
+	if native {
+		enableWindow.Call(u.controls[mpFOV], 0)
+		enableWindow.Call(u.controls[mpSetFOV], 0)
+	}
 	u.add(mpSpawn, "BUTTON", "Reunir em Hateno", 0x10000, 560, 606, 270, 34)
-	u.label("Usado se a leitura automática falhar. Padrão: 40°. Desative HDR para o teste.\r\nFechar este menu mantém a conexão. Fechar o launcher encerra a rede.", 28, 654, 800, 48)
+	if native {
+		u.label("FOV não é usado pelo ator nativo. Este teste não usa o boneco externo.\r\nFechar este menu mantém a conexão. Fechar o launcher encerra a rede.", 28, 654, 800, 48)
+	} else {
+		u.label("Usado se a leitura automática falhar. Padrão: 40°. Desative HDR para o teste.\r\nFechar este menu mantém a conexão. Fechar o launcher encerra a rede.", 28, 654, 800, 48)
+	}
 	u.layout()
 	u.refresh()
 }

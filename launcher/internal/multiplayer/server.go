@@ -36,6 +36,7 @@ type Server struct {
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 	closed      bool
+	enemies     map[string]EnemyHealth
 }
 
 func Listen(address string, cfg ServerConfig) (*Server, error) {
@@ -53,7 +54,7 @@ func Listen(address string, cfg ServerConfig) (*Server, error) {
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{cfg: cfg, peers: map[string]*serverPeer{}, connections: map[net.Conn]bool{}, listener: l, cancel: cancel}
+	s := &Server{cfg: cfg, peers: map[string]*serverPeer{}, connections: map[net.Conn]bool{}, listener: l, cancel: cancel, enemies: map[string]EnemyHealth{}}
 	s.wg.Add(2)
 	go s.accept(ctx)
 	go s.broadcast(ctx)
@@ -173,6 +174,14 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 			s.mu.Lock()
 			p.player.Name = newName
 			s.mu.Unlock()
+		case "enemy_health":
+			s.mu.Lock()
+			err := mergeEnemyHealth(s.enemies, m.Enemies, p.player.Pose)
+			s.mu.Unlock()
+			if err != nil {
+				s.log(name + ": " + err.Error())
+				return
+			}
 		case "ping":
 		case "leave":
 			return
@@ -193,6 +202,10 @@ func (s *Server) broadcast(ctx context.Context) {
 		case <-ticker.C:
 		}
 		s.mu.Lock()
+		enemies := make([]EnemyHealth, 0, len(s.enemies))
+		for _, e := range s.enemies {
+			enemies = append(enemies, e)
+		}
 		players := make([]Player, 0, len(s.peers))
 		targets := make([]*serverPeer, 0, len(s.peers))
 		for _, p := range s.peers {
@@ -202,7 +215,8 @@ func (s *Server) broadcast(ctx context.Context) {
 		s.mu.Unlock()
 		sort.Slice(players, func(i, j int) bool { return players[i].Slot < players[j].Slot })
 		sequence++
-		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence}
+		sort.Slice(enemies, func(i, j int) bool { return enemies[i].key() < enemies[j].key() })
+		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence, Enemies: enemies}
 		for _, p := range targets {
 			select {
 			case <-p.done:

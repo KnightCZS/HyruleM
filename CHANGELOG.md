@@ -1,5 +1,19 @@
 # Histórico do HyruleM
 
+## Em desenvolvimento — geração nativa 1
+
+- Diagnóstico `gen1-diag.2`: corrige o caminho do log de processo do launcher, respeita configuração personalizada e separação de clientes; relatórios com data/hora e botão `Diagnosticar.cmd`.
+- Análise estática do módulo 1.9.0 enviado: mapa de 14 funções, fingerprints e cinco relações de chamada verificadas. Inspeção somente de leitura confirma o código carregado antes de acessar objetos/vida do Link e contagem de atores. Isso não habilita criação de atores.
+
+- Servidor separado, protocolo 2, dois jogadores, IP/porta configuráveis, estado de vida/inventário individual e recuperação da sessão em memória por dez minutos.
+- Coleta exclusiva, equipamento/descarte próprios, ataque corpo a corpo com alcance/cooldown e durabilidade individual no servidor.
+- Criatura seleciona o jogador mais próximo em alcance; transferência de autoridade invalida mensagens antigas e preserva o cooldown.
+- Interface validada para futuro backend na thread do jogo; diagnóstico Windows de somente leitura e artefato de desenvolvimento separado no Actions.
+- Testes concorrentes, transporte TCP real, privacidade entre destinatários, mundos distintos e negociação de capacidades.
+- **Pendente:** implementar e validar criação de Link, animação, colisão, bolsa/vida e IA no runtime BOTW. Não é release jogável com atores nativos. A versão estável segue em 0.4.2.
+
+[Estado, diagnóstico e limitações Gen1](docs/gen1/README.md).
+
 ## 0.4.2 — 13/11/2026 · hotfix
 
 ### Correções

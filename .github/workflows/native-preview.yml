@@ -1,0 +1,159 @@
+name: Native Link preview (experimental)
+on:
+  push:
+    branches: [feature/native-world-gen1]
+    paths: ['native/**', 'launcher/**', '.github/workflows/native-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  adapter-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: Revivedx/SavageWindRecomp
+          ref: 740b18025fe11ba03c117dbb56668db304b5043e
+          path: runtime-source
+      - name: Apply adapter twice and check idempotence
+        run: |
+          python native/apply_runtime.py runtime-source
+          git -C runtime-source diff > /tmp/first.diff
+          python native/apply_runtime.py runtime-source
+          git -C runtime-source diff > /tmp/second.diff
+          cmp /tmp/first.diff /tmp/second.diff
+          python -m py_compile runtime-source/tools/game_sites.py runtime-source/tools/patches.py
+      - name: Test synthetic actor lifecycle and guest CPU preservation
+        run: |
+          python -m pip install ziglang==0.17.1
+          python -m ziglang cc -std=gnu11 -O0 -UNDEBUG -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function -Iruntime-source/runtime native/tests/test_runtime.c -pthread -lm -o /tmp/test-native
+          /tmp/test-native
+  windows-runtime:
+    needs: adapter-test
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: Revivedx/SavageWindRecomp
+          ref: 740b18025fe11ba03c117dbb56668db304b5043e
+          path: runtime-source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: launcher/go.mod
+          cache: false
+      - name: Build launcher and private asset generator
+        shell: pwsh
+        run: |
+          python native/apply_runtime.py runtime-source
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location launcher
+          go test ./internal/...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-s -w -H=windowsgui' -o ../preview/HyruleLauncher.exe ./cmd/hyrule
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-s -w' -o ../preview/HyruleM-Native-Assets.exe ./cmd/hyrulem-native-assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-s -w' -o ../preview/HyruleM-Server.exe ./cmd/hyrulem-server
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-s -w' -o ../preview/HyruleM-Native-Probe.exe ./cmd/hyrulem-native-probe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make mingw-w64-ucrt-x86_64-clang mingw-w64-ucrt-x86_64-lld mingw-w64-ucrt-x86_64-sdl3
+            mingw-w64-ucrt-x86_64-ffmpeg mingw-w64-ucrt-x86_64-vulkan-headers mingw-w64-ucrt-x86_64-vulkan-loader
+            mingw-w64-ucrt-x86_64-shaderc mingw-w64-ucrt-x86_64-spirv-tools
+            mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-nasm
+      - name: Build native runtime and matching frozen generator
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd runtime-source
+          make -j4 RELEASE=1
+          make gen-helper GEN_PY="$(cygpath -u "$pythonLocation")/python.exe"
+          ! nm build/savagewind.exe | grep ' f_70' >/dev/null
+          mkdir -p ../preview/runtime-update/gamelib-src
+          cp build/savagewind.exe build/savagewind.dll.a hyrulem-build.json ../preview/runtime-update/
+          cp -R build/helper/swgen ../preview/runtime-update/
+          cp runtime/cpu.h runtime/simd.h runtime/simd_fp.h runtime/simd_softfma.h runtime/gamelib.h tools/gamelib_entry.c runtime/hle/hle_symbols.txt ../preview/runtime-update/gamelib-src/
+          cp LICENSE ../preview/runtime-update/SavageWind-LICENSE.txt
+          cp ../native/README.md ../preview/LEIA-ME.md
+          cp ../native/RESEARCH_SYNC.md ../preview/
+          cp ../docs/gen1/Diagnosticar.cmd ../preview/
+          cp ../native/Iniciar-Nativo.cmd ../native/Instalar-Nativo.cmd ../preview/
+          cp ../native/Install-NativePreview.ps1 ../preview/
+      - name: Verify installer with the existing official runtime dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'official-runtime.zip'
+          Invoke-WebRequest 'https://github.com/Revivedx/SavageWindRecomp/releases/download/v0.5.3-alpha.5/SavageWind-0.5.3-alpha.5-windows.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '667c4909a8ed72c002e5aa40a00d38720627eebf48b860beb5cd8805421f1285') { throw 'Official runtime hash mismatch' }
+          $root = Join-Path $env:RUNNER_TEMP 'native-install-test'
+          Expand-Archive -LiteralPath $archive -DestinationPath $root
+          $target = Join-Path $root 'Savage Wind'
+          $exe = Join-Path $target 'savagewind.exe'
+          $original = (Get-FileHash $exe -Algorithm SHA256).Hash
+          $sentinel = Join-Path $target 'save/synthetic-preservation.txt'
+          New-Item -ItemType Directory -Path (Split-Path $sentinel) -Force | Out-Null
+          Set-Content -LiteralPath $sentinel -Value 'synthetic save sentinel'
+          & ./preview/Install-NativePreview.ps1 -RuntimeDir $target
+          $backup = Get-ChildItem -LiteralPath $target -Directory -Filter 'HyruleM-runtime-backup-*' | Select-Object -First 1
+          if (-not $backup -or (Get-FileHash (Join-Path $backup.FullName 'savagewind.exe') -Algorithm SHA256).Hash -ne $original) { throw 'Original runtime backup missing' }
+          if ((Get-Content -LiteralPath $sentinel -Raw).Trim() -ne 'synthetic save sentinel') { throw 'Unrelated save file changed' }
+      - name: Package experimental runtime update without game assets
+        shell: pwsh
+        run: |
+          Copy-Item launcher/LICENSE preview/HyruleLauncher-LICENSE.txt
+          if (Get-ChildItem preview -Recurse -File | Where-Object { $_.Name -match '^(swgame\.(dll|dll\.id)|main|game_data\.sav)$' -or $_.Extension -in '.nsp','.xci','.sbfres','.sbactorpack' }) { throw 'Game files must never enter this artifact' }
+          Compress-Archive -Path preview/* -DestinationPath HyruleM-NativePreview-Windows-x64.zip
+          (Get-FileHash HyruleM-NativePreview-Windows-x64.zip -Algorithm SHA256).Hash.ToLower() | Set-Content SHA256.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: HyruleM-NativePreview-Windows-x64
+          path: |
+            HyruleM-NativePreview-Windows-x64.zip
+            SHA256.txt
+          if-no-files-found: error
+  publish-preview:
+    needs: windows-runtime
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/native-world-gen1'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@v4
+        with:
+          name: HyruleM-NativePreview-Windows-x64
+          path: release-assets
+      - name: Publish explicitly experimental prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag=v0.5.0-preview.2
+          existing=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish 2>/dev/null || true)
+          if [ -n "$existing" ] && [ "$existing" != "$RELEASE_SHA" ]; then
+            echo 'This preview tag already points at another commit; bump the version for another release.'
+            exit 0
+          fi
+          if [ -z "$existing" ]; then
+            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.2 — callback e vida dos monstros' --notes-file releases/v0.5.0-preview.2.md --prerelease --latest=false --draft
+          fi
+          gh release upload "$tag" release-assets/HyruleM-NativePreview-Windows-x64.zip release-assets/SHA256.txt --clobber
+          gh release edit "$tag" --draft=false --prerelease --latest=false

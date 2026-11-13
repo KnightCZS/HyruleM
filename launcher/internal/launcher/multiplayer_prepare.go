@@ -72,6 +72,12 @@ func (p *MultiplayerPreparer) Prepare(ctx context.Context, c Config, slot, port 
 	if e := ctx.Err(); e != nil {
 		return result, e
 	}
+	if nativePreviewRequested(env) {
+		say("Preparando ator remoto nativo experimental…")
+		if e := prepareNativePreview(c, running); e != nil {
+			return result, fmt.Errorf("modo nativo: %w", e)
+		}
+	}
 	say("Preparando dados e save deste cliente…")
 	return PrepareMultiplayerInstance(c, slot, port, env)
 }

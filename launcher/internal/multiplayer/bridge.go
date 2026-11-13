@@ -8,6 +8,7 @@ import (
 	"fmt"
 	core "hyrulelauncher/internal/launcher"
 	"math"
+	"os"
 	"sync"
 	"time"
 )
@@ -26,6 +27,7 @@ type Bridge struct {
 	fov          float64
 	status       func(string)
 	spawnRequest chan struct{}
+	native       bool
 }
 
 func NewBridge(parent context.Context, c *Client, game GameControl, fov float64, status func(string)) *Bridge {
@@ -34,6 +36,7 @@ func NewBridge(parent context.Context, c *Client, game GameControl, fov float64,
 	}
 	ctx, cancel := context.WithCancel(parent)
 	b := &Bridge{Client: c, control: game, cancel: cancel, done: make(chan struct{}), fov: fov, status: status, spawnRequest: make(chan struct{}, 1)}
+	b.native = os.Getenv(core.NativePreviewEnv) == "1"
 	go b.run(ctx)
 	return b
 }
@@ -157,15 +160,27 @@ func (b *Bridge) run(ctx context.Context) {
 	var at time.Time
 	var phase, yaw float64
 	joined := false
+	manualSpawn := false
 	lastIssue := ""
 	lastIssueAt := time.Time{}
 	stable := 0
 	cameraProbe := time.Time{}
 	autoFOV := 0.0
 	up := Vec3{Y: 1}
+	var native *nativePreview
+	defer func() {
+		if native != nil {
+			cleanup, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+			defer cancel()
+			_ = b.clearNative(cleanup, native)
+		}
+	}()
 	for ctx.Err() == nil && b.Client.Connected() {
 		var pos Vec3
 		if e := b.command(ctx, "pos", &pos); e != nil || !pos.Valid() {
+			if native != nil {
+				_ = b.clearNative(ctx, native)
+			}
 			issue := "Aguardando mundo válido. Escolha Continuar no jogo."
 			if e != nil {
 				issue += " Controle local: " + e.Error()
@@ -186,10 +201,19 @@ func (b *Bridge) run(ctx context.Context) {
 			}
 			continue
 		}
+		if b.native && native == nil {
+			var err error
+			native, err = b.openNative(ctx)
+			if err != nil {
+				b.say("Modo nativo indisponível: " + err.Error())
+				return
+			}
+		}
 		select {
 		case <-b.spawnRequest:
 			joined = false
 			stable = 0
+			manualSpawn = true
 		default:
 		}
 		if !joined {
@@ -200,22 +224,34 @@ func (b *Bridge) run(ctx context.Context) {
 				}
 				continue
 			}
-			b.say("Mundo carregado. Posicionando jogador em Hateno…")
-			if e := b.teleport(ctx); e != nil {
-				lastIssue = "spawn-failed"
-				b.say("Conectado à rede; posicionamento falhou: " + e.Error() + ". Fique parado no mundo e clique Reunir em Hateno. Sua posição atual será transmitida.")
-			} else {
-				lastIssue = ""
+			// Joining native presence must never move the local player. Reunir em
+			// Hateno remains an explicit action; the old automatic slot offset was
+			// perceived as a push when the second client joined.
+			if !b.native || manualSpawn {
+				b.say("Mundo carregado. Posicionando jogador em Hateno…")
+				if e := b.teleport(ctx); e != nil {
+					lastIssue = "spawn-failed"
+					b.say("Conectado à rede; posicionamento falhou: " + e.Error() + ". Fique parado no mundo e clique Reunir em Hateno. Sua posição atual será transmitida.")
+				} else {
+					lastIssue = ""
+				}
 			}
+			manualSpawn = false
 			// These are private per-client video settings. An owned desktop overlay
 			// requires a composited window, and its projection uses full view.
-			_ = b.command(ctx, "set fullscreen off", nil)
-			_ = b.command(ctx, "set wide_view on", nil)
-			_ = b.command(ctx, "set hdr off", nil)
+			if !b.native {
+				_ = b.command(ctx, "set fullscreen off", nil)
+				_ = b.command(ctx, "set wide_view on", nil)
+				_ = b.command(ctx, "set hdr off", nil)
+			}
 			joined = true
 			at = time.Time{}
 			if lastIssue != "spawn-failed" {
-				b.say("Sincronizando movimento · avatar visual provisório")
+				if b.native {
+					b.say("Sincronizando presença nativa experimental; combate ainda indisponível")
+				} else {
+					b.say("Sincronizando movimento · avatar visual provisório")
+				}
 			}
 			continue
 		}
@@ -239,6 +275,20 @@ func (b *Bridge) run(ctx context.Context) {
 		at = now
 		if b.Client.Publish(Pose{Position: pos, Velocity: velocity, Yaw: yaw, Phase: phase, Ready: true}) != nil {
 			return
+		}
+		if native != nil {
+			if err := b.updateNative(ctx, native, now); err != nil {
+				b.say("Integração nativa interrompida: " + err.Error())
+				return
+			}
+			if err := b.updateWorldHealth(ctx, native, now); err != nil {
+				b.say("Sincronização do mundo interrompida: " + err.Error())
+				return
+			}
+			if !wait(ctx, 80*time.Millisecond) {
+				return
+			}
+			continue
 		}
 		var cam struct{ X, Y, Z, DX, DY, DZ float64 }
 		if b.command(ctx, "camera", &cam) == nil {

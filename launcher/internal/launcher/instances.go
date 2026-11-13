@@ -140,6 +140,13 @@ func PrepareMultiplayerInstance(c Config, slot, port int, baseEnv []string) (Mul
 		}
 		vars["SAVAGEWIND_ROMFS_OVERLAY"] = FilterOverlay(c)
 	}
+	if nativePreviewRequested(baseEnv) {
+		if !IsFile(filepath.Join(NativePreviewOverlay(c), "hyrulem-native-overlay.json")) {
+			return result, fmt.Errorf("overlay nativo ainda não preparado")
+		}
+		vars["SAVAGEWIND_ROMFS_OVERLAY"] = NativePreviewOverlay(c)
+		vars[NativePreviewEnv] = "1"
+	}
 	// Inherited test/debug switches could change spawn or auto-close the game.
 	var env []string
 	for _, entry := range spec.Env {
