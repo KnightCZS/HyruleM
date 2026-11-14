@@ -91,6 +91,8 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		p.Status, p.Message = "active", "Ator e componentes confirmados pelo jogo. Este estado ainda não comprova visibilidade na GPU."
 	case s.Active:
 		p.Status, p.Message = "model_missing", "O ator não confirmou os componentes de modelo e animação."
+	case s.State == "activating":
+		p.Status, p.Message = "activating", "O personagem foi criado e aguarda ativação pelo jogo. Ainda não confirmou modelo ou movimento."
 	case s.Received == 0:
 		p.Status, p.Message = "no_native_session", "Callback ativo, sem comandos de presença. Conecte os dois clientes pelo menu nativo."
 	default:

@@ -31,6 +31,9 @@ typedef struct {
     uint64_t animation_requests;
     unsigned spawn_attempts;
     bool resource_fallback, visual_only;
+    char reference_status[48];
+    int actor_state;
+    uint64_t activation_wait_ticks;
 } Published;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static Desired desired;
@@ -43,6 +46,9 @@ static bool spawning, failed;
 static bool fallback_tried;
 static unsigned resource_variant, spawn_attempts;
 static uint64_t tick_count;
+static uint64_t activation_wait_ticks;
+static uint64_t activation_wait_at;
+static bool activation_waiting;
 static Track local_tracks[2], remote_tracks[2];
 static uint64_t capture_count;
 static float local_yaw;
@@ -112,23 +118,37 @@ static void publish(const char *state, const char *error, uint64_t seq, bool act
     pthread_mutex_unlock(&mutex);
 }
 static void release_local(Cpu *c) { call(c,g_site.actor_link_release,storage+LOCAL,0,0,0,0,0,0); }
-static uint64_t resolve(Cpu *c) {
-    if (!actor || !LD8(storage+INDEX+12) || LD32(storage+INDEX+8)==UINT32_MAX) return 0;
+typedef struct { uint64_t ptr; int state; const char *status; bool invalid; } ActorRef;
+static ActorRef resolve(Cpu *c) {
+    ActorRef r={0,-1,"index-not-retained",true};
+    if (!actor || !LD8(storage+INDEX+12) || LD32(storage+INDEX+8)==UINT32_MAX) return r;
     uint64_t block=LD64(storage+INDEX);
-    if (!range(block,0x54) || LD32(block+0x40)!=LD32(storage+INDEX+8) || LD64(block+0x48)!=actor) return 0;
+    r.status="index-mismatch";
+    if (!range(block,0x54) || LD32(block+0x40)!=LD32(storage+INDEX+8) || LD64(block+0x48)!=actor) return r;
     uint64_t a=call(c,g_site.actor_index_resolve,storage+INDEX,storage+LOCAL,0,0,0,0,0);
-    if (a!=actor || !range(a,0x600) || LD64(storage+LOCAL+8)!=a || LD8(a+0x64)!=1) {
-        release_local(c); return 0;
+    if (!a) {
+        // A failed native access check may still populate the local link.
+        release_local(c);r.status="lease-unavailable";r.invalid=false;return r;
     }
-    return a;
+    if (a!=actor || !range(a,0x600) || LD64(storage+LOCAL+8)!=a) {
+        release_local(c);r.status="local-link-mismatch";return r;
+    }
+    r.state=LD8(a+0x64);
+    if (r.state>2) { release_local(c);r.status="actor-not-live";return r; }
+    r.ptr=a;r.invalid=false;r.status=r.state==1?"ready":"activation-pending";
+    return r;
 }
-static void remove_remote(Cpu *c) {
-    if (!storage) return;
-    if (spawning) call(c,g_site.hm_handle_delete,storage+HANDLE,0,0,0,0,0,0);
-    uint64_t a=resolve(c);
-    if (a) { call(c,g_site.hm_delete_actor,a,0,0,0,0,0,0); release_local(c); }
+static bool remove_remote(Cpu *c) {
+    if (!storage) return true;
+    if (spawning) { call(c,g_site.hm_handle_delete,storage+HANDLE,0,0,0,0,0,0);spawning=false; }
+    ActorRef r=resolve(c);
+    if (r.ptr) { call(c,g_site.hm_delete_actor,r.ptr,0,0,0,0,0,0); release_local(c); }
+    // Keep ownership while the scheduler denies access. A subsequent game
+    // callback retries cleanup, without creating another actor or losing it.
+    else if (actor&&!r.invalid) return false;
     call(c,g_site.actor_index_release,storage+INDEX,0,0,0,0,0,0);
     actor=0; spawning=false; animation=-1;memset(remote_tracks,0,sizeof remote_tracks);
+    return true;
 }
 static bool prepare(Cpu *c, Desired *d, uint64_t vt) {
     uint64_t creator=LD64(g_site.hm_creator), manager=LD64(g_site.hm_heap_mgr);
@@ -144,7 +164,7 @@ static bool prepare(Cpu *c, Desired *d, uint64_t vt) {
     call(c,g_site.hm_param_add,storage+PARAMS+0x10,storage+VECTOR,storage+SSTR,12,4,0,0);
     spawn_attempts++;
     if (!call(c,g_site.hm_create,creator,storage+NAME,heap,storage+HANDLE,storage+PARAMS,0,1)) return false;
-    spawning=true; spawning_at=now_ms(); return true;
+    spawning=true; spawning_at=now_ms(); activation_wait_ticks=0;activation_waiting=false;return true;
 }
 static bool retry_fallback(Cpu *c,const char *reason) {
     pthread_mutex_lock(&mutex);
@@ -152,9 +172,16 @@ static bool retry_fallback(Cpu *c,const char *reason) {
     pthread_mutex_unlock(&mutex);
     fprintf(stderr,"[hyrulem] resource variant %u rejected: %s\n",resource_variant,reason);
     if(fallback_tried)return false;
-    remove_remote(c);fallback_tried=true;resource_variant=1;
+    if(!remove_remote(c))return false;
+    fallback_tried=true;resource_variant=1;
     strcpy((char *)(uintptr_t)(storage+NAME),"HyruleM_RemoteLink_Fallback");
     publish("retrying-visual-fallback","",applied,false);return true;
+}
+static void fatal(Cpu *c,const char *reason) {
+    pthread_mutex_lock(&mutex);
+    if(!published.first_error[0])snprintf(published.first_error,sizeof published.first_error,"%s",reason);
+    pthread_mutex_unlock(&mutex);
+    remove_remote(c);failed=true;publish("error",reason,applied,false);
 }
 
 // Only decode trivial native getters returning an embedded life integer. Do not
@@ -281,51 +308,77 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
         strcpy((char *)(uintptr_t)(storage+KEY),"@P");
     }
     if (strcmp(session,d.session)) {
-        remove_remote(c); snprintf(session,sizeof session,"%s",d.session);
+        if(!remove_remote(c)){publish("cleaning-up","",applied,false);return;}
+        snprintf(session,sizeof session,"%s",d.session);
         applied=0; failed=false;
         fallback_tried=false;resource_variant=spawn_attempts=0;
         strcpy((char *)(uintptr_t)(storage+NAME),"HyruleM_RemoteLink");
-        pthread_mutex_lock(&mutex);published.first_error[0]=published.error[0]=0;pthread_mutex_unlock(&mutex);
+        pthread_mutex_lock(&mutex);
+        published.first_error[0]=published.error[0]=published.reference_status[0]=0;
+        published.actor_state=-1;published.activation_wait_ticks=0;
+        published.model_ready=published.animation_ready=published.visual_only=false;
+        memset(published.requested,0,sizeof published.requested);memset(published.observed,0,sizeof published.observed);
+        published.animation_requests=0;
+        pthread_mutex_unlock(&mutex);
     }
-    if (failed) return; // Keep the first fatal result after disconnect/expiry.
+    if (failed) { if(actor)remove_remote(c);return; } // Preserve the fatal result during deferred cleanup.
     bool stale=d.received && now_ms()-d.received>2500;
     if (!d.visible || stale) {
-        remove_remote(c); applied=d.seq;
+        if(!remove_remote(c)){publish("cleaning-up","",applied,false);return;}
+        applied=d.seq;
         publish(stale?"expired":"idle","",applied,false); return;
     }
     if (spawning) {
         if (call(c,g_site.hm_handle_failed,storage+HANDLE,0,0,0,0,0,0)) {
             if(retry_fallback(c,"native-spawn-failed"))return;
-            remove_remote(c); failed=true; publish("error","native-spawn-failed",applied,false); return;
+            fatal(c,"native-spawn-failed");return;
         }
         // A ready handle wins over wall-clock timeout after a long pause.
         if (!call(c,g_site.hm_handle_ready,storage+HANDLE,0,0,0,0,0,0)) {
             if (now_ms()-spawning_at>15000) {
                 if(retry_fallback(c,"native-spawn-timeout"))return;
-                remove_remote(c); failed=true; publish("error","native-spawn-timeout",applied,false); return;
+                fatal(c,"native-spawn-timeout");return;
             }
             publish("spawning","",applied,false); return;
         }
         uint64_t a=call(c,g_site.hm_handle_get,storage+HANDLE,0,0,0,0,0,0);
         if (!range(a,0x600) || a==local ||
             !call(c,g_site.actor_index_assign,storage+INDEX,a,1,0,0,0,0)) {
-            remove_remote(c); failed=true; publish("error","native-reference-failed",applied,false); return;
+            fatal(c,"native-reference-failed");return;
         }
         actor=a;
         uint64_t awake=call(c,g_site.hm_handle_wake,storage+HANDLE,0,0,0,0,0,0);
         spawning=false;
-        spawning_at=now_ms();
-        if (awake!=a) { remove_remote(c); failed=true; publish("error","native-wake-failed",applied,false); return; }
+        activation_waiting=true;activation_wait_at=spawning_at;
+        if (awake!=a) { fatal(c,"native-wake-failed");return; }
     }
     if (!actor) {
         if (!prepare(c,&d,safe_string_vtable)) {
             if(retry_fallback(c,"native-spawn-rejected-check-private-overlay"))return;
-            failed=true; publish("error","native-spawn-rejected-check-private-overlay",applied,false); return;
+            fatal(c,"native-spawn-rejected-check-private-overlay");return;
         }
         publish("spawning","",applied,false); return;
     }
-    uint64_t a=resolve(c);
-    if (!a) { remove_remote(c); failed=true; publish("error","remote-unloaded-open-new-session",applied,false); return; }
+    ActorRef ref=resolve(c);
+    pthread_mutex_lock(&mutex);
+    snprintf(published.reference_status,sizeof published.reference_status,"%s",ref.status);
+    published.actor_state=ref.state;
+    pthread_mutex_unlock(&mutex);
+    if(ref.invalid){fatal(c,ref.status);return;}
+    if(!ref.ptr||ref.state!=1) {
+        if(ref.ptr)release_local(c);
+        if(!activation_waiting){activation_waiting=true;activation_wait_at=now_ms();}
+        pthread_mutex_lock(&mutex);published.activation_wait_ticks=++activation_wait_ticks;pthread_mutex_unlock(&mutex);
+        // Waking a ready handle queues activation in the engine. States 0/2
+        // and a temporarily unavailable lease are not an unload notification.
+        // Preserve the retained index and wait for a later game callback.
+        if(now_ms()-activation_wait_at<15000){publish("activating","",applied,false);return;}
+        const char *reason=ref.ptr?"native-activation-timeout":"native-access-timeout";
+        if(retry_fallback(c,reason))return;
+        fatal(c,reason);return;
+    }
+    activation_waiting=false;
+    uint64_t a=ref.ptr;
     uint64_t as=LD64(a+0x560);
     bool model_ready=range(LD64(a+0x4e0),0xa4);
     bool animation_ready=range(as,0x168)&&LD32(as+0xb8)>=2&&range(LD64(as+0xc0),0xa0)&&LD32(as+0x138)>0;
@@ -336,8 +389,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     if (!model_ready) {
         if(now_ms()-spawning_at<15000){release_local(c);publish("loading-visuals","",applied,false);return;}
         if(!fallback_tried){release_local(c);if(retry_fallback(c,"remote-model-not-loaded"))return;}
-        release_local(c); remove_remote(c); failed=true;
-        publish("error","remote-model-not-loaded",applied,false); return;
+        release_local(c);fatal(c,"remote-model-not-loaded");return;
     }
     pthread_mutex_lock(&mutex);
     published.requested[0]=d.x;published.requested[1]=d.y;published.requested[2]=d.z;
@@ -353,7 +405,8 @@ RT_ON_RESET(hyrulem_reset) {
     memset(local_tracks,0,sizeof local_tracks);memset(remote_tracks,0,sizeof remote_tracks);capture_count=0;local_yaw=0;
     world_count=health_count=0;last_world_scan=0;
     pthread_mutex_unlock(&mutex);
-    storage=actor=spawning_at=applied=tick_count=0; session[0]=0;
+    storage=actor=spawning_at=applied=tick_count=activation_wait_ticks=activation_wait_at=0; session[0]=0;
+    activation_waiting=false;
     animation=-1; spawning=failed=false;
     fallback_tried=false;resource_variant=spawn_attempts=0;
 }
@@ -440,6 +493,9 @@ static void status(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"spawn_attempts",p.spawn_attempts);
     control_field_bool(r,"resource_fallback",p.resource_fallback);control_field_bool(r,"visual_only",p.visual_only);
     control_field_str(r,"first_error",p.first_error);
+    control_field_str(r,"reference_status",p.reference_status);
+    control_field_int(r,"actor_state",p.reference_status[0]?p.actor_state:-1);
+    control_field_int(r,"activation_wait_ticks",p.activation_wait_ticks);
 }
 static void local_state(int argc,char **argv,ControlReply *r) {
     Track tracks[2];float yaw;uint64_t count;

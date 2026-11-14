@@ -10,18 +10,22 @@ GameSites g_site;
 const char *g_game_version="1.9.0";
 static unsigned calls, creates, deletes, moves, plays;
 static uint64_t mock_actor=HEAP_BASE+0x3000, retained=HEAP_BASE+0x4000;
-static bool reject,fail_handle;
+static bool reject,fail_handle,deny_lease;
+static unsigned create_state=1;
 void *hle_alloc(uint64_t size) { assert(size==BYTES); return (void *)(uintptr_t)HLE_HEAP; }
 void guest_call(Cpu *c,uint64_t fn) {
     calls++;
-    if (fn==g_site.hm_create) { creates++; assert(c->x[3]==HLE_HEAP+HANDLE); c->x[0]=!reject; }
+    if (fn==g_site.hm_create) { creates++; assert(c->x[3]==HLE_HEAP+HANDLE);ST8(mock_actor+0x64,create_state);c->x[0]=!reject; }
     else if (fn==g_site.hm_handle_ready) c->x[0]=1;
     else if (fn==g_site.hm_handle_failed) c->x[0]=fail_handle;
     else if (fn==g_site.hm_handle_get || fn==g_site.hm_handle_wake) c->x[0]=mock_actor;
     else if (fn==g_site.actor_index_assign) {
         ST64(c->x[0],retained); ST32(c->x[0]+8,7); ST8(c->x[0]+12,1);
         ST32(retained+0x40,7);ST64(retained+0x48,mock_actor);c->x[0]=1;
-    } else if (fn==g_site.actor_index_resolve) {ST64(c->x[1]+8,mock_actor);c->x[0]=mock_actor;}
+    } else if (fn==g_site.actor_index_resolve) {
+        assert(!LD64(c->x[1]+8)); // Local references cannot escape a callback.
+        ST64(c->x[1]+8,mock_actor);c->x[0]=deny_lease?0:mock_actor;
+    }
     else if (fn==g_site.actor_index_release) {ST64(c->x[0],0);ST32(c->x[0]+8,UINT32_MAX);ST8(c->x[0]+12,0);}
     else if (fn==g_site.actor_link_release) ST64(c->x[0]+8,0);
     else if (fn==g_site.hm_delete_actor) {assert(c->x[0]==mock_actor);deletes++;}
@@ -77,6 +81,43 @@ int main(void) {
     char *clear[]={"hm_native_clear","0123456789abcdef","3"};r.failed=false;clear_remote(3,clear,&r);assert(!r.failed && deletes==0);
     rt_hyrulem_tick(&cpu,0);assert(deletes==1 && !actor && !published.active);
     hyrulem_reset();assert(!storage && !actor && !desired.session[0]);
+    // Regression: the native wake operation queues activation. The retained
+    // actor can remain in state 2/0 across multiple callbacks, and even a
+    // failed resolver can populate a temporary local link that needs release.
+    create_state=2;r.failed=false;open_session(2,start,&r);remote(14,pose,&r);
+    unsigned old_moves=moves,old_plays=plays,old_deletes=deletes,old_creates=creates;
+    rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);
+    assert(!failed&&actor&&!published.active&&!strcmp(published.state,"activating"));
+    assert(published.actor_state==2&&!strcmp(published.reference_status,"activation-pending"));
+    for(int i=0;i<3;i++)rt_hyrulem_tick(&cpu,0);
+    assert(creates==old_creates+1&&moves==old_moves&&plays==old_plays&&deletes==old_deletes);
+    assert(!LD64(storage+LOCAL+8)&&LD8(storage+INDEX+12));
+    deny_lease=true;ST8(mock_actor+0x64,0);rt_hyrulem_tick(&cpu,0);
+    assert(!failed&&!LD64(storage+LOCAL+8)&&!strcmp(published.reference_status,"lease-unavailable"));
+    deny_lease=false;ST8(mock_actor+0x64,1);rt_hyrulem_tick(&cpu,0);
+    assert(published.active&&moves==old_moves+2&&plays==old_plays+2&&published.activation_wait_ticks==5);
+    assert(!memcmp(&before,&cpu,sizeof cpu));
+    // A pending actor can also be removed safely, without requiring state 1.
+    ST8(mock_actor+0x64,2);clear_remote(3,clear,&r);rt_hyrulem_tick(&cpu,0);
+    assert(!actor&&deletes==old_deletes+1&&!LD8(storage+INDEX+12));
+    // A stale generation is not an activation delay: never move/dereference it.
+    hyrulem_reset();create_state=1;open_session(2,start,&r);remote(14,pose,&r);rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);
+    old_moves=moves;ST32(retained+0x40,8);rt_hyrulem_tick(&cpu,0);
+    assert(failed&&moves==old_moves&&!actor&&!strcmp(published.first_error,"index-mismatch"));
+    // Activation has a bounded fallback, not a rapid create/delete loop.
+    hyrulem_reset();create_state=2;open_session(2,start,&r);remote(14,pose,&r);rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);
+    activation_wait_at=now_ms()-16000;rt_hyrulem_tick(&cpu,0);
+    assert(fallback_tried&&!failed&&!actor&&spawn_attempts==1);
+    rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);activation_wait_at=now_ms()-16000;rt_hyrulem_tick(&cpu,0);
+    assert(failed&&spawn_attempts==2&&!strcmp(published.error,"native-activation-timeout"));
+    old_creates=creates;rt_hyrulem_tick(&cpu,0);assert(creates==old_creates);
+    // Denied cleanup keeps ownership until a later permitted callback.
+    hyrulem_reset();create_state=1;open_session(2,start,&r);remote(14,pose,&r);rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);
+    deny_lease=true;rt_hyrulem_tick(&cpu,0);activation_wait_at=now_ms()-16000;rt_hyrulem_tick(&cpu,0);
+    assert(failed&&actor&&LD8(storage+INDEX+12)&&!strcmp(published.error,"native-access-timeout"));
+    old_creates=creates;rt_hyrulem_tick(&cpu,0);assert(creates==old_creates);
+    deny_lease=false;rt_hyrulem_tick(&cpu,0);assert(!actor&&!LD8(storage+INDEX+12)&&!strcmp(published.error,"native-access-timeout"));
+    hyrulem_reset();create_state=1;
     // A rejected native creation is reported once, without an allocation/retry loop.
     reject=true;r.failed=false;open_session(2,start,&r);remote(14,pose,&r);
     rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);unsigned count=creates;rt_hyrulem_tick(&cpu,0);assert(failed && creates==count && !strcmp(published.state,"error"));

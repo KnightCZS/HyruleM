@@ -33,6 +33,49 @@ type fakeNativeGame struct {
 
 type legacyNativeGame struct{ *fakeNativeGame }
 
+type waitingNativeGame struct {
+	*fakeNativeGame
+	status json.RawMessage
+}
+
+func (f *waitingNativeGame) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
+	if cmd == "hm_native_status" {
+		return core.ControlReply{OK: true, Data: f.status}, nil
+	}
+	return f.fakeNativeGame.Command(ctx, cmd)
+}
+
+func TestNativeActivationWaitAndFallbackDeadline(t *testing.T) {
+	s := testServer(t)
+	a, remote := testClient(t, s, "Local"), testClient(t, s, "Remote")
+	if err := remote.Publish(Pose{Ready: true, Position: Vec3{3400, 236, 2100}}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool { return len(a.Remote(time.Now())) > 0 })
+	game := &waitingNativeGame{fakeNativeGame: &fakeNativeGame{fakeGame: &fakeGame{}}, status: json.RawMessage(`{"state":"activating","tick_age_ms":0,"spawn_attempts":2}`)}
+	b := &Bridge{Client: a, control: game}
+	now := time.Now()
+	n := &nativePreview{session: "0123456789abcdef", waitingSince: now.Add(-19 * time.Second), spawnAttempts: 1}
+	if err := b.updateNative(context.Background(), n, now); err != nil {
+		t.Fatal("fallback interrupted before activation", err)
+	}
+	n.waitingSince = now.Add(-19 * time.Second)
+	n.lastStatus = time.Time{}
+	if err := b.updateNative(context.Background(), n, now); err == nil {
+		t.Fatal("repeated status extended the deadline")
+	}
+	game.status = json.RawMessage(`{"state":"active","tick_age_ms":0,"spawn_attempts":2,"active":true,"model_ready":true,"animation_ready":true}`)
+	n.lastStatus = time.Time{}
+	if err := b.updateNative(context.Background(), n, now); err != nil {
+		t.Fatal(err)
+	}
+	game.status = json.RawMessage(`{"state":"activating","tick_age_ms":0,"spawn_attempts":2}`)
+	n.lastStatus = time.Time{}
+	if err := b.updateNative(context.Background(), n, now); err != nil {
+		t.Fatal("brief reactivation used original session deadline", err)
+	}
+}
+
 func (f *legacyNativeGame) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
 	if cmd == "hm_caps" {
 		return core.ControlReply{OK: true, Data: json.RawMessage(`{"runtime":"SavageWind-HyruleM","game_version":"1.9.0","preview_abi":1,"native_preview":true}`)}, nil

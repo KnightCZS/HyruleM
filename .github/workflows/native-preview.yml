@@ -189,14 +189,14 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          tag=v0.5.0-preview.5
+          tag=v0.5.0-preview.6
           existing=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish 2>/dev/null || true)
           if [ -n "$existing" ] && [ "$existing" != "$RELEASE_SHA" ]; then
             echo 'This preview tag already points at another commit; bump the version for another release.'
             exit 0
           fi
           if [ -z "$existing" ]; then
-            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.5 — recuperação da criação do modelo' --notes-file releases/v0.5.0-preview.5.md --prerelease --latest=false --draft
+            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.6 — ativação assíncrona do personagem' --notes-file releases/v0.5.0-preview.6.md --prerelease --latest=false --draft
           fi
           gh release upload "$tag" release-assets/HyruleM-NativePreview-Windows-x64.zip release-assets/SHA256.txt --clobber
           gh release edit "$tag" --draft=false --prerelease --latest=false

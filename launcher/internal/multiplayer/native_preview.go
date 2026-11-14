@@ -10,15 +10,16 @@ import (
 	"time"
 )
 
-// Native presence and nearby map-enemy health use protocol 3. Full Gen1 combat
+// Native presence and nearby map-enemy health use protocol 4. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
-	session      string
-	sequence     uint64
-	lastStatus   time.Time
-	state        string
-	waitingSince time.Time
-	lastWorld    time.Time
+	session       string
+	sequence      uint64
+	lastStatus    time.Time
+	state         string
+	waitingSince  time.Time
+	lastWorld     time.Time
+	spawnAttempts uint64
 }
 
 func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
@@ -161,6 +162,7 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 		VisualOnly       bool   `json:"visual_only"`
 		ResourceFallback bool   `json:"resource_fallback"`
 		FirstError       string `json:"first_error"`
+		SpawnAttempts    uint64 `json:"spawn_attempts"`
 	}
 	if err := b.command(ctx, "hm_native_status", &status); err != nil {
 		return err
@@ -174,6 +176,15 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 	}
 	if status.TickAge < 0 || status.TickAge > 3000 {
 		return fmt.Errorf("a atualização nativa parou; estado %s", status.State)
+	}
+	// The runtime permits one fallback. Give that actual attempt its own
+	// bounded activation window; repeated packets/status cannot extend it.
+	if status.SpawnAttempts > n.spawnAttempts && status.SpawnAttempts <= 2 {
+		n.spawnAttempts = status.SpawnAttempts
+		n.waitingSince = now
+	}
+	if status.Active {
+		n.waitingSince = now
 	}
 	if len(remotes) > 0 && !status.Active && now.Sub(n.waitingSince) > 18*time.Second {
 		return fmt.Errorf("o jogo não confirmou o ator remoto (estado %s); a conexão foi interrompida para evitar presença invisível", status.State)
@@ -193,6 +204,10 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 			}
 		} else if status.State == "spawning" {
 			b.say("O jogo está criando o Link remoto…")
+		} else if status.State == "activating" {
+			b.say("Personagem criado · aguardando ativação pelo jogo…")
+		} else if status.State == "cleaning-up" {
+			b.say("Aguardando o jogo remover o personagem anterior…")
 		}
 	}
 	return nil

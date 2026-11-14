@@ -122,7 +122,7 @@ func Probe(ctx context.Context, cfg core.Config, slot, port int) (Report, error)
 // ProbeAt uses the folder of the selected config.json for launcher capture logs,
 // including when --config points outside the default AppDir.
 func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port int) (Report, error) {
-	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.5", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
+	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.6", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
 	if cfg.DataDir == "" || slot < 0 || slot > 2 {
 		return r, fmt.Errorf("configuração/pasta de dados ou instância inválida")
 	}

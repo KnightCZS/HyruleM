@@ -24,6 +24,7 @@ func TestPreviewDiagnosisSeparatesCallbackModelAndGen1(t *testing.T) {
 	for _, tt := range []struct{ state, want string }{
 		{`{"game_ticks":0,"tick_age_ms":-1}`, "callback_stalled"},
 		{`{"game_ticks":50,"tick_age_ms":0,"received_sequence":0}`, "no_native_session"},
+		{`{"state":"activating","game_ticks":50,"tick_age_ms":0,"received_sequence":4,"active":false,"actor_state":2}`, "activating"},
 		{`{"game_ticks":50,"tick_age_ms":0,"active":true}`, "model_missing"},
 		{`{"game_ticks":50,"tick_age_ms":0,"active":true,"model_ready":true,"visual_only":true,"resource_fallback":true,"first_error":"native-spawn-failed"}`, "visual_fallback"},
 		{`{"game_ticks":50,"tick_age_ms":0,"active":true,"model_ready":true,"visual_only":true}`, "animation_unavailable"},

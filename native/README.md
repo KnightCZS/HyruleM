@@ -1,21 +1,23 @@
-# HyruleM 0.5.0-preview.5
+# HyruleM 0.5.0-preview.6
 
-Hotfix da regressão relatada na [issue #5](https://github.com/KnightCZS/HyruleM/issues/5). ABI 3 e captura local estão funcionando nos relatórios; a falha `native-spawn-failed` ocorre na criação do proxy. Esta versão corrige estrutura e orçamento dos recursos privados e preserva a primeira falha no diagnóstico.
+Os novos relatórios da prévia 5 confirmam criação aceita e falha `remote-unloaded-open-new-session` antes de qualquer movimento/animação. O wake nativo agenda a ativação: a prévia anterior rejeitava o estado transitório 0/2 por exigir estado 1 na mesma chamada. Esta versão mantém a referência retida e aguarda callbacks posteriores, com prazo limitado. O teste privado das rotinas nativas reproduziu essa sequência; a visibilidade em gameplay ainda precisa de confirmação.
 
 ## Atualizar e testar
 
 1. Feche os dois jogos e o launcher antigo. Extraia o ZIP inteiro.
 2. Execute **Iniciar-Nativo.cmd**. Ele confere/atualiza o runtime configurado, com backup e restauração em falha.
-3. Abra ambos os clientes com o pacote novo. O overlay será reconstruído, incluindo a variante de contingência. **ABI 3 / protocolo 4** continuam iguais: a biblioteca que já funcionou com ABI 3 pode ser reutilizada.
+3. Abra ambos os clientes com o pacote novo. O overlay da prévia 5 continua válido, incluindo a variante de contingência. **ABI 3 / protocolo 4** continuam iguais: a biblioteca que já funcionou com ABI 3 pode ser reutilizada.
 4. Teste posição, direção e ações nos dois sentidos. O resultado visual desta versão ainda precisa de confirmação em gameplay.
 
 ## Recuperação visual e diagnóstico
 
 Se a criação principal for rejeitada, há uma única tentativa de contingência com os recursos originais da configuração anteriormente visível. O menu mostra **Modelo de contingência ativo · movimento sem animação**. Esse ator não recebe chamadas AS, para não executar seletores/eventos do Player. Isso é degradação explícita, não reprodução completa das ações.
 
+O menu distingue **aguardando ativação** de modelo ativo. Estado transitório ou acesso temporariamente indisponível não encerra a sessão no primeiro callback. Uma geração de referência inválida continua sendo erro. A limpeza também aceita um personagem ainda não ativo; se o jogo negar acesso, a referência fica retida até a limpeza ser permitida, sem criar outro personagem. A contingência recebe seu próprio prazo no launcher, sem renovação ilimitada por pacotes repetidos.
+
 Um modelo pronto não é apagado só porque a animação está indisponível. Se as duas variantes falharem, a sessão para e o erro fica preservado. Não há um ciclo ilimitado de criação.
 
-**Diagnosticar.cmd** consulta ambos os clientes em leitura. Os relatórios `native-preview-diag.5` incluem `first_error`, `spawn_attempts`, `resource_fallback`, `visual_only`, política/identidade do overlay e mensagens recentes de criação. A presença de uma primeira falha seguida de contingência ativa não significa animação funcionando. `native_ready` permanece reservado à Gen1 completa, ainda incompleta.
+**Diagnosticar.cmd** consulta ambos os clientes em leitura. Os relatórios `native-preview-diag.6` incluem `reference_status`, `actor_state`, `activation_wait_ticks`, `first_error`, `spawn_attempts`, `resource_fallback`, `visual_only`, política/identidade do overlay e mensagens recentes de criação. A presença de uma primeira falha seguida de contingência ativa não significa animação funcionando. `native_ready` permanece reservado à Gen1 completa, ainda incompleta.
 
 As folhas AS agora são arquivos canônicos mínimos, e a ASList tem strings reempacotadas. Seu orçamento acompanha o crescimento, sem reservar 64 KiB adicionais por AS pequeno. A captura e o transporte de ações da prévia 4 permanecem. Clipes representativos ainda não fornecem fidelidade completa de arma/velocidade; cabelo, equipamentos, PvP e IA do mundo não estão integrados.
 

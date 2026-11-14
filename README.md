@@ -1,6 +1,6 @@
 # HyruleM
 
-Hotfix experimental [0.5.0-preview.5](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.5): corrige formato/orçamento dos recursos do proxy e adiciona recuperação visual limitada para a regressão da issue #5. **ABI 3 / protocolo 4 mantidos.** [Instalação e limites](native/README.md).
+Hotfix experimental [0.5.0-preview.6](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.6): corrige a rejeição imediata do personagem durante a ativação assíncrona, reproduzida a partir dos dois novos relatórios. **ABI 3 / protocolo 4 mantidos.** [Instalação e limites](native/README.md).
 
 Prévia experimental [0.5.0-preview.4](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.4): captura e transporte de ações AS em dois canais, direção real e transformação do ator. **ABI 3 / protocolo 4 — biblioteca do jogo precisa ser regenerada.** [Instalação e limites](native/README.md). [Proposta de host do mundo](docs/HOST_WORLD.md).
 
