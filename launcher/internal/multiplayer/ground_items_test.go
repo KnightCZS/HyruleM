@@ -156,3 +156,47 @@ func TestGroundDropCapacityReservedBeforeDebit(t *testing.T) {
 		t.Fatal("late receipt resurrected cancelled drop")
 	}
 }
+
+func TestGroundSnapshotKeepsEveryTerminalReceiptWithinTransport(t *testing.T) {
+	s := groundServer(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	p := &serverPeer{player: Player{ID: "host", Pose: Pose{Ready: true, Position: s.cfg.Spawn}}, poseAt: now, groundClaims: map[uint64]GroundClaim{}}
+	// Unknown requests can wait only up to the native event capacity.
+	for i := uint64(1); i <= 128; i++ {
+		source := GroundSource{Local: i, Hash: uint32(i), Actor: "Item_Fruit_A", Position: s.cfg.Spawn, Spawn: s.cfg.Spawn}
+		if err := s.claimGround(p, GroundClaim{Request: i, Source: source}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, claims := s.groundSnapshot(p)
+	pending := 0
+	for _, c := range claims {
+		if c.Status == "waiting" {
+			pending++
+		}
+	}
+	if pending != MaxGroundItems || len(claims) != 128 {
+		t.Fatal("requests or terminal receipts lost", pending, len(claims))
+	}
+	for i := uint64(1); i <= MaxGroundItems; i++ {
+		s.groundItems[i] = GroundItem{ID: i, Owner: "host", State: "available", Source: GroundSource{Local: i, Drop: true, Origin: "0123456789abcdef", Actor: "Item_Fruit_A", Position: s.cfg.Spawn, Spawn: s.cfg.Spawn}}
+	}
+	items, claims := s.groundSnapshot(p)
+	m := Message{Type: "snapshot", GroundEnabled: true, GroundWorld: s.groundWorld, GroundItems: items, GroundClaims: claims}
+	for i := 0; i < MaxSharedEnemies; i++ {
+		m.Enemies = append(m.Enemies, EnemyHealth{Hash: uint32(i + 1), Actor: "Enemy_Bokoblin_Junior", Spawn: s.cfg.Spawn, Position: s.cfg.Spawn, Health: 1000000})
+	}
+	encoded, err := json.Marshal(m)
+	if err != nil || len(encoded) > MaxLine-5000 {
+		t.Fatal("bounded snapshot exceeded transport", len(encoded), err)
+	}
+	var decoded Message
+	if err = json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.GroundClaims) != 128 || decoded.GroundClaims[0].Source.Hash == 0 || decoded.GroundClaims[127].Status != "denied" {
+		t.Fatal("receipt or request source was corrupted")
+	}
+}

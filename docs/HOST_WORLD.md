@@ -18,6 +18,6 @@ Para a próxima camada de mundo, implementar primeiro um monstro identificado pe
 
 ## Primeira camada de objetos — prévia 9
 
-A opção experimental implementa um registro pequeno de materiais de Hateno, sem simular o motor completo. O host publica os objetos do mapa; quem larga um material publica seu drop. O servidor ordena pedidos de coleta, reserva um vencedor e aguarda o recibo da quantidade no inventário local antes de confirmar a retirada. Snapshot/entrada tardia incluem tombstones. Troca de anfitrião não reinicia esse registro.
+A opção experimental implementa um registro pequeno de materiais de Hateno, sem simular o motor completo. O host publica os objetos do mapa; o botão Largar 1 maçã reserva a identidade antes da retirada e só publica após confirmar o débito de uma unidade. Descartes normais do inventário e frutos sem hash continuam locais. O servidor ordena pedidos de coleta, reserva um vencedor e aguarda o recibo da quantidade no inventário local antes de confirmar a retirada. Snapshot/entrada tardia incluem tombstones. Troca de anfitrião não reinicia esse registro.
 
 Desconexão com concessão possivelmente aplicada fica incerta, sem nova concessão automática. Persistência/recuperação dessa pendência, física geral e outros tipos de item não foram implementados. [Fluxo e limites exatos](../native/README.md).

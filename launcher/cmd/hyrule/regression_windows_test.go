@@ -202,16 +202,23 @@ func TestNativeWindowsRegression(t *testing.T) {
 		windowProc(a.window, 0x2e0, 144|144<<16, uintptr(unsafe.Pointer(&suggested)))
 		pump()
 		captureReview(t, a.window, filepath.Join(dir, "home-150.png"))
+		a.scroll = a.px(10000)
+		a.layout()
+		pump()
+		captureReview(t, a.window, filepath.Join(dir, "home-150-bottom.png"))
 		suggested = rect{10, 10, 1010, 770}
 		windowProc(a.window, 0x2e0, 96|96<<16, uintptr(unsafe.Pointer(&suggested)))
 		pump()
 		u.localTest = true
 		u.layout()
-		u.scroll = u.px(180)
+		u.scroll = u.px(10000)
 		u.layout()
 		updateWindow.Call(u.window)
 		pump()
 		captureReview(t, u.window, filepath.Join(dir, "local-two.png"))
+	}
+	if len([]rune(displayStatus(a.status))) > 140 || !strings.Contains(displayStatus(a.status), "Configurações") {
+		t.Fatal("long system error escaped status summary")
 	}
 	t.Log("progress coalescing, scroll/GDI stability, sandbox start failure and multiplayer preparation error passed")
 }

@@ -1,6 +1,7 @@
 package multiplayer
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -77,6 +78,23 @@ type GroundClaim struct {
 	Source  GroundSource `json:"source"`
 	Status  string       `json:"status,omitempty"`
 }
+
+// Terminal snapshots only need the acknowledgement, not another full source.
+// Keep all acknowledgements so a burst cannot strand older native requests.
+func (c GroundClaim) MarshalJSON() ([]byte, error) {
+	type wire struct {
+		Request uint64        `json:"request"`
+		Item    uint64        `json:"item,omitempty"`
+		Source  *GroundSource `json:"source,omitempty"`
+		Status  string        `json:"status,omitempty"`
+	}
+	v := wire{Request: c.Request, Item: c.Item, Status: c.Status}
+	if c.Status == "" || c.Status == "waiting" || c.Status == "granted" {
+		v.Source = &c.Source
+	}
+	return json.Marshal(v)
+}
+
 type GroundReceipt struct {
 	Request uint64 `json:"request"`
 	Item    uint64 `json:"item"`
@@ -187,7 +205,22 @@ func (s *Server) claimGround(p *serverPeer, req GroundClaim, now time.Time) erro
 		}
 	}
 	if len(p.groundClaims) >= 128 {
-		return nil
+		if _, exists := p.groundClaims[req.Request]; !exists {
+			return fmt.Errorf("limite de pedidos de coleta da conexão atingido")
+		}
+	}
+	if _, exists := p.groundClaims[req.Request]; !exists {
+		pending := 0
+		for _, c := range p.groundClaims {
+			if c.Status == "waiting" || c.Status == "granted" {
+				pending++
+			}
+		}
+		if pending >= MaxGroundItems {
+			req.Status = "denied"
+			p.groundClaims[req.Request] = req
+			return nil
+		}
 	}
 	req.Status = "denied"
 	if !s.groundFresh(p, now) || req.Source.Position.Sub(p.player.Pose.Position).Len() > 3.5 {
@@ -206,12 +239,16 @@ func (s *Server) claimGround(p *serverPeer, req GroundClaim, now time.Time) erro
 	}
 	item, ok := s.groundItems[id]
 	if !ok {
+		if len(s.groundItems) >= MaxGroundItems {
+			p.groundClaims[req.Request] = req
+			return nil
+		}
 		req.Status = "waiting"
 		p.groundClaims[req.Request] = req
 		return nil
 	}
 	req.Item = id
-	if item.Source.Actor != req.Source.Actor || item.Source.Position.Sub(p.player.Pose.Position).Len() > 3.5 {
+	if item.Source.Actor != req.Source.Actor || item.Source.key(item.Owner) != req.Source.key(p.player.ID) || item.Source.Position.Sub(p.player.Pose.Position).Len() > 3.5 {
 		p.groundClaims[req.Request] = req
 		return nil
 	}
@@ -267,10 +304,7 @@ func (s *Server) groundSnapshot(p *serverPeer) ([]GroundItem, []GroundClaim) {
 			terminal = append(terminal, c)
 		}
 	}
-	sort.Slice(terminal, func(i, j int) bool { return terminal[i].Request > terminal[j].Request })
-	if len(terminal) > 16 {
-		terminal = terminal[:16]
-	}
+
 	pending = append(pending, terminal...)
 	sort.Slice(pending, func(i, j int) bool { return pending[i].Request < pending[j].Request })
 	return items, pending

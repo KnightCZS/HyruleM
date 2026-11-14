@@ -191,7 +191,7 @@ static void ground_drop_tick(Cpu *c,uint64_t player,uint64_t vt,const GroundMode
     GroundDropCommand queued;pthread_mutex_lock(&ground_mutex);queued=ground_drop_queued;memset(&ground_drop_queued,0,sizeof ground_drop_queued);pthread_mutex_unlock(&ground_mutex);
     if(queued.request){
         GroundDrop *d=NULL;for(int i=0;i<GROUND_DROPS;i++)if(!ground_drops[i].active){d=&ground_drops[i];break;}
-        if(d){uint64_t st=d->visual.storage;memset(d,0,sizeof *d);d->visual.storage=st?st:ground_storage();d->request=queued.request;d->id=queued.id;d->source=states[d->id-1].source;d->active=true;snprintf(d->world,sizeof d->world,"%s",queued.world);}
+        if(d){uint64_t st=d->visual.storage;memset(d,0,sizeof *d);d->visual.storage=st?st:ground_storage();d->visual.started=now_ms();d->request=queued.request;d->id=queued.id;d->source=states[d->id-1].source;d->active=true;snprintf(d->world,sizeof d->world,"%s",queued.world);}
         else{pthread_mutex_lock(&ground_mutex);ground_drop_last_result=-1;ground_drop_busy=false;pthread_mutex_unlock(&ground_mutex);}
     }
     for(int i=0;i<GROUND_DROPS;i++){
@@ -201,7 +201,7 @@ static void ground_drop_tick(Cpu *c,uint64_t player,uint64_t vt,const GroundMode
         if(d->confirmed&&(states[d->id-1].state==2||states[d->id-1].state==3||states[d->id-1].state==5)){if(remove_gear(c,g))d->active=false;continue;}
         if(d->confirmed){ActorRef ref=resolve_at(c,g->storage,g->actor);if(ref.ptr)release_at(c,g->storage);else if(ref.invalid){call(c,g_site.actor_index_release,g->storage+INDEX,0,0,0,0,0,0);g->actor=0;d->active=false;}continue;}
         float pos[3];for(int j=0;j<3;j++)pos[j]=read_float(player+0x3a4+j*16);float distance=0;for(int j=0;j<3;j++){float delta=pos[j]-d->source.pos[j];distance+=delta*delta;}
-        if(!g->storage||!isfinite(distance)||distance>16||!ground_in_zone(d->source.pos,mode,90)){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
+        if(!g->storage||now_ms()-g->started>15000||!isfinite(distance)||distance>16||!ground_in_zone(d->source.pos,mode,90)){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
         if(g->spawning){
             if(call(c,g_site.hm_handle_failed,g->storage+HANDLE,0,0,0,0,0,0)||now_ms()-g->started>15000){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
             if(!call(c,g_site.hm_handle_ready,g->storage+HANDLE,0,0,0,0,0,0))continue;

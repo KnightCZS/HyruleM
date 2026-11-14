@@ -25,6 +25,8 @@ Revisão dos módulos escritos para launcher, preparação/sandbox/filtro, inst�
 | Descarte | Limpeza negada após retirada ambígua poderia repetir a função de inventário | Resultado terminal antes da limpeza; próximos ticks só removem o ator; teste com acesso negado e recibos repetidos |
 | Descarte | Uma réplica poderia duplicar o próprio objeto confirmado antes da próxima varredura | Identificação direta dos descartes próprios pelo ID reservado, além do handle/index |
 
+| Rede de materiais | Cortar recibos terminais para caber no snapshot poderia deixar pedidos nativos antigos presos | Todos os recibos são enviados em formato compacto; no máximo 32 pedidos pendentes e 128 pedidos por conexão, com falha explícita ao exceder; teste com 128 recibos e 128 inimigos |
+
 ## Itens revisados que permanecem deliberadamente restritos
 
 - A conexão de controle continua local, com limites por comando, enquadramento por linha e descarte do socket em resposta inválida. A moldura visual completa usa um comando atômico; materiais têm limite próprio de 511 bytes.

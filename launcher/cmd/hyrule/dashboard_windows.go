@@ -5,6 +5,7 @@ package main
 import (
 	core "hyrulelauncher/internal/launcher"
 	"path/filepath"
+	"strings"
 	"unsafe"
 )
 
@@ -135,6 +136,8 @@ func (a *app) paintDashboard(dc uintptr) {
 	a.label(dc, "UM MUNDO. NOVAS HISTÓRIAS.", "small", colorMuted, rect{p(29), p(106), p(206), p(140)}, 0x10)
 	a.label(dc, "FERRAMENTAS", "label", colorMuted, rect{p(29), p(393), p(206), p(415)}, 0)
 	a.label(dc, "PRÉVIA EXPERIMENTAL\n"+core.Version, "small", colorMuted, rect{p(29), r.Bottom - p(76), p(206), r.Bottom - p(24)}, 0x10)
+	saved, _, _ := gdi32.NewProc("SaveDC").Call(dc)
+	gdi32.NewProc("IntersectClipRect").Call(dc, uintptr(left), 0, uintptr(right), uintptr(r.Bottom-p(86)))
 	setViewport.Call(dc, 0, uintptr(-a.scroll), 0)
 	title, sub := "Vamos a Hyrule?", "Entre com seus amigos ou continue sua própria aventura."
 	if a.page == idSettingsPage {
@@ -195,11 +198,24 @@ func (a *app) paintDashboard(dc uintptr) {
 		}
 		a.label(dc, ready, "small", colorMuted, rect{left + p(190), p(602), right, p(638)}, 0x10)
 	}
-	setViewport.Call(dc, 0, 0, 0)
+	gdi32.NewProc("RestoreDC").Call(dc, saved)
 	statusColor := colorGreen
 	if a.statusError {
 		statusColor = colorRed
 	}
 	a.box(dc, rect{left, r.Bottom - p(76), right, r.Bottom - p(16)}, colorBG, colorLine, 10)
-	a.label(dc, a.status, "small", statusColor, rect{left + p(16), r.Bottom - p(66), right - p(16), r.Bottom - p(24)}, 0x10)
+	a.label(dc, displayStatus(a.status), "small", statusColor, rect{left + p(16), r.Bottom - p(66), right - p(16), r.Bottom - p(24)}, 0x10)
+}
+
+// Keep the detailed status for diagnostics; the fixed footer is a short message.
+func displayStatus(s string) string {
+	if strings.Contains(strings.ToLower(s), "fork/exec") {
+		return "Não foi possível iniciar o jogo. Confira a instalação em Configurações. Detalhes em Abrir logs."
+	}
+	s = strings.Join(strings.Fields(s), " ")
+	runes := []rune(s)
+	if len(runes) > 140 {
+		return string(runes[:120]) + "… Veja Abrir logs."
+	}
+	return s
 }
