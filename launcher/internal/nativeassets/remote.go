@@ -40,6 +40,7 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		return nil, fmt.Errorf("ActorLink do jogador ausente")
 	}
 	link, err = gamefmt.PatchAAMPStrings(link, "LinkTarget", map[string]string{
+		"ASUser":      Actor,
 		"ProfileUser": "DemoNPC", "AIProgramUser": "Dummy", "AIScheduleUser": "Dummy",
 		"AttentionUser": "Dummy", "AwarenessUser": "Dummy", "BoneControlUser": "Dummy",
 		"ChemicalUser": "Dummy", "ElinkUser": "Dummy", "SlinkUser": "Dummy", "XlinkUser": "Dummy",
@@ -51,6 +52,7 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		return nil, err
 	}
 	files := map[string][]byte{}
+	budgets := map[string]string{}
 	var fallback []byte
 	if wait, ok := player.Get("Actor/AS/Player_Wait.bas"); ok {
 		fallback, err = gamefmt.ProxyAS(wait, "Wait")
@@ -60,7 +62,18 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 	}
 	for _, e := range player.Entries {
 		if e.Name != "Actor/ActorLink/GameROMPlayer.bxml" {
-			files[e.Name] = player.Data[e.Start:e.End]
+			name := e.Name
+			if name == "Actor/ASList/Player.baslist" {
+				x, e2 := gamefmt.NamespaceASList(player.Data[e.Start:e.End], "HM_")
+				if e2 != nil {
+					return nil, e2
+				}
+				name = "Actor/ASList/" + Actor + ".baslist"
+				files[name] = x
+				budgets[name] = e.Name
+				continue
+			}
+			files[name] = player.Data[e.Start:e.End]
 			if strings.HasPrefix(e.Name, "Actor/AS/") && strings.HasSuffix(e.Name, ".bas") {
 				action := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(e.Name), "Player_"), ".bas")
 				proxy, e2 := gamefmt.ProxyAS(files[e.Name], action)
@@ -70,7 +83,13 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 					}
 					proxy = fallback
 				}
-				files[e.Name] = proxy
+				delete(files, e.Name)
+				name = "Actor/AS/HM_" + filepath.Base(e.Name)
+				files[name] = proxy
+				budgets[name] = e.Name
+				if e2 != nil {
+					budgets[name] = "Actor/AS/Player_Wait.bas"
+				}
 			}
 		}
 	}
@@ -144,6 +163,19 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 	table, err := gamefmt.ReadRSTB(rawTable)
 	if err != nil {
 		return nil, err
+	}
+	for path, source := range budgets {
+		if err = table.Ensure(path, len(files[path])); err != nil {
+			return nil, err
+		}
+		v := table.Hashes[crc32.ChecksumIEEE([]byte(gamefmt.Canonical(source)))]
+		if x := table.Names[gamefmt.Canonical(source)]; x > v {
+			v = x
+		}
+		h := crc32.ChecksumIEEE([]byte(gamefmt.Canonical(path)))
+		if v > table.Hashes[h] {
+			table.Hashes[h] = v
+		}
 	}
 	for path, size := range map[string]int{PackPath: len(pack), InfoPath: len(info), linkPath: len(link)} {
 		if err = table.Ensure(path, size); err != nil {
