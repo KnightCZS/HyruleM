@@ -23,11 +23,12 @@ type nativePreview struct {
 
 func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 	var caps struct {
-		Runtime       string `json:"runtime"`
-		GameVersion   string `json:"game_version"`
-		PreviewABI    int    `json:"preview_abi"`
-		NativePreview bool   `json:"native_preview"`
-		SharedHealth  bool   `json:"shared_enemy_health"`
+		Runtime          string `json:"runtime"`
+		GameVersion      string `json:"game_version"`
+		PreviewABI       int    `json:"preview_abi"`
+		NativePreview    bool   `json:"native_preview"`
+		SharedHealth     bool   `json:"shared_enemy_health"`
+		AnimationCapture bool   `json:"animation_capture"`
 	}
 	if err := b.command(ctx, "hm_caps", &caps); err != nil {
 		return nil, fmt.Errorf("o runtime não possui o adaptador nativo: %w", err)
@@ -40,6 +41,9 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 	}
 	if !caps.SharedHealth {
 		return nil, fmt.Errorf("o adaptador de mundo não foi carregado; reconstrua a biblioteca com o novo runtime")
+	}
+	if !caps.AnimationCapture {
+		return nil, fmt.Errorf("a captura de animações está ausente; reconstrua a biblioteca do jogo com o gerador novo")
 	}
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
@@ -85,7 +89,41 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 	if pose.Velocity.Len() > .2 {
 		animation = "move"
 	}
-	return fmt.Sprintf("hm_native_remote %s %d %.4f %.4f %.4f %.6f %s", session, seq, pose.Position.X, pose.Position.Y, pose.Position.Z, pose.Yaw, animation), nil
+	upper, lower := pose.Upper.Name, pose.Lower.Name
+	if upper == "" {
+		upper = "-"
+	}
+	if lower == "" {
+		lower = "-"
+	}
+	return fmt.Sprintf("hm_native_remote %s %d %.4f %.4f %.4f %.6f %s %s %d %d %s %d %d", session, seq, pose.Position.X, pose.Position.Y, pose.Position.Z, pose.Yaw, animation, upper, pose.Upper.Sequence, boolInt(pose.Upper.Force), lower, pose.Lower.Sequence, boolInt(pose.Lower.Force)), nil
+}
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+func (b *Bridge) capturePose(ctx context.Context, p *Pose) error {
+	var s struct {
+		Yaw           float64
+		Upper         string
+		Lower         string
+		UpperSequence uint64 `json:"upper_sequence"`
+		LowerSequence uint64 `json:"lower_sequence"`
+		UpperForce    bool   `json:"upper_force"`
+		LowerForce    bool   `json:"lower_force"`
+	}
+	if err := b.command(ctx, "hm_local_state", &s); err != nil {
+		return err
+	}
+	p.Yaw = s.Yaw
+	p.Upper = AnimationTrack{s.Upper, s.UpperSequence, s.UpperForce}
+	p.Lower = AnimationTrack{s.Lower, s.LowerSequence, s.LowerForce}
+	if !p.Valid() {
+		return fmt.Errorf("estado de animação local inválido")
+	}
+	return nil
 }
 func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Time) error {
 	remotes := b.Client.Remote(now)

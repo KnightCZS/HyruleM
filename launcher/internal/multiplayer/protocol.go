@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 3
+const Protocol = 4
 const MaxLine = 65536
 const MaxPlayers = 2
 
@@ -43,15 +43,34 @@ func (a Vec3) Valid() bool {
 }
 
 type Pose struct {
-	Position Vec3    `json:"position"`
-	Velocity Vec3    `json:"velocity"`
-	Yaw      float64 `json:"yaw"`
-	Phase    float64 `json:"phase"`
-	Ready    bool    `json:"ready"`
+	Position Vec3           `json:"position"`
+	Velocity Vec3           `json:"velocity"`
+	Yaw      float64        `json:"yaw"`
+	Phase    float64        `json:"phase"`
+	Ready    bool           `json:"ready"`
+	Upper    AnimationTrack `json:"upper,omitempty"`
+	Lower    AnimationTrack `json:"lower,omitempty"`
+}
+type AnimationTrack struct {
+	Name     string `json:"name,omitempty"`
+	Sequence uint64 `json:"sequence,omitempty"`
+	Force    bool   `json:"force,omitempty"`
+}
+
+func (a AnimationTrack) Valid() bool {
+	if len(a.Name) > 63 || a.Sequence > math.MaxInt64 {
+		return false
+	}
+	for _, r := range a.Name {
+		if !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return a.Name != "-"
 }
 
 func (p Pose) Valid() bool {
-	return p.Position.Valid() && p.Velocity.Valid() && p.Velocity.Len() <= 500 && finite(p.Yaw) && finite(p.Phase) && math.Abs(p.Yaw) <= 10000 && math.Abs(p.Phase) <= 10000
+	return p.Position.Valid() && p.Velocity.Valid() && p.Velocity.Len() <= 500 && finite(p.Yaw) && finite(p.Phase) && math.Abs(p.Yaw) <= 10000 && math.Abs(p.Phase) <= 10000 && p.Upper.Valid() && p.Lower.Valid()
 }
 
 type Player struct {

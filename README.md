@@ -1,5 +1,7 @@
 # HyruleM
 
+Prévia experimental [0.5.0-preview.4](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.4): captura e transporte de ações AS em dois canais, direção real e transformação do ator. **ABI 3 / protocolo 4 — biblioteca do jogo precisa ser regenerada.** [Instalação e limites](native/README.md). [Proposta de host do mundo](docs/HOST_WORLD.md).
+
 Prévia experimental [0.5.0-preview.3](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.3): corrige instalação e seleção do modo nativo após os relatórios da issue #4 mostrarem ABI 1 ainda em uso. `Iniciar-Nativo.cmd` confere e atualiza o runtime configurado; o EXE do pacote também seleciona o modo nativo automaticamente. [Instruções](native/README.md). A visibilidade em gameplay ainda requer validação com ABI 2.
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.

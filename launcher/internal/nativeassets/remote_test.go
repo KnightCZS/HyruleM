@@ -36,7 +36,7 @@ func syntheticLink() []byte {
 }
 func TestPrivateRemoteResourcesPreserveOriginals(t *testing.T) {
 	originalLink := syntheticLink()
-	pack, _ := f.WriteSARC(map[string][]byte{"Actor/ActorLink/GameROMPlayer.bxml": originalLink, "Actor/AS/Keep.bas": []byte("synthetic animation")})
+	pack, _ := f.WriteSARC(map[string][]byte{"Actor/ActorLink/GameROMPlayer.bxml": originalLink, "Actor/Other/Keep.bin": []byte("synthetic animation")})
 	title, _ := f.WriteSARC(map[string][]byte{"Actor/Pack/GameROMPlayer.sbactorpack": f.PackYaz0(pack)})
 	original := f.Dict(map[string]*f.Node{"name": f.Text("GameROMPlayer"), "profile": f.Text("Player"), "bfres": f.Text("Link"), "mainModel": f.Text("Link")})
 	info, _ := f.WriteBYML(f.Document{Little: true, Version: 2, Root: f.Dict(map[string]*f.Node{"Actors": f.Arr(original), "Hashes": f.Arr(&f.Node{Kind: f.Uint, Bits: uint64(crc32.ChecksumIEEE([]byte("GameROMPlayer")))})})})
@@ -60,7 +60,7 @@ func TestPrivateRemoteResourcesPreserveOriginals(t *testing.T) {
 	if _, ok := archive.Get("Actor/ActorLink/GameROMPlayer.bxml"); ok {
 		t.Fatal("remote pack still names the original actor link")
 	}
-	if keep, ok := archive.Get("Actor/AS/Keep.bas"); !ok || string(keep) != "synthetic animation" {
+	if keep, ok := archive.Get("Actor/Other/Keep.bin"); !ok || string(keep) != "synthetic animation" {
 		t.Fatal("visual resource changed")
 	}
 	b, _, _ := f.Unpack(out[InfoPath])

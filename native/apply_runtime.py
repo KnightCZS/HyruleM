@@ -71,8 +71,12 @@ def apply(root):
         'f\'rt_hyrulem_tick(c, LD64({got:#x}ull) + 0x10); rt_item_tick(c, {get:#x}ull, {gen.sites["pouch_mgr"]:#x}ull, LD64({got:#x}ull) + 0x10); c->sp -= 0x70; }}\'')
     replace_once(root / "runtime/control_game.c", "void control_game_init(void) {",
         "void control_hyrulem_init(void);\nvoid control_game_init(void) {\n    control_hyrulem_init();")
+    replace_once(patch, "def table(sites):", "def _hm_capture_as(gen, a):\n"
+        "    assert _word(gen, a) == 0xd10203ff, hex(_word(gen, a))\n"
+        "    return '{ extern void rt_hyrulem_capture_as(Cpu *); rt_hyrulem_capture_as(c); c->sp -= 0x80; }'\n\n\n"
+        "PATCHES['hm_as_play_entry'] = _hm_capture_as\n\n\ndef table(sites):")
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
-    stamp = {"upstream": UPSTREAM, "preview_abi": 2, "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
+    stamp = {"upstream": UPSTREAM, "preview_abi": 3, "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
     (root / "hyrulem-build.json").write_text(json.dumps(stamp, indent=2) + "\n")
 
 

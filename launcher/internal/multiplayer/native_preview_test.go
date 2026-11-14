@@ -13,7 +13,7 @@ import (
 func TestNativeCommandsRejectInvalidTelemetry(t *testing.T) {
 	pose := Pose{Ready: true, Position: Vec3{3434.5, 235.9, 2101.1}, Velocity: Vec3{X: 2}, Yaw: 1}
 	command, err := nativePoseCommand("0123456789abcdef", 42, pose)
-	if err != nil || !strings.HasSuffix(command, " move") || len(command) > 256 || strings.ContainsAny(command, "\r\n") {
+	if err != nil || !strings.Contains(command, " move ") || len(command) > 256 || strings.ContainsAny(command, "\r\n") {
 		t.Fatal(command, err)
 	}
 	for _, bad := range []Pose{{Ready: false}, {Ready: true, Yaw: math.NaN()}, {Ready: true, Position: Vec3{X: math.Inf(1)}}} {
@@ -52,7 +52,7 @@ func TestOldRuntimeRejectionSurvivesDisconnectCleanup(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("old runtime was not rejected")
 	}
-	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 2") {
+	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 3") {
 		t.Fatal("specific native failure replaced by generic disconnection", c.Reason())
 	}
 }
@@ -67,9 +67,11 @@ func (f *fakeNativeGame) Command(ctx context.Context, cmd string) (core.ControlR
 	var data any = map[string]bool{"queued": true}
 	switch {
 	case cmd == "hm_caps":
-		data = map[string]any{"runtime": "SavageWind-HyruleM", "game_version": "1.9.0", "preview_abi": 2, "native_preview": true, "shared_enemy_health": true}
+		data = map[string]any{"runtime": "SavageWind-HyruleM", "game_version": "1.9.0", "preview_abi": 3, "native_preview": true, "shared_enemy_health": true, "animation_capture": true}
 	case cmd == "hm_native_status":
 		data = map[string]any{"state": "idle", "game_ticks": 12, "tick_age_ms": 0, "active": f.active, "model_ready": f.active, "animation_ready": f.active}
+	case cmd == "hm_local_state":
+		data = map[string]any{"yaw": 0, "upper": "WaitUpper", "lower": "Wait"}
 	case cmd == "hm_world_status":
 		data = map[string]string{"enemies_json": "[]"}
 	case strings.HasPrefix(cmd, "hm_native_remote "):

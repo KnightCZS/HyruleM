@@ -10,16 +10,24 @@
 #include <time.h>
 
 typedef struct {
+    char name[64];
+    uint64_t sequence;
+    bool force;
+} Track;
+typedef struct {
     char session[17];
     uint64_t seq, received;
     float x, y, z, yaw;
     int animation;
     bool visible;
+    Track tracks[2];
 } Desired;
 typedef struct {
     char state[32], error[96];
     uint64_t applied, received, ticks, last_tick;
     bool active, model_ready, animation_ready;
+    float requested[3], observed[3];
+    uint64_t animation_requests;
 } Published;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static Desired desired;
@@ -30,6 +38,9 @@ static char session[17];
 static int animation = -1;
 static bool spawning, failed;
 static uint64_t tick_count;
+static Track local_tracks[2], remote_tracks[2];
+static uint64_t capture_count;
+static float local_yaw;
 enum { WORLD_MAX=64, HEALTH_MAX=128 };
 typedef struct {
     uint32_t hash;
@@ -41,7 +52,7 @@ static EnemyHealth world_seen[WORLD_MAX], health_pending[HEALTH_MAX];
 static int world_count, health_count;
 static uint64_t last_world_scan;
 enum { HANDLE=0, INDEX=0x10, LOCAL=0x20, PARAMS=0x40, SSTR=0x120,
-       KEY=0x130, NAME=0x140, VECTOR=0x180, MATRIX=0x190, ASNAME=0x1d0, BYTES=0x220 };
+       KEY=0x130, NAME=0x140, VECTOR=0x180, MATRIX=0x190, ASNAME=0x1d0, BYTES=0x240 };
 
 static uint64_t now_ms(void) {
     struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
@@ -55,9 +66,29 @@ static bool supported(void) {
         g_site.hm_creator && g_site.hm_heap_mgr && g_site.hm_create &&
         g_site.hm_handle_ready && g_site.hm_handle_failed && g_site.hm_handle_get &&
         g_site.hm_handle_wake && g_site.hm_handle_delete && g_site.hm_param_add &&
-        g_site.hm_set_mtx && g_site.hm_delete_actor && g_site.hm_play_as &&
+        g_site.hm_set_mtx && g_site.hm_delete_actor && g_site.hm_play_as && g_site.hm_as_play_entry &&
         g_site.actor_index_assign && g_site.actor_index_resolve &&
         g_site.actor_index_release && g_site.actor_link_release;
+}
+static bool clip_name(const char *s) {
+    size_t n=strnlen(s,64);if(!n||n>=64)return false;
+    for(size_t i=0;i<n;i++)if(!((s[i]>='a'&&s[i]<='z')||(s[i]>='A'&&s[i]<='Z')||(s[i]>='0'&&s[i]<='9')||s[i]=='_'||s[i]=='-'))return false;
+    return true;
+}
+// Read-only entry hook at the actual AS request body, including direct calls.
+// Remote requests have another owner and can never become local input.
+void rt_hyrulem_capture_as(Cpu *c) {
+    if(!supported()||!g_site.hm_as_play_entry||!range(g_site.player_info,8))return;
+    uint64_t info=LD64(g_site.player_info),as=c->x[0],request=c->x[1];
+    if(!range(info,0x68)||!range(as,0xe0)||!range(request,0x38)||LD32(request+0x18)>1||LD32(request+0x1c)>1)return;
+    uint64_t local=LD64(info+0x60),ptr=LD64(request+0x10);
+    if(!local||LD64(as+0xd8)!=local||!range(ptr,64))return;
+    char name[64];memcpy(name,(void *)(uintptr_t)ptr,64);if(!memchr(name,0,64))return;
+    if(!clip_name(name))return;
+    pthread_mutex_lock(&mutex);
+    Track *t=&local_tracks[LD32(request+0x18)];
+    snprintf(t->name,sizeof t->name,"%s",name);t->sequence=++capture_count;t->force=(LD8(request+0x21)&1)!=0;
+    pthread_mutex_unlock(&mutex);
 }
 static uint64_t call(Cpu *original, uint64_t fn, uint64_t a, uint64_t b, uint64_t c,
                      uint64_t d, uint64_t e, uint64_t f, uint64_t g) {
@@ -91,7 +122,7 @@ static void remove_remote(Cpu *c) {
     uint64_t a=resolve(c);
     if (a) { call(c,g_site.hm_delete_actor,a,0,0,0,0,0,0); release_local(c); }
     call(c,g_site.actor_index_release,storage+INDEX,0,0,0,0,0,0);
-    actor=0; spawning=false; animation=-1;
+    actor=0; spawning=false; animation=-1;memset(remote_tracks,0,sizeof remote_tracks);
 }
 static bool prepare(Cpu *c, Desired *d, uint64_t vt) {
     uint64_t creator=LD64(g_site.hm_creator), manager=LD64(g_site.hm_heap_mgr);
@@ -182,20 +213,26 @@ static void set_pose(Cpu *c, uint64_t a, Desired *d, uint64_t vt) {
     float s=sinf(d->yaw), co=cosf(d->yaw);
     float matrix[12]={co,0,s,d->x, 0,1,0,d->y, -s,0,co,d->z};
     memcpy((void *)(uintptr_t)(storage+MATRIX),matrix,sizeof matrix);
-    call(c,g_site.hm_set_mtx,a,storage+MATRIX,1,1,0,0,0);
-    if (animation==d->animation) return;
+    // Update both the deferred actor transform and its immediate/model copy.
+    // Leaving the deferred copy at spawn lets the actor update restore it.
+    call(c,g_site.hm_set_mtx,a,storage+MATRIX,0,0,0,0,0);
+    call(c,g_site.hm_set_mtx,a,storage+MATRIX,1,0,0,0,0);
     uint64_t as=LD64(a+0x560);
-    if (!range(as,8)) return;
-    const char *name=d->animation==1?"Move":d->animation==2?"CutS1":"Wait";
-    snprintf((char *)(uintptr_t)(storage+ASNAME),48,"%s",name);
-    ST64(storage+SSTR,vt); ST64(storage+SSTR+8,storage+ASNAME);
-    Cpu scratch=*c;
-    scratch.x[0]=as; scratch.x[1]=storage+SSTR;
-    scratch.x[2]=0; scratch.x[3]=0; scratch.x[4]=1;
-    float blend=-1.f; scratch.v[0]=scratch.v[1]=0;
-    memcpy(&scratch.v[0],&blend,sizeof blend); memcpy(&scratch.v[1],&blend,sizeof blend);
-    guest_call(&scratch,g_site.hm_play_as);
-    animation=d->animation;
+    if (!range(as,0xe0) || LD32(as+0xb8)<2 || !range(LD64(as+0xc0),0xa0)) return;
+    for(int i=0;i<2;i++) {
+        Track t=d->tracks[i];
+        if(!t.name[0])snprintf(t.name,sizeof t.name,"%s",d->animation==1?(i?"Move":"MoveUpper"):(i?"Wait":"WaitUpper"));
+        if(!strcmp(t.name,remote_tracks[i].name)&&(!t.force||t.sequence==remote_tracks[i].sequence))continue;
+        snprintf((char *)(uintptr_t)(storage+ASNAME),64,"%s",t.name);
+        ST64(storage+SSTR,vt);ST64(storage+SSTR+8,storage+ASNAME);
+        Cpu scratch=*c;
+        scratch.x[0]=as;scratch.x[1]=storage+SSTR;scratch.x[2]=i;scratch.x[3]=0;scratch.x[4]=t.force||strcmp(t.name,remote_tracks[i].name);
+        float blend=-1.f;scratch.v[0]=scratch.v[1]=0;
+        memcpy(&scratch.v[0],&blend,sizeof blend);memcpy(&scratch.v[1],&blend,sizeof blend);
+        guest_call(&scratch,g_site.hm_play_as);
+        remote_tracks[i]=t;
+        pthread_mutex_lock(&mutex);published.animation_requests++;pthread_mutex_unlock(&mutex);
+    }
 }
 
 // Hooked only at the original local Player update. Full Cpu state is preserved
@@ -211,6 +248,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     if (!range(local,0x600) || !range(damage,0x20) || LD64(damage+0x18)!=local) return;
     tick_count++;
     pthread_mutex_lock(&mutex);
+    local_yaw=atan2f(read_float(local+0x3a0),read_float(local+0x398));
     published.ticks=tick_count; published.last_tick=now_ms();
     pthread_mutex_unlock(&mutex);
     Desired d;
@@ -253,6 +291,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
         actor=a;
         uint64_t awake=call(c,g_site.hm_handle_wake,storage+HANDLE,0,0,0,0,0,0);
         spawning=false;
+        spawning_at=now_ms();
         if (awake!=a) { remove_remote(c); failed=true; publish("error","native-wake-failed",applied,false); return; }
     }
     if (!actor) {
@@ -261,14 +300,21 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     }
     uint64_t a=resolve(c);
     if (!a) { remove_remote(c); failed=true; publish("error","remote-unloaded-open-new-session",applied,false); return; }
-    bool model_ready=range(LD64(a+0x4e0),0x60), animation_ready=range(LD64(a+0x560),8);
+    uint64_t as=LD64(a+0x560);
+    bool model_ready=range(LD64(a+0x4e0),0xa4);
+    bool animation_ready=range(as,0x168)&&LD32(as+0xb8)>=2&&range(LD64(as+0xc0),0xa0)&&LD32(as+0x138)>0;
     pthread_mutex_lock(&mutex);
     published.model_ready=model_ready; published.animation_ready=animation_ready;
     pthread_mutex_unlock(&mutex);
     if (!model_ready || !animation_ready) {
+        if(now_ms()-spawning_at<15000){release_local(c);publish("loading-visuals","",applied,false);return;}
         release_local(c); remove_remote(c); failed=true;
         publish("error",!model_ready?"remote-model-not-loaded":"remote-animation-not-loaded",applied,false); return;
     }
+    pthread_mutex_lock(&mutex);
+    published.requested[0]=d.x;published.requested[1]=d.y;published.requested[2]=d.z;
+    for(int i=0;i<3;i++)published.observed[i]=read_float(a+0x3a4+i*16);
+    pthread_mutex_unlock(&mutex);
     set_pose(c,a,&d,safe_string_vtable); release_local(c);
     applied=d.seq; publish("active","",applied,true);
 }
@@ -276,6 +322,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
 RT_ON_RESET(hyrulem_reset) {
     pthread_mutex_lock(&mutex);
     memset(&desired,0,sizeof desired); memset(&published,0,sizeof published);
+    memset(local_tracks,0,sizeof local_tracks);memset(remote_tracks,0,sizeof remote_tracks);capture_count=0;local_yaw=0;
     world_count=health_count=0;last_world_scan=0;
     pthread_mutex_unlock(&mutex);
     storage=actor=spawning_at=applied=tick_count=0; session[0]=0;
@@ -297,7 +344,8 @@ static bool number(const char *s, float *out, float limit) {
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",2); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",3); control_field_bool(r,"native_preview",supported());
+    control_field_bool(r,"animation_capture",supported()&&g_site.hm_as_play_entry);
     control_field_bool(r,"shared_enemy_health",world_supported());
     // These are end-to-end Gen1 capabilities, not addresses found in a binary.
     // Keep them false until combat, pickups and AI are wired and play-tested.
@@ -313,13 +361,23 @@ static void open_session(int argc,char **argv,ControlReply *r) {
 }
 static void remote(int argc,char **argv,ControlReply *r) {
     Desired next={0};
-    if (argc!=8 || !supported() || !token(argv[1]) || !integer(argv[2],&next.seq) ||
+    if (argc!=14 || !supported() || !token(argv[1]) || !integer(argv[2],&next.seq) ||
         !number(argv[3],&next.x,100000) || !number(argv[4],&next.y,50000) ||
         !number(argv[5],&next.z,100000) || !number(argv[6],&next.yaw,10000)) {
         control_fail(r,"Invalid native remote pose"); return;
     }
     next.animation=!strcmp(argv[7],"move")?1:!strcmp(argv[7],"attack")?2:!strcmp(argv[7],"wait")?0:-1;
     if (next.animation<0) { control_fail(r,"Unsupported animation"); return; }
+    for(int i=0;i<2;i++) {
+        int j=8+i*3;Track *t=&next.tracks[i];
+        if(strcmp(argv[j],"-")) {
+            if(!clip_name(argv[j])){control_fail(r,"Invalid animation name");return;}
+            snprintf(t->name,sizeof t->name,"%s",argv[j]);
+        }
+        if(strcmp(argv[j+1],"0")&&!integer(argv[j+1],&t->sequence)){control_fail(r,"Invalid animation sequence");return;}
+        if(strcmp(argv[j+2],"0")&&strcmp(argv[j+2],"1")){control_fail(r,"Invalid animation force");return;}
+        t->force=!strcmp(argv[j+2],"1");
+    }
     pthread_mutex_lock(&mutex);
     bool ok=!strcmp(desired.session,argv[1]) && next.seq>desired.seq;
     if (ok) { snprintf(next.session,sizeof next.session,"%s",argv[1]); next.visible=true; next.received=now_ms(); desired=next; }
@@ -346,6 +404,16 @@ static void status(int argc,char **argv,ControlReply *r) {
     control_field_bool(r,"model_ready",p.model_ready);
     control_field_bool(r,"animation_ready",p.animation_ready);
     control_field_bool(r,"game_paused",range(g_site.pause_state,4)&&LD32(g_site.pause_state)!=0);
+    control_field_num(r,"requested_x",p.requested[0]);control_field_num(r,"requested_y",p.requested[1]);control_field_num(r,"requested_z",p.requested[2]);
+    control_field_num(r,"observed_x",p.observed[0]);control_field_num(r,"observed_y",p.observed[1]);control_field_num(r,"observed_z",p.observed[2]);
+    control_field_int(r,"animation_requests",p.animation_requests);
+}
+static void local_state(int argc,char **argv,ControlReply *r) {
+    Track tracks[2];float yaw;uint64_t count;
+    pthread_mutex_lock(&mutex);memcpy(tracks,local_tracks,sizeof tracks);yaw=local_yaw;count=capture_count;pthread_mutex_unlock(&mutex);
+    control_field_num(r,"yaw",yaw);control_field_int(r,"capture_count",count);
+    control_field_str(r,"upper",tracks[0].name);control_field_int(r,"upper_sequence",tracks[0].sequence);control_field_bool(r,"upper_force",tracks[0].force);
+    control_field_str(r,"lower",tracks[1].name);control_field_int(r,"lower_sequence",tracks[1].sequence);control_field_bool(r,"lower_force",tracks[1].force);
 }
 static void world_status(int argc,char **argv,ControlReply *r) {
     EnemyHealth copy[WORLD_MAX];int n;
@@ -374,9 +442,10 @@ void control_hyrulem_init(void) {
         {"hm_caps","","HyruleM native capabilities and preview availability",caps,CONTROL_PLAYER},
         {"hm_native_status","","Native actor game-thread acknowledgement",status,CONTROL_PLAYER},
         {"hm_native_open","<session>","Open an experimental native actor session",open_session,0},
-        {"hm_native_remote","<session> <seq> <x> <y> <z> <yaw> <wait|move|attack>","Queue remote Link pose",remote,0},
+        {"hm_native_remote","<session> <seq> <x> <y> <z> <yaw> <wait|move|attack> <upper> <event> <force> <lower> <event> <force>","Queue remote Link pose",remote,0},
         {"hm_native_clear","<session> <seq>","Remove only HyruleM's remote actor",clear_remote,0},
         {"hm_world_status","","Loaded map-enemy health snapshot",world_status,CONTROL_PLAYER},
+        {"hm_local_state","","Captured local upper/lower AS requests and facing",local_state,CONTROL_PLAYER},
         {"hm_enemy_health","<session> <hash> <actor> <sx> <sy> <sz> <life>","Queue map-enemy health convergence",receive_health,0},
     };
     control_register(cmds,(int)(sizeof cmds/sizeof *cmds));

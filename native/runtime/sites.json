@@ -89,5 +89,12 @@
     "kind": "code",
     "pattern": "d10103ff a9027bfd a9034ff4 910083fd aa0003f4 9100a000 aa0103f3 94000000/fc000000",
     "at": 0
+  },
+  {
+    "name": "hm_as_play_entry",
+    "address": "0x700149f050",
+    "kind": "code",
+    "pattern": "d10203ff fd0023e8 a9057bfd a90657f6 a9074ff4 910143fd b9401828 aa0003f4",
+    "at": 0
   }
 ]

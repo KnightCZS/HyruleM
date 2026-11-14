@@ -119,7 +119,7 @@ func TestProbeCollectsMetadataAndOnlyReadOnlyCommands(t *testing.T) {
 	commands := make(chan []string, 1)
 	go func() {
 		var got []string
-		for i := 0; i < 7; i++ {
+		for i := 0; i < 10; i++ {
 			conn, err := listener.Accept()
 			if err != nil {
 				commands <- got
@@ -166,7 +166,7 @@ func TestProbeCollectsMetadataAndOnlyReadOnlyCommands(t *testing.T) {
 	if port, source, err := discoverPort(core.Config{DataDir: dir}, appRoot, 0); err != nil || port != n || source != "sandbox-processo.log" {
 		t.Fatal("sandbox capture not found", port, source, err)
 	}
-	want := []string{"version", "help", "sites", "mem regions", "pos", "camera", "hm_caps"}
+	want := []string{"version", "help", "sites", "mem regions", "pos", "camera", "hm_caps", "hm_native_status", "hm_world_status", "hm_local_state"}
 	if got := <-commands; !reflect.DeepEqual(got, want) {
 		t.Fatal("unexpected probe commands", got)
 	}

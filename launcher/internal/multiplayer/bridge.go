@@ -279,7 +279,14 @@ func (b *Bridge) run(ctx context.Context) {
 		}
 		previous = pos
 		at = now
-		if b.Client.Publish(Pose{Position: pos, Velocity: velocity, Yaw: yaw, Phase: phase, Ready: true}) != nil {
+		pose := Pose{Position: pos, Velocity: velocity, Yaw: yaw, Phase: phase, Ready: true}
+		if native != nil {
+			if err := b.capturePose(ctx, &pose); err != nil {
+				b.fail("Captura nativa interrompida: " + err.Error())
+				return
+			}
+		}
+		if b.Client.Publish(pose) != nil {
 			return
 		}
 		if native != nil {

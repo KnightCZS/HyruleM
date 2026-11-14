@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"hash/crc32"
 	"hyrulelauncher/internal/gamefmt"
+	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const Actor = "HyruleM_RemoteLink"
@@ -49,9 +51,27 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		return nil, err
 	}
 	files := map[string][]byte{}
+	var fallback []byte
+	if wait, ok := player.Get("Actor/AS/Player_Wait.bas"); ok {
+		fallback, err = gamefmt.ProxyAS(wait, "Wait")
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, e := range player.Entries {
 		if e.Name != "Actor/ActorLink/GameROMPlayer.bxml" {
 			files[e.Name] = player.Data[e.Start:e.End]
+			if strings.HasPrefix(e.Name, "Actor/AS/") && strings.HasSuffix(e.Name, ".bas") {
+				action := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(e.Name), "Player_"), ".bas")
+				proxy, e2 := gamefmt.ProxyAS(files[e.Name], action)
+				if e2 != nil {
+					if fallback == nil {
+						return nil, e2
+					}
+					proxy = fallback
+				}
+				files[e.Name] = proxy
+			}
 		}
 	}
 	linkPath := "Actor/ActorLink/" + Actor + ".bxml"

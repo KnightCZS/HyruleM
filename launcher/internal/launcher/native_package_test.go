@@ -35,7 +35,7 @@ func TestPackagedNativeModeRejectsOldSelectedRuntime(t *testing.T) {
 	if err := VerifyNativeRuntime(c, root); err == nil {
 		t.Fatal("old adapter metadata accepted")
 	}
-	file(t, filepath.Join(filepath.Dir(c.Executable), "hyrulem-build.json"), `{"preview_abi":2}`)
+	file(t, filepath.Join(filepath.Dir(c.Executable), "hyrulem-build.json"), `{"preview_abi":3}`)
 	if err := VerifyNativeRuntime(c, root); err != nil {
 		t.Fatal("matching package rejected", err)
 	}
@@ -50,7 +50,7 @@ func TestNativePreparationRejectsOldAdapterBeforeChangingSandbox(t *testing.T) {
 	file(t, filepath.Join(filepath.Dir(c.Executable), "hyrulem-build.json"), `{"upstream":"old"}`)
 	p := NewMultiplayerPreparer()
 	p.Running = func(Config) bool { return false }
-	if _, err := p.Prepare(context.Background(), c, 0, 31201, []string{NativePreviewEnv + "=1"}, nil); err == nil || !strings.Contains(err.Error(), "ABI 2") {
+	if _, err := p.Prepare(context.Background(), c, 0, 31201, []string{NativePreviewEnv + "=1"}, nil); err == nil || !strings.Contains(err.Error(), "ABI 3") {
 		t.Fatal("old adapter reached expensive preparation", err)
 	}
 	if IsDir(FilterDir(c)) || IsDir(SandboxSaveDir(c)) {
