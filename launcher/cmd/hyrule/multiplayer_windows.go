@@ -42,6 +42,8 @@ const (
 	mpNetworks   = 525
 	mpSpawn      = 526
 	mpLogs       = 527
+	mpLocalTest  = 528
+	mpHostPort   = 529
 )
 
 type mpSlot struct {
@@ -55,11 +57,12 @@ type mpSlot struct {
 	cancel        context.CancelFunc
 }
 type mpSettings struct {
-	IP     string
-	BindIP string
-	Port   int
-	Names  [2]string
-	FOV    float64
+	IP       string
+	BindIP   string
+	Port     int
+	HostPort int
+	Names    [2]string
+	FOV      float64
 }
 type multiplayerUI struct {
 	a            *app
@@ -76,6 +79,9 @@ type multiplayerUI struct {
 	layingOut    bool
 	dpi          float64
 	bodyFont     uintptr
+	fonts        map[string]uintptr
+	panelBrush   uintptr
+	localTest    bool
 	hostStopping bool
 	preparer     *core.MultiplayerPreparer
 	mu           sync.Mutex
@@ -104,13 +110,16 @@ func (a *app) openMultiplayer() {
 	if !a.save() {
 		return
 	}
-	u := &multiplayerUI{a: a, controls: map[int]uintptr{}, placements: map[int]rect{}, preparer: core.NewMultiplayerPreparer(), settings: mpSettings{IP: "127.0.0.1", Port: 5050, BindIP: "0.0.0.0", Names: [2]string{"Jogador 1", "Jogador 2"}, FOV: 40}}
+	u := &multiplayerUI{a: a, controls: map[int]uintptr{}, placements: map[int]rect{}, preparer: core.NewMultiplayerPreparer(), settings: mpSettings{IP: "127.0.0.1", Port: 5050, HostPort: 5050, BindIP: "0.0.0.0", Names: [2]string{"Jogador 1", "Jogador 2"}, FOV: 40}}
 	if b, e := os.ReadFile(filepath.Join(a.root, "multiplayer.json")); e == nil {
 		_ = json.Unmarshal(b, &u.settings)
 	}
 	if _, e := mp.Address(u.settings.IP, strconv.Itoa(u.settings.Port)); e != nil {
 		u.settings.IP = "127.0.0.1"
 		u.settings.Port = 5050
+	}
+	if u.settings.HostPort < 1 || u.settings.HostPort > 65535 {
+		u.settings.HostPort = u.settings.Port
 	}
 	if u.settings.BindIP == "" {
 		u.settings.BindIP = "0.0.0.0"
@@ -130,7 +139,7 @@ func (a *app) openMultiplayer() {
 			return
 		}
 	}
-	u.window, _, _ = createWindow.Call(0, uintptr(unsafe.Pointer(wide("HyruleMultiplayer"))), uintptr(unsafe.Pointer(wide("HyruleM · Multiplayer experimental"))), 0x02ef0000, 100, 50, uintptr(a.px(880)), uintptr(a.px(740)), a.window, 0, a.instance, 0)
+	u.window, _, _ = createWindow.Call(0, uintptr(unsafe.Pointer(wide("HyruleMultiplayer"))), uintptr(unsafe.Pointer(wide("HyruleM · Multiplayer experimental"))), 0x02ef0000, 100, 50, uintptr(a.px(1040)), uintptr(a.px(760)), a.window, 0, a.instance, 0)
 	if u.window == 0 {
 		a.multiplayer = nil
 		a.setStatus("Falha ao abrir multiplayer.", true)
@@ -143,7 +152,7 @@ func (a *app) openMultiplayer() {
 	u.updateFont()
 	var work rect
 	user32.NewProc("SystemParametersInfoW").Call(48, 0, uintptr(unsafe.Pointer(&work)), 0)
-	width, height := u.px(880), u.px(740)
+	width, height := u.px(1040), u.px(760)
 	if width > work.Right-work.Left {
 		width = work.Right - work.Left
 	}
@@ -169,53 +178,31 @@ func (u *multiplayerUI) label(s string, x, y, w, h int) {
 	u.add(900+u.staticID, "STATIC", s, 0, x, y, w, h)
 }
 func (u *multiplayerUI) build() {
-	native := os.Getenv(core.NativePreviewEnv) == "1"
-	if native {
-		u.label("MULTIPLAYER · TESTE DE PRESENÇA NATIVA", 28, 24, 800, 28)
-		u.label("Prévia 8: horário/clima do anfitrião, animações e equipamento visual.\r\nAtualize os dois clientes e use Iniciar-Nativo.cmd (ABI 5 / protocolo 5).", 28, 62, 805, 48)
-	} else {
-		u.label("MULTIPLAYER · PRIMEIRO PROTÓTIPO", 28, 24, 800, 28)
-		u.label("Avatares visuais provisórios. Inicie no mundo aberto de Hateno.\r\nMantenha este launcher aberto e os jogos em modo janela.", 28, 62, 805, 48)
+	for _, v := range []struct {
+		id    int
+		label string
+	}{{mpHost, "Hospedar sessão"}, {mpArrange, "Organizar janelas"}, {mpNetworks, "Atualizar IPs"}, {mpLogs, "Diagnóstico"}, {mpSpawn, "Reunir em Hateno"}, {mpSetFOV, "Aplicar FOV"}, {mpLocalTest, "+ Testar dois jogos neste PC"}} {
+		u.add(v.id, "BUTTON", v.label, 0x10000|0xb, 0, 0, 10, 10)
 	}
-	u.label("IP do servidor", 28, 128, 240, 20)
-	u.add(mpIP, "EDIT", u.settings.IP, 0x00810080, 28, 154, 290, 32)
-	u.label("Porta TCP", 334, 128, 130, 20)
-	u.add(mpPort, "EDIT", strconv.Itoa(u.settings.Port), 0x00812080, 334, 154, 100, 32)
-	u.add(mpHost, "BUTTON", "Hospedar servidor", 0x10000, 454, 154, 180, 34)
-	u.add(mpArrange, "BUTTON", "Organizar 2 janelas", 0x10000, 650, 154, 180, 34)
-	u.label("Interface para hospedar · inclui rede virtual / Radmin", 28, 204, 580, 22)
-	u.add(mpBind, "COMBOBOX", "", 0x10000|0x3|0x200000, 28, 230, 420, 180)
-	u.add(mpNetworks, "BUTTON", "Atualizar IPs", 0x10000, 460, 230, 150, 32)
-	u.add(mpLogs, "BUTTON", "Abrir diagnóstico", 0x10000, 624, 230, 206, 32)
-	u.add(mpHostStatus, "STATIC", "Servidor parado. Selecione sua interface e a porta para hospedar.", 0, 28, 276, 800, 46)
-	u.loadNetworks()
+	u.add(mpIP, "EDIT", u.settings.IP, 0x00810080, 0, 0, 10, 10)
+	u.add(mpPort, "EDIT", strconv.Itoa(u.settings.Port), 0x00812080, 0, 0, 10, 10)
+	u.add(mpHostPort, "EDIT", strconv.Itoa(u.settings.HostPort), 0x00812080, 0, 0, 10, 10)
+	u.add(mpBind, "COMBOBOX", "", 0x10000|0x3|0x200000, 0, 0, 10, 10)
+	u.add(mpHostStatus, "STATIC", "Escolha sua interface de rede e hospede uma sessão.", 0, 0, 0, 10, 10)
+	u.add(mpFOV, "EDIT", fmt.Sprintf("%.1f", u.settings.FOV), 0x00810080, 0, 0, 10, 10)
 	for i := 0; i < 2; i++ {
-		y := 336 + i*120
-		u.label(fmt.Sprintf("CLIENTE %d · nome", i+1), 28, y, 270, 22)
-		u.add(mpName1+i, "EDIT", u.settings.Names[i], 0x00810080, 28, y+28, 270, 32)
+		u.add(mpName1+i, "EDIT", u.settings.Names[i], 0x00810080, 0, 0, 10, 10)
 		sendMessage.Call(u.controls[mpName1+i], 0xc5, 48, 0)
-		u.add(mpRename1+i, "BUTTON", "Mudar nome", 0x10000, 312, y+28, 130, 34)
-		label := "Conectar / abrir jogo"
+		u.add(mpRename1+i, "BUTTON", "Mudar nome", 0x10000|0xb, 0, 0, 10, 10)
+		label := "Conectar e jogar"
 		if i == 1 {
-			label = "Conectar / abrir 2º jogo"
+			label = "Abrir segundo jogo"
 		}
-		u.add(mpJoin1+i, "BUTTON", label, 0x10000, 458, y+28, 210, 34)
-		u.add(mpLeave1+i, "BUTTON", "Desconectar rede", 0x10000, 682, y+28, 148, 34)
-		u.add(mpStatus1+i, "STATIC", "Desconectado", 0, 28, y+73, 800, 44)
+		u.add(mpJoin1+i, "BUTTON", label, 0x10000|0xb, 0, 0, 10, 10)
+		u.add(mpLeave1+i, "BUTTON", "Desconectar", 0x10000|0xb, 0, 0, 10, 10)
+		u.add(mpStatus1+i, "STATIC", "Pronto para conectar", 0, 0, 0, 10, 10)
 	}
-	u.label("FOV vertical efetivo (fallback)", 28, 610, 280, 22)
-	u.add(mpFOV, "EDIT", fmt.Sprintf("%.1f", u.settings.FOV), 0x00810080, 308, 606, 85, 32)
-	u.add(mpSetFOV, "BUTTON", "Aplicar FOV", 0x10000, 410, 606, 130, 34)
-	if native {
-		enableWindow.Call(u.controls[mpFOV], 0)
-		enableWindow.Call(u.controls[mpSetFOV], 0)
-	}
-	u.add(mpSpawn, "BUTTON", "Reunir em Hateno", 0x10000, 560, 606, 270, 34)
-	if native {
-		u.label("FOV não é usado pelo ator nativo. Este teste não usa o boneco externo.\r\nFechar este menu mantém a conexão. Fechar o launcher encerra a rede.", 28, 654, 800, 48)
-	} else {
-		u.label("Usado se a leitura automática falhar. Padrão: 40°. Desative HDR para o teste.\r\nFechar este menu mantém a conexão. Fechar o launcher encerra a rede.", 28, 654, 800, 48)
-	}
+	u.loadNetworks()
 	u.layout()
 	u.refresh()
 }
@@ -254,6 +241,7 @@ func (u *multiplayerUI) save() {
 		u.settings.BindIP = u.binds[index]
 	}
 	u.settings.Port, _ = strconv.Atoi(textOf(u.controls[mpPort]))
+	u.settings.HostPort, _ = strconv.Atoi(textOf(u.controls[mpHostPort]))
 	for i := 0; i < 2; i++ {
 		u.settings.Names[i] = textOf(u.controls[mpName1+i])
 	}
@@ -270,7 +258,7 @@ func (u *multiplayerUI) refresh() {
 	if u.server == nil && !u.hostStopping {
 		hostInput = 1
 	}
-	enableWindow.Call(u.controls[mpPort], hostInput)
+	enableWindow.Call(u.controls[mpHostPort], hostInput)
 	enableWindow.Call(u.controls[mpBind], hostInput)
 	for i := range u.slots {
 		s := &u.slots[i]
@@ -310,7 +298,7 @@ func (u *multiplayerUI) host() {
 		}()
 		return
 	}
-	address, err := mp.BindAddress(u.settings.BindIP, strconv.Itoa(u.settings.Port))
+	address, err := mp.BindAddress(u.settings.BindIP, strconv.Itoa(u.settings.HostPort))
 	if err != nil {
 		u.set(mpHostStatus, err.Error())
 		return
@@ -326,9 +314,11 @@ func (u *multiplayerUI) host() {
 	if connectIP == "0.0.0.0" {
 		connectIP = u.preferredIP()
 	}
+	u.set(mpPort, strconv.Itoa(u.settings.HostPort))
+	u.settings.Port = u.settings.HostPort
 	u.set(mpIP, connectIP)
 	u.settings.IP = connectIP
-	u.set(mpHostStatus, fmt.Sprintf("Hospedando em %s · convide usando %s:%d. Se usar Radmin, selecione o IP do adaptador Radmin.", address, connectIP, u.settings.Port))
+	u.set(mpHostStatus, fmt.Sprintf("Hospedando em %s · convide usando %s:%d. Se usar Radmin, selecione o IP do adaptador Radmin.", address, connectIP, u.settings.HostPort))
 	u.refresh()
 }
 func (u *multiplayerUI) leave(i int) {
@@ -518,9 +508,14 @@ func (u *multiplayerUI) shutdown() {
 	u.closed = true
 	u.mu.Unlock()
 	u.save()
-	if u.bodyFont != 0 {
-		deleteObject.Call(u.bodyFont)
-		u.bodyFont = 0
+	for _, font := range u.fonts {
+		deleteObject.Call(font)
+	}
+	u.fonts = nil
+	u.bodyFont = 0
+	if u.panelBrush != 0 {
+		deleteObject.Call(u.panelBrush)
+		u.panelBrush = 0
 	}
 	for i := range u.slots {
 		s := &u.slots[i]
@@ -547,12 +542,18 @@ func multiplayerProc(h uintptr, m uint32, w, l uintptr) uintptr {
 	switch m {
 	case 0x14:
 		return 1
+	case 0x24:
+		values := (*[10]int32)(unsafe.Pointer(l))
+		values[6] = u.px(920)
+		values[7] = u.px(640)
+		return 0
+	case 0x318:
+		paintWindowBuffered(h, w, u.paint)
+		return 0
 	case wmPaint:
 		var ps paintStruct
 		dc, _, _ := beginPaint.Call(h, uintptr(unsafe.Pointer(&ps)))
-		var r rect
-		getClientRect.Call(h, uintptr(unsafe.Pointer(&r)))
-		fillRect.Call(dc, uintptr(unsafe.Pointer(&r)), a.bgBrush)
+		paintWindowBuffered(h, dc, u.paint)
 		endPaint.Call(h, uintptr(unsafe.Pointer(&ps)))
 		return 0
 	case 0x2e0:
@@ -581,10 +582,14 @@ func multiplayerProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		u.save()
 		showWindow.Call(h, 0)
 		return 0
-	case wmColorEdit, wmColorStatic:
+	case wmDrawItem:
+		view := u.theme()
+		view.paintButton((*drawItem)(unsafe.Pointer(l)))
+		return 1
+	case wmColorEdit, wmColorStatic, wmColorList:
 		setTextColor.Call(w, colorText)
-		setBkColor.Call(w, colorBG)
-		return a.bgBrush
+		setBkColor.Call(w, colorCard)
+		return u.cardBrush()
 	case 0x113:
 		u.tick()
 		return 0
@@ -594,6 +599,13 @@ func multiplayerProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		}
 		id := int(w & 0xffff)
 		switch id {
+		case mpLocalTest:
+			if u.localTest && (u.slots[1].pending || u.slots[1].bridge != nil || u.slots[1].session.Busy()) {
+				u.say(1, "Encerre o segundo jogo para ocultar este painel.")
+			} else {
+				u.localTest = !u.localTest
+				u.layout()
+			}
 		case mpNetworks:
 			u.loadNetworks()
 		case mpLogs:
@@ -672,34 +684,7 @@ func (u *multiplayerUI) loadNetworks() {
 	}
 	sendMessage.Call(u.controls[mpBind], 0x14e, selected, 0)
 }
-func (u *multiplayerUI) layout() {
-	if u.layingOut {
-		return
-	}
-	u.layingOut = true
-	defer func() { u.layingOut = false }()
-	var r rect
-	getClientRect.Call(u.window, uintptr(unsafe.Pointer(&r)))
-	if r.Bottom < 1 {
-		return
-	}
-	maximum := u.px(720) - r.Bottom
-	if maximum < 0 {
-		maximum = 0
-	}
-	if u.scroll < 0 {
-		u.scroll = 0
-	}
-	if u.scroll > maximum {
-		u.scroll = maximum
-	}
-	si := scrollInfo{Size: uint32(unsafe.Sizeof(scrollInfo{})), Mask: 7, Max: u.px(720) - 1, Page: uint32(r.Bottom), Pos: u.scroll}
-	setScrollInfo.Call(u.window, 1, uintptr(unsafe.Pointer(&si)), 0)
-	for id, p := range u.placements {
-		moveWindow.Call(u.controls[id], uintptr(u.px(int(p.Left))), uintptr(u.px(int(p.Top))-u.scroll), uintptr(u.px(int(p.Right))), uintptr(u.px(int(p.Bottom))), 0)
-	}
-	user32.NewProc("RedrawWindow").Call(u.window, 0, 0, 0x1|0x80)
-}
+func (u *multiplayerUI) layout() { u.layoutSession() }
 func (u *multiplayerUI) scrollBy(w uintptr) {
 	si := scrollInfo{Size: uint32(unsafe.Sizeof(scrollInfo{})), Mask: 16}
 	getScrollInfo.Call(u.window, 1, uintptr(unsafe.Pointer(&si)))
@@ -720,17 +705,15 @@ func (u *multiplayerUI) scrollBy(w uintptr) {
 
 func (u *multiplayerUI) px(n int) int32 { return int32(float64(n) * u.dpi) }
 func (u *multiplayerUI) updateFont() {
-	height := u.px(14)
-	font, _, _ := createFont.Call(uintptr(-height), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(wide("Segoe UI"))))
-	if font == 0 {
-		return
-	}
-	old := u.bodyFont
-	u.bodyFont = font
+	old := u.fonts
+	view := &app{dpi: u.dpi, fonts: map[string]uintptr{}}
+	view.makeFonts()
+	u.fonts = view.fonts
+	u.bodyFont = u.fonts["body"]
 	for _, h := range u.controls {
-		sendMessage.Call(h, 0x30, font, 1)
+		sendMessage.Call(h, 0x30, u.bodyFont, 1)
 	}
-	if old != 0 {
-		deleteObject.Call(old)
+	for _, f := range old {
+		deleteObject.Call(f)
 	}
 }

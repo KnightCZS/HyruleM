@@ -282,7 +282,7 @@ static void world_scan(Cpu *c,uint64_t local,bool connected) {
     pthread_mutex_lock(&mutex);world_count=n;memcpy(world_seen,seen,sizeof *seen*n);pthread_mutex_unlock(&mutex);
 }
 static bool continuous_as(const char *s) {
-    return !strncmp(s,"Wait",4)||!strncmp(s,"Move",4)||!strncmp(s,"Walk",4)||!strncmp(s,"Run",3);
+    return !strcmp(s,"Wait")||!strcmp(s,"WaitUpper")||!strcmp(s,"Move")||!strcmp(s,"MoveUpper")||!strcmp(s,"Walk")||!strcmp(s,"Run");
 }
 static void play_tracks(Cpu *c,uint64_t st,uint64_t a,Desired *d,Track cache[2],uint64_t vt) {
     uint64_t as=LD64(a+0x560);
@@ -381,7 +381,7 @@ static void gear_tick(Cpu *c,Desired *d,uint64_t vt,bool animate) {
         if(!range(LD64(ref.ptr+0x4e0),0xa4)){release_at(c,st);if(now_ms()-g->started>15000){g->failed=true;snprintf(g->error,sizeof g->error,"model-not-loaded");remove_gear(c,g);}continue;}
         float s=sinf(d->yaw),co=cosf(d->yaw),m[12];for(int j=0;j<4;j++){m[j]=co*p->matrix[j]+s*p->matrix[8+j];m[4+j]=p->matrix[4+j];m[8+j]=-s*p->matrix[j]+co*p->matrix[8+j];}m[3]+=d->x;m[7]+=d->y;m[11]+=d->z;
         memcpy((void *)(uintptr_t)(st+MATRIX),m,sizeof m);call(c,g_site.hm_set_mtx,ref.ptr,st+MATRIX,0,0,0,0,0);call(c,g_site.hm_set_mtx,ref.ptr,st+MATRIX,1,0,0,0,0);
-        if(animate&&i>=3)play_tracks(c,st,ref.ptr,d,g->tracks,vt);release_at(c,st);g->active=true;
+        if(animate&&i>=3)play_tracks(c,st,ref.ptr,d,g->tracks,vt);release_at(c,st);g->active=true;g->started=now_ms();
     }
     char json[1536];size_t used=0;unsigned active=0;json[used++]='[';
     for(int i=0;i<GEAR_COUNT;i++){GearVisual *g=&gear_visual[i];active+=g->active;int n=snprintf(json+used,sizeof json-used,"%s{\"slot\":%d,\"name\":\"%s\",\"active\":%s,\"error\":\"%s\"}",i?",":"",i,g->name,g->active?"true":"false",g->error);if(n<0||(size_t)n>=sizeof json-used-2)break;used+=(size_t)n;}
@@ -416,7 +416,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     if(range(g_site.pause_state,4)&&LD32(g_site.pause_state)) {
         if(spawning_at)spawning_at=now_ms();
         if(activation_waiting)activation_wait_at=now_ms();
-        for(int i=0;i<GEAR_COUNT;i++)if(gear_visual[i].spawning||(gear_visual[i].actor&&!gear_visual[i].active))gear_visual[i].started=now_ms();
+        for(int i=0;i<GEAR_COUNT;i++)if(gear_visual[i].spawning||gear_visual[i].actor)gear_visual[i].started=now_ms();
         return;
     }
     world_scan(c,local,d.session[0]&&d.received&&now_ms()-d.received<2500);

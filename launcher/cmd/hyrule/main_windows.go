@@ -184,6 +184,7 @@ type uiEvent struct {
 }
 type app struct {
 	layingOut          bool
+	page               int
 	multiplayer        *multiplayerUI
 	window, instance   uintptr
 	controls           map[int]uintptr
@@ -295,7 +296,7 @@ func main() {
 	if r, _, _ := registerClass.Call(uintptr(unsafe.Pointer(&wc))); r == 0 {
 		return
 	}
-	a.window, _, _ = createWindow.Call(0, uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(wide("Hyrule Launcher | Offline"))), 0x02ef0000, 0x80000000, 0x80000000, 1060, 820, 0, 0, instance, 0)
+	a.window, _, _ = createWindow.Call(0, uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(wide("HyruleM · Seu ponto de encontro"))), 0x02ef0000, 0x80000000, 0x80000000, 1060, 820, 0, 0, instance, 0)
 	if a.window == 0 {
 		return
 	}
@@ -350,7 +351,7 @@ func main() {
 	}
 }
 func (a *app) makeFonts() {
-	for key, spec := range map[string][2]int{"body": {14, 400}, "small": {12, 400}, "title": {29, 600}, "brand": {24, 600}, "label": {12, 600}, "button": {14, 600}} {
+	for key, spec := range map[string][2]int{"body": {14, 400}, "small": {12, 400}, "hero": {24, 600}, "title": {30, 600}, "brand": {24, 600}, "label": {12, 600}, "button": {14, 600}} {
 		height := a.px(spec[0])
 		f, _, _ := createFont.Call(uintptr(-height), 0, 0, 0, uintptr(spec[1]), 0, 0, 0, 1, 0, 0, 5, 0, uintptr(unsafe.Pointer(wide("Segoe UI"))))
 		a.fonts[key] = f
@@ -384,7 +385,13 @@ func (a *app) buildControls() {
 		a.control(button.id, "BUTTON", button.label, 0x000b)
 	}
 	a.buildSandboxControls()
-	a.control(idMultiplayer, "BUTTON", "Multiplayer · 2 jogadores", 0x000b)
+	a.control(idMultiplayer, "BUTTON", "Multiplayer", 0x000b)
+	for _, v := range []struct {
+		id    int
+		label string
+	}{{idHome, "Início"}, {idSandboxPage, "Sandbox"}, {idSettingsPage, "Configurações"}, {idHomeJoin, "Entrar no multiplayer"}} {
+		a.control(v.id, "BUTTON", v.label, 0x000b)
+	}
 	a.control(141, "BUTTON", "Cancelar preparação", 0x000b)
 }
 func (a *app) fillControls() {
@@ -424,65 +431,7 @@ func (a *app) setStatus(s string, bad bool) {
 	a.statusError = bad
 	invalidate.Call(a.window, 0, 0)
 }
-func (a *app) layout() {
-	if a.layingOut {
-		return
-	}
-	a.layingOut = true
-	defer func() { a.layingOut = false }()
-	var r rect
-	getClientRect.Call(a.window, uintptr(unsafe.Pointer(&r)))
-	if r.Right <= 0 || r.Bottom <= 0 {
-		return
-	}
-	maxScroll := a.px(1300) - r.Bottom
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if a.scroll > maxScroll {
-		a.scroll = maxScroll
-	}
-	if a.scroll < 0 {
-		a.scroll = 0
-	}
-	si := scrollInfo{Size: uint32(unsafe.Sizeof(scrollInfo{})), Mask: 7, Max: a.px(1300) - 1, Page: uint32(r.Bottom), Pos: a.scroll}
-	setScrollInfo.Call(a.window, 1, uintptr(unsafe.Pointer(&si)), 1)
-	left := a.px(260)
-	right := r.Right - a.px(38)
-	width := right - left
-	place := func(id int, x, y, width, height int32) {
-		offset := a.scroll
-		if id == idMultiplayer || id == 141 {
-			offset = 0
-		}
-		moveWindow.Call(a.controls[id], uintptr(x), uintptr(y-offset), uintptr(width), uintptr(height), 0)
-	}
-	place(idBackend, left+a.px(24), a.px(202), width-a.px(48), a.px(160))
-	for _, row := range []struct{ edit, button, y int }{{idExe, idBrowseExe, 274}, {idData, idBrowseData, 348}, {idGame, idBrowseGame, 422}} {
-		place(row.edit, left+a.px(24), a.px(row.y), width-a.px(158), a.px(34))
-		place(row.button, right-a.px(122), a.px(row.y), a.px(98), a.px(34))
-	}
-	half := (width - a.px(14)) / 2
-	place(idPlay, left, a.px(520), half, a.px(48))
-	place(idSetup, left+half+a.px(14), a.px(520), half, a.px(48))
-	place(idDownload, left, a.px(584), width, a.px(42))
-	third := (width - a.px(20)) / 3
-	place(idLogs, left, a.px(642), third, a.px(38))
-	place(idSaves, left+third+a.px(10), a.px(642), third, a.px(38))
-	place(idSave, left+2*(third+a.px(10)), a.px(642), third, a.px(38))
-	place(idMultiplayer, a.px(38), a.px(460), a.px(169), a.px(62))
-	place(141, a.px(38), a.px(540), a.px(169), a.px(38))
-	a.layoutSandbox(left, right, place)
-	native := a.config.Backend == core.Native
-	for _, id := range []int{idGame, idBrowseGame} {
-		visible := uintptr(0)
-		if native {
-			visible = 5
-		}
-		showWindow.Call(a.controls[id], visible)
-	}
-	user32.NewProc("RedrawWindow").Call(a.window, 0, 0, 0x1|0x80|0x20)
-}
+func (a *app) layout() { a.layoutDashboard() }
 func intMax(a, b int) int {
 	if a > b {
 		return a
@@ -500,7 +449,7 @@ func (a *app) refresh() {
 		if busy {
 			enabled = 0
 		}
-		if id == idLogs || id == idSaves || id == idMultiplayer {
+		if id == idLogs || id == idSaves || id == idMultiplayer || id == idHome || id == idSandboxPage || id == idSettingsPage {
 			enabled = 1
 		}
 		enableWindow.Call(h, enabled)
@@ -597,7 +546,9 @@ func (a *app) drain() {
 		case "installed":
 			a.installing = false
 			a.cancel = nil
-			a.config = core.Config{Schema: 1, Backend: core.Savage, Executable: e.install.Executable, DataDir: filepath.Dir(e.install.Executable)}
+			a.config.Backend = core.Savage
+			a.config.Executable = e.install.Executable
+			a.config.DataDir = filepath.Dir(e.install.Executable)
 			a.fillControls()
 			if a.save() {
 				a.setStatus("Savage Wind instalado. Clique em Preparar jogo e selecione seus arquivos de BOTW.", false)
@@ -708,7 +659,9 @@ func (a *app) chooseExe() {
 	if backend == core.Native && !strings.EqualFold(filepath.Base(p), "BotWRecomp.exe") {
 		p = filepath.Join(filepath.Dir(p), "BotWRecomp.exe")
 	}
-	a.config = core.Config{Schema: 1, Backend: backend, Executable: p, GameDir: a.config.GameDir, DataDir: core.SuggestDataDir(p, backend)}
+	a.config.Backend = backend
+	a.config.Executable = p
+	a.config.DataDir = core.SuggestDataDir(p, backend)
 	a.fillControls()
 	a.save()
 	a.status = ""
@@ -772,6 +725,9 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 	switch message {
 	case 0x14:
 		return 1
+	case 0x318:
+		a.paintBuffered(w)
+		return 0
 	case wmPaint:
 		var ps paintStruct
 		dc, _, _ := beginPaint.Call(h, uintptr(unsafe.Pointer(&ps)))
@@ -864,7 +820,9 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 				a.cancel()
 				a.setStatus("Cancelando preparação; aguarde a tarefa encerrar…", false)
 			}
-		case idMultiplayer:
+		case idHome, idSandboxPage, idSettingsPage:
+			a.changePage(id)
+		case idMultiplayer, idHomeJoin:
 			a.openMultiplayer()
 		case idBrowseExe:
 			a.chooseExe()
@@ -906,7 +864,7 @@ func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 			} else {
 				a.setStatus("Crie o sandbox primeiro.", true)
 			}
-		case idPlay, 1:
+		case idPlay:
 			a.start(false)
 		case idSetup:
 			a.start(true)
@@ -1003,57 +961,18 @@ func (a *app) label(dc uintptr, s, font string, color uintptr, r rect, flags uin
 	drawText.Call(dc, uintptr(unsafe.Pointer(wide(s))), ^uintptr(0), uintptr(unsafe.Pointer(&r)), flags)
 	selectObject.Call(dc, old)
 }
-func (a *app) paint(dc uintptr) {
-	var r rect
-	getClientRect.Call(a.window, uintptr(unsafe.Pointer(&r)))
-	fillRect.Call(dc, uintptr(unsafe.Pointer(&r)), a.bgBrush)
-	if len(a.fonts) == 0 {
-		return
-	}
-	display := r
-	p := a.px
-	left := p(260)
-	right := r.Right - p(38)
-	a.box(dc, rect{p(20), p(20), p(224), r.Bottom - p(20)}, rgb(18, 27, 36), rgb(25, 37, 49), 18)
-	a.label(dc, "△", "title", colorGold, rect{p(44), p(43), p(190), p(85)}, 0)
-	a.label(dc, "HYRULE", "brand", colorText, rect{p(44), p(98), p(205), p(134)}, 0)
-	a.label(dc, "L A U N C H E R", "small", colorMuted, rect{p(45), p(139), p(205), p(165)}, 0)
-	a.box(dc, rect{p(38), p(210), p(207), p(252)}, rgb(39, 48, 52), rgb(65, 66, 54), 10)
-	a.label(dc, "Campanha + sandbox", "button", colorGold, rect{p(54), p(210), p(202), p(252)}, 0x24)
-	a.label(dc, "SEU MUNDO", "label", colorMuted, rect{p(45), p(295), p(205), p(319)}, 0)
-	a.label(dc, "Campanha preservada.\nSandbox separado.\nExplore Hyrule.", "body", colorText, rect{p(45), p(330), p(201), p(430)}, 0x10)
-	a.label(dc, "VERSÃO "+core.Version, "small", colorMuted, rect{p(45), p(178), p(205), p(202)}, 0)
-	a.label(dc, "Windows · x64", "small", colorMuted, rect{p(45), p(586), p(205), p(610)}, 0)
-	setViewport.Call(dc, 0, uintptr(-a.scroll), 0)
-	if r.Bottom < a.px(1300) {
-		r.Bottom = a.px(1300)
-	}
-	a.label(dc, "Hyrule, do seu jeito.", "title", colorText, rect{left, p(38), right, p(86)}, 0x24)
-	a.label(dc, "Campanha offline e ferramentas para explorar o mundo livremente.", "body", colorMuted, rect{left, p(94), right, p(133)}, 0x10)
-	a.box(dc, rect{left, p(154), right, p(494)}, colorCard, colorLine, 16)
-	a.label(dc, "RECOMPILAÇÃO", "label", colorMuted, rect{left + p(24), p(173), right - p(24), p(198)}, 0)
-	a.label(dc, "Programa da recomp", "label", colorMuted, rect{left + p(24), p(249), right - p(24), p(274)}, 0)
-	a.label(dc, "Pasta de dados · saves e configuração", "label", colorMuted, rect{left + p(24), p(323), right - p(24), p(348)}, 0)
-	if a.config.Backend == core.Native {
-		a.label(dc, "Arquivos do jogo · Wii U v208", "label", colorMuted, rect{left + p(24), p(397), right - p(24), p(422)}, 0)
-	} else {
-		a.label(dc, "Primeira vez? Use Preparar jogo para selecionar os arquivos\nextraídos de BOTW para Switch 1.9.0.", "small", colorMuted, rect{left + p(24), p(410), right - p(24), p(467)}, 0x10)
-	}
-	statusColor := colorGreen
-	if a.statusError {
-		statusColor = colorRed
-	}
-	a.paintSandbox(dc, left, right)
-	setViewport.Call(dc, 0, 0, 0)
-	a.box(dc, rect{left, display.Bottom - p(72), right, display.Bottom - p(12)}, colorBG, colorLine, 8)
-	a.label(dc, a.status, "small", statusColor, rect{left + p(12), display.Bottom - p(64), right - p(12), display.Bottom - p(18)}, 0x10)
-}
+func (a *app) paint(dc uintptr) { a.paintDashboard(dc) }
 func (a *app) paintButton(d *drawItem) {
 	background, border, foreground := rgb(31, 43, 55), colorLine, colorText
-	if int(d.ID) == idPlay || int(d.ID) == idSandbox {
+	if int(d.ID) == idHomeJoin || int(d.ID) == mpJoin1 || int(d.ID) == mpHost || int(d.ID) == idPlay || int(d.ID) == idSandbox {
 		background = colorGold
 		border = colorGold
 		foreground = colorBG
+	}
+	if int(d.ID) == a.page || int(d.ID) == idHome && a.page == 0 {
+		background = rgb(33, 55, 49)
+		border = colorGold
+		foreground = colorGold
 	}
 	if d.State&1 != 0 {
 		background = rgb(83, 82, 64)

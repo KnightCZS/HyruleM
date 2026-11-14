@@ -7,8 +7,11 @@ import "unsafe"
 // Paint once into an offscreen bitmap. Background erases and per-control moves
 // previously exposed partially drawn frames while resizing or scrolling.
 func (a *app) paintBuffered(screen uintptr) {
+	paintWindowBuffered(a.window, screen, a.paint)
+}
+func paintWindowBuffered(window, screen uintptr, paint func(uintptr)) {
 	var r rect
-	getClientRect.Call(a.window, uintptr(unsafe.Pointer(&r)))
+	getClientRect.Call(window, uintptr(unsafe.Pointer(&r)))
 	if r.Right <= 0 || r.Bottom <= 0 {
 		return
 	}
@@ -21,11 +24,11 @@ func (a *app) paintBuffered(screen uintptr) {
 		if bitmap != 0 {
 			deleteObject.Call(bitmap)
 		}
-		a.paint(screen)
+		paint(screen)
 		return
 	}
 	old, _, _ := selectObject.Call(dc, bitmap)
-	a.paint(dc)
+	paint(dc)
 	setViewport.Call(dc, 0, 0, 0)
 	bitBlt.Call(screen, 0, 0, uintptr(r.Right), uintptr(r.Bottom), dc, 0, 0, 0x00cc0020)
 	selectObject.Call(dc, old)

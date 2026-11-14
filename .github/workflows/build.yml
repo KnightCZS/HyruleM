@@ -36,7 +36,15 @@ jobs:
       - name: Test including Windows directory junctions
         run: go test -count=1 ./internal/...
       - name: Regression test native UI, scrolling and sandbox start
+        env:
+          HYRULEM_UI_REVIEW_DIR: ui-review
         run: go test -count=1 -timeout 60s -v ./cmd/hyrule
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: HyruleM-UI-Review
+          path: launcher/cmd/hyrule/ui-review/*.png
+          if-no-files-found: warn
       - name: Build native Windows applications
         run: |
           $env:CGO_ENABLED='0'

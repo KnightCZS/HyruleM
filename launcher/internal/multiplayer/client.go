@@ -212,6 +212,9 @@ func (c *Client) Remote(now time.Time) []Player {
 	}
 	target := now.Add(-100 * time.Millisecond)
 	a, b := last, last
+	if target.Before(c.frames[0].At) {
+		a, b = c.frames[0], c.frames[0]
+	}
 	for i := 0; i+1 < len(c.frames); i++ {
 		if !target.Before(c.frames[i].At) && !target.After(c.frames[i+1].At) {
 			a, b = c.frames[i], c.frames[i+1]
@@ -245,6 +248,7 @@ func (c *Client) Remote(now time.Time) []Player {
 				break
 			}
 		}
+		p.Pose.Equipment = append([]Equipment(nil), p.Pose.Equipment...)
 		out = append(out, p)
 	}
 	return out

@@ -21,3 +21,6 @@ hyrulem/
 launch-flags.txt
 config.json
 multiplayer.json
+
+# Synthetic Windows UI review artifacts (CI only).
+ui-review/

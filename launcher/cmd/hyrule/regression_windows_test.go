@@ -163,6 +163,7 @@ func TestNativeWindowsRegression(t *testing.T) {
 	}
 	if port, e := core.LocalControlPort(); e == nil {
 		u.set(mpPort, strconv.Itoa(port))
+		u.set(mpHostPort, strconv.Itoa(port))
 	} else {
 		t.Fatal(e)
 	}
@@ -179,6 +180,29 @@ func TestNativeWindowsRegression(t *testing.T) {
 	}
 	if u.server.Count() != 0 {
 		t.Fatal("connected before validating local game")
+	}
+	if dir := os.Getenv("HYRULEM_UI_REVIEW_DIR"); dir != "" {
+		for _, v := range []struct {
+			page int
+			name string
+		}{{idHome, "home"}, {idSettingsPage, "settings"}, {idSandboxPage, "sandbox"}} {
+			a.changePage(v.page)
+			updateWindow.Call(a.window)
+			pump()
+			captureReview(t, a.window, filepath.Join(dir, v.name+".png"))
+		}
+		u.localTest = false
+		u.layout()
+		updateWindow.Call(u.window)
+		pump()
+		captureReview(t, u.window, filepath.Join(dir, "multiplayer.png"))
+		u.localTest = true
+		u.layout()
+		u.scroll = u.px(180)
+		u.layout()
+		updateWindow.Call(u.window)
+		pump()
+		captureReview(t, u.window, filepath.Join(dir, "local-two.png"))
 	}
 	t.Log("progress coalescing, scroll/GDI stability, sandbox start failure and multiplayer preparation error passed")
 }

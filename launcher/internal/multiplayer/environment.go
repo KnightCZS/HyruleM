@@ -102,26 +102,37 @@ func (b *Bridge) readEnvironment(ctx context.Context) (clockReading, weatherRead
 	}
 	return c, w, nil
 }
-func (b *Bridge) restoreEnvironment(ctx context.Context, n *environmentSync) {
+func (b *Bridge) restoreEnvironment(ctx context.Context, n *environmentSync) bool {
 	if !n.following {
-		return
+		return true
 	}
 	c, w, err := b.readEnvironment(ctx)
-	if err == nil {
-		// Do not overwrite a setting somebody explicitly changed after our last
-		// application. Restore policies, not an old hour from before the session.
-		if w.Policy == n.lastWeather && weatherPolicyValid(n.originalWeather) {
-			_ = b.command(ctx, "weather "+n.originalWeather, nil)
+	if err != nil {
+		return false
+	}
+	// Restore independently, remembering successful work so a later retry does
+	// not mistake our own restoration for a manual policy change.
+	if w.Policy == n.lastWeather && weatherPolicyValid(n.originalWeather) {
+		if err = b.command(ctx, "weather "+n.originalWeather, nil); err != nil {
+			return false
 		}
-		if c.Held == n.lastFrozen && c.Held != n.originalFrozen && (!n.originalFrozen || c.Hour != nil) {
-			cmd := "time unfreeze"
-			if n.originalFrozen {
-				cmd = "time freeze"
-			}
-			_ = b.command(ctx, cmd, nil)
+		n.lastWeather = n.originalWeather
+	}
+	if c.Held == n.lastFrozen && c.Held != n.originalFrozen {
+		if n.originalFrozen && c.Hour == nil {
+			return false
 		}
+		cmd := "time unfreeze"
+		if n.originalFrozen {
+			cmd = "time freeze"
+		}
+		if err = b.command(ctx, cmd, nil); err != nil {
+			return false
+		}
+		n.lastFrozen = n.originalFrozen
 	}
 	n.following = false
+	return true
 }
 func clockDistance(a, b float64) float64 { d := math.Abs(a - b); return math.Min(d, 24-d) }
 func (b *Bridge) updateEnvironment(ctx context.Context, n *environmentSync, now time.Time) error {
@@ -139,7 +150,9 @@ func (b *Bridge) updateEnvironment(ctx context.Context, n *environmentSync, now 
 		}
 	}
 	if v.Epoch != n.epoch {
-		b.restoreEnvironment(ctx, n)
+		if !b.restoreEnvironment(ctx, n) {
+			return fmt.Errorf("restauração do ambiente pendente")
+		}
 		n.epoch = v.Epoch
 		n.sequence = 0
 		n.hostInitialized = false
@@ -149,7 +162,9 @@ func (b *Bridge) updateEnvironment(ctx context.Context, n *environmentSync, now 
 		return nil
 	}
 	if v.HostID == b.Client.Welcome().ID {
-		b.restoreEnvironment(ctx, n)
+		if !b.restoreEnvironment(ctx, n) {
+			return fmt.Errorf("restauração do ambiente pendente")
+		}
 		c, w, err := b.readEnvironment(ctx)
 		if err != nil {
 			return err

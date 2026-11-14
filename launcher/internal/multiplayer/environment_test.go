@@ -70,11 +70,16 @@ type environmentGame struct {
 	policy, weather string
 	commands        []string
 	noWorld         bool
+	fail            map[string]int
 }
 
 func (g *environmentGame) Close() {}
 func (g *environmentGame) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
 	g.commands = append(g.commands, cmd)
+	if g.fail[cmd] > 0 {
+		g.fail[cmd]--
+		return core.ControlReply{}, fmt.Errorf("transient local control error")
+	}
 	var data any = map[string]bool{"applied": true}
 	switch {
 	case cmd == "time":
@@ -229,5 +234,34 @@ func TestVisualInterpolationKeepsSnapshotsAndActionBoundaries(t *testing.T) {
 	r[0].Pose.Equipment[0].Matrix[3] = 99
 	if c.frames[1].Players[0].Pose.Equipment[0].Matrix[3] != 4 {
 		t.Fatal("mutated stored source snapshot")
+	}
+}
+
+func TestEnvironmentRestoreRetriesPartialFailure(t *testing.T) {
+	g := &environmentGame{hour: 9, frozen: true, policy: "rain", weather: "rain", fail: map[string]int{"time unfreeze": 1}}
+	b := &Bridge{control: g}
+	n := &environmentSync{following: true, originalWeather: "game", lastWeather: "rain", originalFrozen: false, lastFrozen: true}
+	if b.restoreEnvironment(context.Background(), n) || !n.following || g.policy != "game" || !g.frozen {
+		t.Fatal("failed restoration was discarded", n, g)
+	}
+	// A user change after the successful partial step remains their policy.
+	g.policy = "no_storms"
+	if !b.restoreEnvironment(context.Background(), n) || n.following || g.frozen || g.policy != "no_storms" {
+		t.Fatal("retry changed policy or retained override", n, g)
+	}
+}
+func TestEarlyInterpolationDoesNotJumpForwardOrExposeEquipment(t *testing.T) {
+	now := time.Now()
+	p := Player{ID: "remote", Pose: Pose{Ready: true, Position: Vec3{X: 1}, Equipment: []Equipment{{Slot: 3, Name: "Armor_Default_Head"}}}}
+	next := p
+	next.Pose.Position.X = 9
+	c := &Client{connected: true, welcome: Welcome{ID: "self"}, frames: []Frame{{now.Add(-20 * time.Millisecond), []Player{p}}, {now, []Player{next}}}}
+	r := c.Remote(now)
+	if len(r) != 1 || r[0].Pose.Position.X != 1 {
+		t.Fatal("early buffer selected future snapshot", r)
+	}
+	r[0].Pose.Equipment[0].Name = "changed"
+	if c.frames[0].Players[0].Pose.Equipment[0].Name != "Armor_Default_Head" {
+		t.Fatal("snapshot aliases caller equipment")
 	}
 }

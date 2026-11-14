@@ -173,7 +173,7 @@ jobs:
           if-no-files-found: error
   publish-preview:
     needs: windows-runtime
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/native-world-gen1'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/native-world-gen1' && contains(github.event.head_commit.message, '[publish-preview]')
     permissions:
       contents: write
     runs-on: ubuntu-latest
