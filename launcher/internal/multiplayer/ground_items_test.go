@@ -63,7 +63,7 @@ func TestGroundDropFailedGrantAndUnknownDisconnect(t *testing.T) {
 	_ = guest.PrepareGroundDrop(1, drop)
 	eventually(t, func() bool { return guest.Ground().DropResult != nil && guest.Ground().DropResult.Status == "prepared" })
 	_ = guest.FinishGroundDrop(GroundDropFinish{Request: 1, Item: guest.Ground().DropResult.Item, Result: 1, Source: drop})
-	eventually(t, func() bool { return len(host.Ground().Items) == 1 })
+	eventually(t, func() bool { v := host.Ground(); return len(v.Items) == 1 && v.Items[0].State == "available" })
 	id := host.Ground().Items[0].ID
 	_ = host.ClaimGround(GroundClaim{Request: 1, Item: id, Source: drop})
 	eventually(t, func() bool { return len(host.Ground().Claims) == 1 && host.Ground().Claims[0].Status == "granted" })
