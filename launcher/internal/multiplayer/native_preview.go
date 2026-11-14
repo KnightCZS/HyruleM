@@ -150,14 +150,17 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 	}
 	n.lastStatus = now
 	var status struct {
-		State     string `json:"state"`
-		Error     string `json:"error"`
-		Active    bool   `json:"active"`
-		Applied   uint64 `json:"applied_sequence"`
-		Model     bool   `json:"model_ready"`
-		Animation bool   `json:"animation_ready"`
-		TickAge   int64  `json:"tick_age_ms"`
-		Paused    bool   `json:"game_paused"`
+		State            string `json:"state"`
+		Error            string `json:"error"`
+		Active           bool   `json:"active"`
+		Applied          uint64 `json:"applied_sequence"`
+		Model            bool   `json:"model_ready"`
+		Animation        bool   `json:"animation_ready"`
+		TickAge          int64  `json:"tick_age_ms"`
+		Paused           bool   `json:"game_paused"`
+		VisualOnly       bool   `json:"visual_only"`
+		ResourceFallback bool   `json:"resource_fallback"`
+		FirstError       string `json:"first_error"`
 	}
 	if err := b.command(ctx, "hm_native_status", &status); err != nil {
 		return err
@@ -175,13 +178,19 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 	if len(remotes) > 0 && !status.Active && now.Sub(n.waitingSince) > 18*time.Second {
 		return fmt.Errorf("o jogo não confirmou o ator remoto (estado %s); a conexão foi interrompida para evitar presença invisível", status.State)
 	}
-	if status.Active && (!status.Model || !status.Animation) {
+	if status.Active && (!status.Model || (!status.Animation && !status.VisualOnly)) {
 		return fmt.Errorf("o ator remoto não confirmou modelo e animação")
 	}
 	if status.State != n.state {
 		n.state = status.State
 		if status.Active {
-			b.say("Ator remoto criado · modelo registrado · sincronização de vida dos monstros em teste")
+			if status.ResourceFallback {
+				b.say("Modelo de contingência ativo · movimento sem animação · falha inicial: " + status.FirstError)
+			} else if status.VisualOnly {
+				b.say("Modelo remoto ativo · movimento disponível · animação ainda indisponível")
+			} else {
+				b.say("Ator remoto criado · modelo registrado · sincronização de vida dos monstros em teste")
+			}
 		} else if status.State == "spawning" {
 			b.say("O jogo está criando o Link remoto…")
 		}

@@ -12,6 +12,8 @@ import (
 )
 
 const Actor = "HyruleM_RemoteLink"
+const FallbackActor = "HyruleM_RemoteLink_Fallback"
+const FallbackPackPath = "Actor/Pack/" + FallbackActor + ".sbactorpack"
 const PackPath = "Actor/Pack/" + Actor + ".sbactorpack"
 const InfoPath = "Actor/ActorInfo.product.sbyml"
 const RSTBPath = "System/Resource/ResourceSizeTable.product.srsizetable"
@@ -39,7 +41,8 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 	if !ok {
 		return nil, fmt.Errorf("ActorLink do jogador ausente")
 	}
-	link, err = gamefmt.PatchAAMPStrings(link, "LinkTarget", map[string]string{
+	sourceLink := link
+	targets := map[string]string{
 		"ASUser":      Actor,
 		"ProfileUser": "DemoNPC", "AIProgramUser": "Dummy", "AIScheduleUser": "Dummy",
 		"AttentionUser": "Dummy", "AwarenessUser": "Dummy", "BoneControlUser": "Dummy",
@@ -47,7 +50,8 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		// A Player controller/damage handler may assume the concrete local Player
 		// class. The presence test deliberately has no collision/damage component.
 		"PhysicsUser": "Dummy", "DamageParamUser": "Dummy", "RgBlendWeightUser": "Dummy", "RgConfigListUser": "Dummy",
-	})
+	}
+	link, err = gamefmt.PatchAAMPStrings(sourceLink, "LinkTarget", targets)
 	if err != nil {
 		return nil, err
 	}
@@ -99,10 +103,28 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 	if err != nil {
 		return nil, err
 	}
+	legacy := map[string][]byte{}
+	for _, entry := range player.Entries {
+		if entry.Name != "Actor/ActorLink/GameROMPlayer.bxml" {
+			legacy[entry.Name] = player.Data[entry.Start:entry.End]
+		}
+	}
+	targets["ASUser"] = "Player"
+	legacyLink, err := gamefmt.PatchAAMPStrings(sourceLink, "LinkTarget", targets)
+	if err != nil {
+		return nil, err
+	}
+	legacyLinkPath := "Actor/ActorLink/" + FallbackActor + ".bxml"
+	legacy[legacyLinkPath] = legacyLink
+	legacyPack, err := gamefmt.WriteSARC(legacy)
+	if err != nil {
+		return nil, err
+	}
 	info, _, err := gamefmt.Unpack(actorInfo)
 	if err != nil {
 		return nil, err
 	}
+	originalInfoSize := len(info)
 	doc, err := gamefmt.ReadBYML(info)
 	if err != nil {
 		return nil, err
@@ -117,7 +139,7 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		if a.Get("name").Str() == "GameROMPlayer" {
 			original = a
 		}
-		if a.Get("name").Str() == Actor || uint32(hashes.List[i].Bits) == newHash {
+		if a.Get("name").Str() == Actor || a.Get("name").Str() == FallbackActor || uint32(hashes.List[i].Bits) == newHash || uint32(hashes.List[i].Bits) == crc32.ChecksumIEEE([]byte(FallbackActor)) {
 			return nil, fmt.Errorf("ActorInfo já contém nome/hash do ator remoto")
 		}
 	}
@@ -146,6 +168,9 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		entries = append(entries, entry{uint32(hashes.List[i].Bits), a, hashes.List[i].Kind})
 	}
 	entries = append(entries, entry{newHash, remote, gamefmt.Uint})
+	legacyInfo := remote.CloneMap()
+	legacyInfo.Fields["name"] = gamefmt.Text(FallbackActor)
+	entries = append(entries, entry{crc32.ChecksumIEEE([]byte(FallbackActor)), legacyInfo, gamefmt.Uint})
 	sort.Slice(entries, func(i, j int) bool { return entries[i].hash < entries[j].hash })
 	actors.List, hashes.List = nil, nil
 	for _, e := range entries {
@@ -165,22 +190,18 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		return nil, err
 	}
 	for path, source := range budgets {
-		if err = table.Ensure(path, len(files[path])); err != nil {
+		old, _ := player.Get(source)
+		if err = reserveProxyResource(table, path, source, len(files[path]), len(old), strings.HasPrefix(path, "Actor/AS/")); err != nil {
 			return nil, err
 		}
-		v := table.Hashes[crc32.ChecksumIEEE([]byte(gamefmt.Canonical(source)))]
-		if x := table.Names[gamefmt.Canonical(source)]; x > v {
-			v = x
-		}
-		h := crc32.ChecksumIEEE([]byte(gamefmt.Canonical(path)))
-		if v > table.Hashes[h] {
-			table.Hashes[h] = v
-		}
 	}
-	for path, size := range map[string]int{PackPath: len(pack), InfoPath: len(info), linkPath: len(link)} {
+	if err = reserveProxyResource(table, InfoPath, InfoPath, len(info), originalInfoSize, false); err != nil {
+		return nil, err
+	}
+	for path, size := range map[string]int{PackPath: len(pack), FallbackPackPath: len(legacyPack), InfoPath: len(info), linkPath: len(link), legacyLinkPath: len(legacyLink)} {
 		if err = table.Ensure(path, size); err != nil {
 			return nil, err
 		}
 	}
-	return map[string][]byte{PackPath: gamefmt.PackYaz0(pack), InfoPath: gamefmt.PackYaz0(info), RSTBPath: gamefmt.PackYaz0(table.Bytes())}, nil
+	return map[string][]byte{PackPath: gamefmt.PackYaz0(pack), FallbackPackPath: gamefmt.PackYaz0(legacyPack), InfoPath: gamefmt.PackYaz0(info), RSTBPath: gamefmt.PackYaz0(table.Bytes())}, nil
 }

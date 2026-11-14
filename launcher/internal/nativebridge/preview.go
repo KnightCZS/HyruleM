@@ -9,13 +9,15 @@ import (
 // Preview readiness is separate from complete Gen1 combat/AI capabilities.
 // A running older adapter must be diagnosed before interpreting actor state.
 type PreviewDiagnostic struct {
-	ExpectedABI  int    `json:"expected_abi"`
-	ActualABI    int    `json:"actual_abi"`
-	Compatible   bool   `json:"compatible"`
-	Status       string `json:"status"`
-	Message      string `json:"message"`
-	GameTicks    uint64 `json:"game_ticks"`
-	RemoteActive bool   `json:"remote_active"`
+	ExpectedABI      int    `json:"expected_abi"`
+	ActualABI        int    `json:"actual_abi"`
+	Compatible       bool   `json:"compatible"`
+	Status           string `json:"status"`
+	Message          string `json:"message"`
+	GameTicks        uint64 `json:"game_ticks"`
+	RemoteActive     bool   `json:"remote_active"`
+	ResourceFallback bool   `json:"resource_fallback"`
+	FirstError       string `json:"first_error,omitempty"`
 }
 
 func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
@@ -54,15 +56,18 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 	}
 	p.Compatible = true
 	var s struct {
-		State     string `json:"state"`
-		Error     string `json:"error"`
-		Ticks     uint64 `json:"game_ticks"`
-		Age       int64  `json:"tick_age_ms"`
-		Active    bool   `json:"active"`
-		Model     bool   `json:"model_ready"`
-		Animation bool   `json:"animation_ready"`
-		Paused    bool   `json:"game_paused"`
-		Received  uint64 `json:"received_sequence"`
+		State            string `json:"state"`
+		Error            string `json:"error"`
+		Ticks            uint64 `json:"game_ticks"`
+		Age              int64  `json:"tick_age_ms"`
+		Active           bool   `json:"active"`
+		Model            bool   `json:"model_ready"`
+		Animation        bool   `json:"animation_ready"`
+		Paused           bool   `json:"game_paused"`
+		Received         uint64 `json:"received_sequence"`
+		VisualOnly       bool   `json:"visual_only"`
+		ResourceFallback bool   `json:"resource_fallback"`
+		FirstError       string `json:"first_error"`
 	}
 	q, ok = byName["hm_native_status"]
 	if !ok || q.Error != "" || json.Unmarshal(q.Data, &s) != nil {
@@ -70,6 +75,7 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		return p
 	}
 	p.GameTicks, p.RemoteActive = s.Ticks, s.Active
+	p.ResourceFallback, p.FirstError = s.ResourceFallback, s.FirstError
 	switch {
 	case s.Error != "" || s.State == "error":
 		p.Status, p.Message = "actor_error", "O jogo recusou o ator remoto: "+s.Error
@@ -77,6 +83,10 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		p.Status, p.Message = "paused", "O jogo está pausado. Retorne ao mundo aberto para testar o ator remoto."
 	case s.Ticks == 0 || s.Age < 0 || s.Age > 3000:
 		p.Status, p.Message = "callback_stalled", "O callback não está atualizando. Reconstrua a biblioteca com o gerador novo e teste sem pausa."
+	case s.Active && s.Model && s.ResourceFallback:
+		p.Status, p.Message = "visual_fallback", "Contingência visual ativa, sem animação. Falha da variante principal: "+s.FirstError
+	case s.Active && s.Model && s.VisualOnly:
+		p.Status, p.Message = "animation_unavailable", "Modelo ativo com movimento; a animação não está pronta."
 	case s.Active && s.Model && s.Animation:
 		p.Status, p.Message = "active", "Ator e componentes confirmados pelo jogo. Este estado ainda não comprova visibilidade na GPU."
 	case s.Active:

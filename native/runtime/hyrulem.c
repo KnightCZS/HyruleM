@@ -24,10 +24,13 @@ typedef struct {
 } Desired;
 typedef struct {
     char state[32], error[96];
+    char first_error[96];
     uint64_t applied, received, ticks, last_tick;
     bool active, model_ready, animation_ready;
     float requested[3], observed[3];
     uint64_t animation_requests;
+    unsigned spawn_attempts;
+    bool resource_fallback, visual_only;
 } Published;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static Desired desired;
@@ -37,6 +40,8 @@ static uint64_t storage, actor, spawning_at, applied;
 static char session[17];
 static int animation = -1;
 static bool spawning, failed;
+static bool fallback_tried;
+static unsigned resource_variant, spawn_attempts;
 static uint64_t tick_count;
 static Track local_tracks[2], remote_tracks[2];
 static uint64_t capture_count;
@@ -103,6 +108,7 @@ static void publish(const char *state, const char *error, uint64_t seq, bool act
     snprintf(published.error,sizeof published.error,"%s",error?error:"");
     published.applied=seq; published.received=desired.seq; published.active=active;
     published.ticks=tick_count; published.last_tick=now_ms();
+    published.spawn_attempts=spawn_attempts;published.resource_fallback=resource_variant!=0;
     pthread_mutex_unlock(&mutex);
 }
 static void release_local(Cpu *c) { call(c,g_site.actor_link_release,storage+LOCAL,0,0,0,0,0,0); }
@@ -136,8 +142,19 @@ static bool prepare(Cpu *c, Desired *d, uint64_t vt) {
     ST64(storage+SSTR,vt); ST64(storage+SSTR+8,storage+KEY);
     // InstParamPack::Buffer: position starts after its u16 count/s16 cursor.
     call(c,g_site.hm_param_add,storage+PARAMS+0x10,storage+VECTOR,storage+SSTR,12,4,0,0);
+    spawn_attempts++;
     if (!call(c,g_site.hm_create,creator,storage+NAME,heap,storage+HANDLE,storage+PARAMS,0,1)) return false;
     spawning=true; spawning_at=now_ms(); return true;
+}
+static bool retry_fallback(Cpu *c,const char *reason) {
+    pthread_mutex_lock(&mutex);
+    if(!published.first_error[0])snprintf(published.first_error,sizeof published.first_error,"%s",reason);
+    pthread_mutex_unlock(&mutex);
+    fprintf(stderr,"[hyrulem] resource variant %u rejected: %s\n",resource_variant,reason);
+    if(fallback_tried)return false;
+    remove_remote(c);fallback_tried=true;resource_variant=1;
+    strcpy((char *)(uintptr_t)(storage+NAME),"HyruleM_RemoteLink_Fallback");
+    publish("retrying-visual-fallback","",applied,false);return true;
 }
 
 // Only decode trivial native getters returning an embedded life integer. Do not
@@ -209,7 +226,7 @@ static void world_scan(Cpu *c,uint64_t local,bool connected) {
     call(c,g_site.pouch_unlock,creator+0xa8,0,0,0,0,0,0);
     pthread_mutex_lock(&mutex);world_count=n;memcpy(world_seen,seen,sizeof *seen*n);pthread_mutex_unlock(&mutex);
 }
-static void set_pose(Cpu *c, uint64_t a, Desired *d, uint64_t vt) {
+static void set_pose(Cpu *c, uint64_t a, Desired *d, uint64_t vt,bool animate) {
     float s=sinf(d->yaw), co=cosf(d->yaw);
     float matrix[12]={co,0,s,d->x, 0,1,0,d->y, -s,0,co,d->z};
     memcpy((void *)(uintptr_t)(storage+MATRIX),matrix,sizeof matrix);
@@ -217,6 +234,7 @@ static void set_pose(Cpu *c, uint64_t a, Desired *d, uint64_t vt) {
     // Leaving the deferred copy at spawn lets the actor update restore it.
     call(c,g_site.hm_set_mtx,a,storage+MATRIX,0,0,0,0,0);
     call(c,g_site.hm_set_mtx,a,storage+MATRIX,1,0,0,0,0);
+    if(!animate)return;
     uint64_t as=LD64(a+0x560);
     if (!range(as,0xe0) || LD32(as+0xb8)<2 || !range(LD64(as+0xc0),0xa0)) return;
     for(int i=0;i<2;i++) {
@@ -265,20 +283,25 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     if (strcmp(session,d.session)) {
         remove_remote(c); snprintf(session,sizeof session,"%s",d.session);
         applied=0; failed=false;
+        fallback_tried=false;resource_variant=spawn_attempts=0;
+        strcpy((char *)(uintptr_t)(storage+NAME),"HyruleM_RemoteLink");
+        pthread_mutex_lock(&mutex);published.first_error[0]=published.error[0]=0;pthread_mutex_unlock(&mutex);
     }
+    if (failed) return; // Keep the first fatal result after disconnect/expiry.
     bool stale=d.received && now_ms()-d.received>2500;
     if (!d.visible || stale) {
         remove_remote(c); applied=d.seq;
         publish(stale?"expired":"idle","",applied,false); return;
     }
-    if (failed) return; // An engine rejection requires a new session, never a spawn loop.
     if (spawning) {
         if (call(c,g_site.hm_handle_failed,storage+HANDLE,0,0,0,0,0,0)) {
+            if(retry_fallback(c,"native-spawn-failed"))return;
             remove_remote(c); failed=true; publish("error","native-spawn-failed",applied,false); return;
         }
         // A ready handle wins over wall-clock timeout after a long pause.
         if (!call(c,g_site.hm_handle_ready,storage+HANDLE,0,0,0,0,0,0)) {
             if (now_ms()-spawning_at>15000) {
+                if(retry_fallback(c,"native-spawn-timeout"))return;
                 remove_remote(c); failed=true; publish("error","native-spawn-timeout",applied,false); return;
             }
             publish("spawning","",applied,false); return;
@@ -295,7 +318,10 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
         if (awake!=a) { remove_remote(c); failed=true; publish("error","native-wake-failed",applied,false); return; }
     }
     if (!actor) {
-        if (!prepare(c,&d,safe_string_vtable)) { failed=true; publish("error","native-spawn-rejected-check-private-overlay",applied,false); return; }
+        if (!prepare(c,&d,safe_string_vtable)) {
+            if(retry_fallback(c,"native-spawn-rejected-check-private-overlay"))return;
+            failed=true; publish("error","native-spawn-rejected-check-private-overlay",applied,false); return;
+        }
         publish("spawning","",applied,false); return;
     }
     uint64_t a=resolve(c);
@@ -305,18 +331,20 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     bool animation_ready=range(as,0x168)&&LD32(as+0xb8)>=2&&range(LD64(as+0xc0),0xa0)&&LD32(as+0x138)>0;
     pthread_mutex_lock(&mutex);
     published.model_ready=model_ready; published.animation_ready=animation_ready;
+    published.visual_only=resource_variant!=0||!animation_ready;
     pthread_mutex_unlock(&mutex);
-    if (!model_ready || !animation_ready) {
+    if (!model_ready) {
         if(now_ms()-spawning_at<15000){release_local(c);publish("loading-visuals","",applied,false);return;}
+        if(!fallback_tried){release_local(c);if(retry_fallback(c,"remote-model-not-loaded"))return;}
         release_local(c); remove_remote(c); failed=true;
-        publish("error",!model_ready?"remote-model-not-loaded":"remote-animation-not-loaded",applied,false); return;
+        publish("error","remote-model-not-loaded",applied,false); return;
     }
     pthread_mutex_lock(&mutex);
     published.requested[0]=d.x;published.requested[1]=d.y;published.requested[2]=d.z;
     for(int i=0;i<3;i++)published.observed[i]=read_float(a+0x3a4+i*16);
     pthread_mutex_unlock(&mutex);
-    set_pose(c,a,&d,safe_string_vtable); release_local(c);
-    applied=d.seq; publish("active","",applied,true);
+    set_pose(c,a,&d,safe_string_vtable,resource_variant==0&&animation_ready); release_local(c);
+    applied=d.seq; publish(resource_variant?"fallback-active":animation_ready?"active":"active-no-animation","",applied,true);
 }
 
 RT_ON_RESET(hyrulem_reset) {
@@ -327,6 +355,7 @@ RT_ON_RESET(hyrulem_reset) {
     pthread_mutex_unlock(&mutex);
     storage=actor=spawning_at=applied=tick_count=0; session[0]=0;
     animation=-1; spawning=failed=false;
+    fallback_tried=false;resource_variant=spawn_attempts=0;
 }
 static bool token(const char *s) {
     if (strlen(s)!=16) return false;
@@ -346,6 +375,7 @@ static void caps(int argc,char **argv,ControlReply *r) {
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
     control_field_int(r,"preview_abi",3); control_field_bool(r,"native_preview",supported());
     control_field_bool(r,"animation_capture",supported()&&g_site.hm_as_play_entry);
+    control_field_bool(r,"visual_fallback",supported());
     control_field_bool(r,"shared_enemy_health",world_supported());
     // These are end-to-end Gen1 capabilities, not addresses found in a binary.
     // Keep them false until combat, pickups and AI are wired and play-tested.
@@ -407,6 +437,9 @@ static void status(int argc,char **argv,ControlReply *r) {
     control_field_num(r,"requested_x",p.requested[0]);control_field_num(r,"requested_y",p.requested[1]);control_field_num(r,"requested_z",p.requested[2]);
     control_field_num(r,"observed_x",p.observed[0]);control_field_num(r,"observed_y",p.observed[1]);control_field_num(r,"observed_z",p.observed[2]);
     control_field_int(r,"animation_requests",p.animation_requests);
+    control_field_int(r,"spawn_attempts",p.spawn_attempts);
+    control_field_bool(r,"resource_fallback",p.resource_fallback);control_field_bool(r,"visual_only",p.visual_only);
+    control_field_str(r,"first_error",p.first_error);
 }
 static void local_state(int argc,char **argv,ControlReply *r) {
     Track tracks[2];float yaw;uint64_t count;

@@ -10,13 +10,13 @@ GameSites g_site;
 const char *g_game_version="1.9.0";
 static unsigned calls, creates, deletes, moves, plays;
 static uint64_t mock_actor=HEAP_BASE+0x3000, retained=HEAP_BASE+0x4000;
-static bool reject;
+static bool reject,fail_handle;
 void *hle_alloc(uint64_t size) { assert(size==BYTES); return (void *)(uintptr_t)HLE_HEAP; }
 void guest_call(Cpu *c,uint64_t fn) {
     calls++;
     if (fn==g_site.hm_create) { creates++; assert(c->x[3]==HLE_HEAP+HANDLE); c->x[0]=!reject; }
     else if (fn==g_site.hm_handle_ready) c->x[0]=1;
-    else if (fn==g_site.hm_handle_failed) c->x[0]=0;
+    else if (fn==g_site.hm_handle_failed) c->x[0]=fail_handle;
     else if (fn==g_site.hm_handle_get || fn==g_site.hm_handle_wake) c->x[0]=mock_actor;
     else if (fn==g_site.actor_index_assign) {
         ST64(c->x[0],retained); ST32(c->x[0]+8,7); ST8(c->x[0]+12,1);
@@ -72,13 +72,22 @@ int main(void) {
     rt_hyrulem_capture_as(&request);assert(capture_count==1&&!strcmp(local_tracks[0].name,"CutS1"));assert(!memcmp(&request,&saved,sizeof request));
     ST64(HEAP_BASE+0x50d8,mock_actor);rt_hyrulem_capture_as(&request);assert(capture_count==1); // remote cannot feed back
     r.failed=false;remote(14,pose,&r);assert(r.failed); // replay cannot resurrect or move
+    ST32(HEAP_BASE+0x5138,0);rt_hyrulem_tick(&cpu,0);assert(published.active&&published.visual_only&&!published.animation_ready&&deletes==0);ST32(HEAP_BASE+0x5138,400);
     char *wrong[]={"hm_native_clear","ffffffffffffffff","2"};r.failed=false;clear_remote(3,wrong,&r);assert(r.failed);
     char *clear[]={"hm_native_clear","0123456789abcdef","3"};r.failed=false;clear_remote(3,clear,&r);assert(!r.failed && deletes==0);
     rt_hyrulem_tick(&cpu,0);assert(deletes==1 && !actor && !published.active);
     hyrulem_reset();assert(!storage && !actor && !desired.session[0]);
     // A rejected native creation is reported once, without an allocation/retry loop.
     reject=true;r.failed=false;open_session(2,start,&r);remote(14,pose,&r);
-    rt_hyrulem_tick(&cpu,0);unsigned count=creates;rt_hyrulem_tick(&cpu,0);assert(failed && creates==count && !strcmp(published.state,"error"));
+    rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);unsigned count=creates;rt_hyrulem_tick(&cpu,0);assert(failed && creates==count && !strcmp(published.state,"error"));
+    desired.received=now_ms()-3001;rt_hyrulem_tick(&cpu,0);assert(!strcmp(published.state,"error")&&published.first_error[0]);
+    // One fallback attempt can restore the model without executing Player AS.
+    hyrulem_reset();reject=false;fail_handle=true;r.failed=false;open_session(2,start,&r);remote(14,pose,&r);rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);assert(fallback_tried&&!failed);
+    fail_handle=false;
+    reject=false;unsigned previous_plays=plays;rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);
+    assert(published.active&&published.resource_fallback&&published.visual_only&&plays==previous_plays&&spawn_attempts==2);
+    assert(strstr((char *)(uintptr_t)(storage+NAME),"_Fallback"));desired.x=3450;desired.seq++;rt_hyrulem_tick(&cpu,0);assert(read_float(mock_actor+0x3a4)==3450&&plays==previous_plays);
+
     // A native map-enemy observation is keyed by placement, never a process
     // pointer. Received health waits for the game thread and cannot heal.
     hyrulem_reset();reject=false;r.failed=false;open_session(2,start,&r);remote(14,pose,&r);

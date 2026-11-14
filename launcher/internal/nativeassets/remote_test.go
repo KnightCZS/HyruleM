@@ -60,6 +60,17 @@ func TestPrivateRemoteResourcesPreserveOriginals(t *testing.T) {
 	if _, ok := archive.Get("Actor/ActorLink/GameROMPlayer.bxml"); ok {
 		t.Fatal("remote pack still names the original actor link")
 	}
+	legacyData, _, err := f.Unpack(out[FallbackPackPath])
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyArchive, err := f.ReadSARC(legacyData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := legacyArchive.Get("Actor/ActorLink/" + FallbackActor + ".bxml"); !ok {
+		t.Fatal("fallback actor link missing")
+	}
 	if keep, ok := archive.Get("Actor/Other/Keep.bin"); !ok || string(keep) != "synthetic animation" {
 		t.Fatal("visual resource changed")
 	}
@@ -69,7 +80,7 @@ func TestPrivateRemoteResourcesPreserveOriginals(t *testing.T) {
 		t.Fatal(err)
 	}
 	actors := doc.Root.Get("Actors").List
-	if len(actors) != 2 {
+	if len(actors) != 3 {
 		t.Fatal("wrong actor count")
 	}
 	for _, a := range actors {

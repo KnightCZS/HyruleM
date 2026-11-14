@@ -13,6 +13,7 @@ import (
 )
 
 const NativePreviewEnv = "HYRULEM_NATIVE_PREVIEW"
+const nativeOverlayPolicy = "remote-demo-npc-v5-canonical-as-with-fallback"
 
 func nativePreviewRequested(env []string) bool {
 	for _, entry := range env {
@@ -33,7 +34,9 @@ func prepareNativePreview(c Config, running bool) error {
 	out := NativePreviewOverlay(c)
 	manifestPath := filepath.Join(out, "hyrulem-native-overlay.json")
 	if running {
-		if !IsFile(manifestPath) || !IsFile(filepath.Join(out, filepath.FromSlash(nativeassets.PackPath))) {
+		var current map[string]string
+		b, err := os.ReadFile(manifestPath)
+		if err != nil || json.Unmarshal(b, &current) != nil || current["policy"] != nativeOverlayPolicy || !IsFile(filepath.Join(out, filepath.FromSlash(nativeassets.PackPath))) || !IsFile(filepath.Join(out, filepath.FromSlash(nativeassets.FallbackPackPath))) {
 			return fmt.Errorf("feche os jogos para preparar o overlay nativo inicial")
 		}
 		return nil
@@ -67,7 +70,7 @@ func prepareNativePreview(c Config, running bool) error {
 	if err != nil {
 		return err
 	}
-	inputs["policy"] = "remote-demo-npc-v4-private-as-two-tracks"
+	inputs["policy"] = nativeOverlayPolicy
 	if !c.KeepCampaign {
 		err = filepath.WalkDir(FilterOverlay(c), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -93,7 +96,7 @@ func prepareNativePreview(c Config, running bool) error {
 		}
 	}
 	manifest, _ := json.Marshal(inputs)
-	if existing, e := os.ReadFile(manifestPath); e == nil && string(existing) == string(manifest) && IsFile(filepath.Join(out, filepath.FromSlash(nativeassets.PackPath))) {
+	if existing, e := os.ReadFile(manifestPath); e == nil && string(existing) == string(manifest) && IsFile(filepath.Join(out, filepath.FromSlash(nativeassets.PackPath))) && IsFile(filepath.Join(out, filepath.FromSlash(nativeassets.FallbackPackPath))) {
 		return nil
 	}
 	generated, err := nativeassets.BuildRemote(title, info, table)

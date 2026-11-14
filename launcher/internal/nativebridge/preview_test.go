@@ -25,6 +25,8 @@ func TestPreviewDiagnosisSeparatesCallbackModelAndGen1(t *testing.T) {
 		{`{"game_ticks":0,"tick_age_ms":-1}`, "callback_stalled"},
 		{`{"game_ticks":50,"tick_age_ms":0,"received_sequence":0}`, "no_native_session"},
 		{`{"game_ticks":50,"tick_age_ms":0,"active":true}`, "model_missing"},
+		{`{"game_ticks":50,"tick_age_ms":0,"active":true,"model_ready":true,"visual_only":true,"resource_fallback":true,"first_error":"native-spawn-failed"}`, "visual_fallback"},
+		{`{"game_ticks":50,"tick_age_ms":0,"active":true,"model_ready":true,"visual_only":true}`, "animation_unavailable"},
 		{`{"game_ticks":50,"tick_age_ms":0,"active":true,"model_ready":true,"animation_ready":true}`, "active"},
 		{`{"game_ticks":50,"tick_age_ms":0,"error":"native-spawn-rejected"}`, "actor_error"},
 	} {

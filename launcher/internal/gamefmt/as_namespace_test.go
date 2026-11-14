@@ -11,6 +11,10 @@ func TestASNamespacePreservesSharedPublicNames(t *testing.T) {
 	d := make([]byte, 0xa0)
 	e := binary.LittleEndian
 	copy(d, "AAMP")
+	e.PutUint32(d[24:], 2)
+	e.PutUint32(d[28:], 1)
+	e.PutUint32(d[32:], 2)
+	e.PutUint32(d[40:], 64)
 	e.PutUint32(d[4:], 2)
 	e.PutUint32(d[8:], 3)
 	e.PutUint32(d[12:], uint32(len(d)))

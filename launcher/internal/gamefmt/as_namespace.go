@@ -24,7 +24,7 @@ func NamespaceASList(src []byte, prefix string) ([]byte, error) {
 	if !inside(lists, count*12) {
 		return nil, fmt.Errorf("ASList: listas inválidas")
 	}
-	d := append([]byte(nil), src...)
+	filenames := map[int]bool{}
 	found := false
 	for i := 0; i < count; i++ {
 		l := lists + i*12
@@ -49,44 +49,71 @@ func NamespaceASList(src []byte, prefix string) ([]byte, error) {
 				if e.Uint32(src[p:]) != crc32.ChecksumIEEE([]byte("Filename")) {
 					continue
 				}
-				v := e.Uint32(src[p+4:])
-				at := p + int(v&0xffffff)*4
-				if (v>>24 != 20 && v>>24 != 8) || !inside(at, 1) {
-					return nil, fmt.Errorf("ASList: StringRef inválida")
-				}
-				end := bytes.IndexByte(src[at:], 0)
-				if end < 0 || end > 120 {
-					return nil, fmt.Errorf("ASList: nome inválido")
-				}
-				for len(d)%4 != 0 {
-					d = append(d, 0)
-				}
-				rel := (len(d) - p) / 4
-				if rel > 0xffffff {
-					return nil, fmt.Errorf("ASList excessiva")
-				}
-				e.PutUint32(d[p+4:], uint32(rel)|(v&0xff000000))
-				d = append(d, []byte(prefix)...)
-				d = append(d, src[at:at+end]...)
-				d = append(d, 0)
-				if v>>24 == 8 {
-					if len(prefix)+end >= 64 {
-						return nil, fmt.Errorf("ASList: String64 excessiva")
-					}
-					for n := len(prefix) + end + 1; n < 64; n++ {
-						d = append(d, 0)
-					}
-				}
+				filenames[p] = true
 			}
 		}
 	}
 	if !found {
 		return nil, fmt.Errorf("ASList: ASDefines ausente")
 	}
-	for len(d)%4 != 0 {
-		d = append(d, 0)
+	paramStart := root + int(e.Uint32(src[24:]))*12 + int(e.Uint32(src[28:]))*8
+	np := int(e.Uint32(src[32:]))
+	dataStart := paramStart + np*8
+	stringsAt := dataStart + int(e.Uint32(src[36:]))
+	if !inside(paramStart, np*8) || !inside(stringsAt, int(e.Uint32(src[40:]))) || e.Uint32(src[44:]) != 0 || stringsAt+int(e.Uint32(src[40:])) != len(src) {
+		return nil, fmt.Errorf("ASList: seções inconsistentes")
+	}
+	d := append([]byte(nil), src[:stringsAt]...)
+	pool := map[string]int{}
+	for i := 0; i < np; i++ {
+		p := paramStart + i*8
+		v := e.Uint32(src[p+4:])
+		typ := v >> 24
+		if typ != 7 && typ != 8 && typ != 15 && typ != 20 {
+			continue
+		}
+		at := p + int(v&0xffffff)*4
+		if at < stringsAt || !inside(at, 1) {
+			return nil, fmt.Errorf("ASList: string fora da seção")
+		}
+		n := bytes.IndexByte(src[at:], 0)
+		if n < 0 || n > 4096 {
+			return nil, fmt.Errorf("ASList: string inválida")
+		}
+		value := string(src[at : at+n])
+		if filenames[p] {
+			value = prefix + value
+		}
+		limit := 4096
+		if typ == 7 {
+			limit = 32
+		}
+		if typ == 8 {
+			limit = 64
+		}
+		if typ == 15 {
+			limit = 256
+		}
+		if len(value) >= limit {
+			return nil, fmt.Errorf("ASList: string excessiva")
+		}
+		target, ok := pool[value]
+		if !ok {
+			target = len(d)
+			pool[value] = target
+			d = append(d, []byte(value)...)
+			d = append(d, 0)
+			for len(d)%4 != 0 {
+				d = append(d, 0)
+			}
+		}
+		rel := (target - p) / 4
+		if rel > 0xffffff {
+			return nil, fmt.Errorf("ASList excessiva")
+		}
+		e.PutUint32(d[p+4:], uint32(rel)|(v&0xff000000))
 	}
 	e.PutUint32(d[12:], uint32(len(d)))
-	e.PutUint32(d[40:], e.Uint32(src[40:])+uint32(len(d)-len(src)))
+	e.PutUint32(d[40:], uint32(len(d)-stringsAt))
 	return d, nil
 }

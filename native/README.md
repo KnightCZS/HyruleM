@@ -1,24 +1,23 @@
-# HyruleM 0.5.0-preview.4
+# HyruleM 0.5.0-preview.5
 
-A prévia 3 teve o modelo remoto visível confirmado pelo usuário, mas ainda parado/em T-pose. Esta atualização adiciona captura dos pedidos AS reais do jogador local, transmissão dos canais de tronco/pernas e reinício de ações, direção real e atualização das duas cópias da transformação do ator.
+Hotfix da regressão relatada na [issue #5](https://github.com/KnightCZS/HyruleM/issues/5). ABI 3 e captura local estão funcionando nos relatórios; a falha `native-spawn-failed` ocorre na criação do proxy. Esta versão corrige estrutura e orçamento dos recursos privados e preserva a primeira falha no diagnóstico.
 
-O proxy deriva folhas esqueléticas genéricas dos recursos privados da instalação e remove seletores e eventos de dano dependentes do Player. A reprodução usa clipes representativos; fidelidade de variações de arma/velocidade/equipamento ainda é parcial. O cabelo e os equipamentos não foram implementados. Mostrar o golpe não aplica dano entre jogadores.
+## Atualizar e testar
 
-## Instalar
+1. Feche os dois jogos e o launcher antigo. Extraia o ZIP inteiro.
+2. Execute **Iniciar-Nativo.cmd**. Ele confere/atualiza o runtime configurado, com backup e restauração em falha.
+3. Abra ambos os clientes com o pacote novo. O overlay será reconstruído, incluindo a variante de contingência. **ABI 3 / protocolo 4** continuam iguais: a biblioteca que já funcionou com ABI 3 pode ser reutilizada.
+4. Teste posição, direção e ações nos dois sentidos. O resultado visual desta versão ainda precisa de confirmação em gameplay.
 
-1. Feche os dois jogos e o launcher antigo. Extraia o ZIP novo inteiro.
-2. Execute **Iniciar-Nativo.cmd**, que instala/confere o runtime configurado e o gerador com **ABI 3**, com backup e restauração em falha.
-3. **Reconstrua a biblioteca do jogo** na configuração do Savage Wind. O novo hook de captura só existe na biblioteca regenerada. Não edite o arquivo `.id`.
-4. Use o launcher deste pacote e o servidor novo: **protocolo 4**, nos dois clientes. O overlay privado será atualizado antes de abrir os jogos.
-5. Conecte ambos no mundo aberto. Entrar preserva a posição; **Reunir em Hateno** é manual.
+## Recuperação visual e diagnóstico
 
-O EXE dentro do pacote ativa o modo nativo automaticamente; sua instalação é conferida antes de preparar o jogo. Um pacote misturado ou runtime antigo é rejeitado explicitamente.
+Se a criação principal for rejeitada, há uma única tentativa de contingência com os recursos originais da configuração anteriormente visível. O menu mostra **Modelo de contingência ativo · movimento sem animação**. Esse ator não recebe chamadas AS, para não executar seletores/eventos do Player. Isso é degradação explícita, não reprodução completa das ações.
 
-## Testar e diagnosticar
+Um modelo pronto não é apagado só porque a animação está indisponível. Se as duas variantes falharem, a sessão para e o erro fica preservado. Não há um ciclo ilimitado de criação.
 
-Mova um jogador, vire sem andar, pule e execute ataques consecutivos; observe no outro cliente e repita no sentido inverso. Esta atualização ainda precisa dessa confirmação visual: os testes de código e recursos não substituem gameplay.
+**Diagnosticar.cmd** consulta ambos os clientes em leitura. Os relatórios `native-preview-diag.5` incluem `first_error`, `spawn_attempts`, `resource_fallback`, `visual_only`, política/identidade do overlay e mensagens recentes de criação. A presença de uma primeira falha seguida de contingência ativa não significa animação funcionando. `native_ready` permanece reservado à Gen1 completa, ainda incompleta.
 
-**Diagnosticar.cmd** consulta os dois clientes, apenas em leitura. Os relatórios `native-preview-diag.4` incluem `hm_local_state` (canais AS, sequências e contador de captura) e `hm_native_status` (posição desejada/observada e pedidos de animação). `native_ready` continua reservado à Gen1 completa; as funções de combate/IA ainda não estão integradas.
+As folhas AS agora são arquivos canônicos mínimos, e a ASList tem strings reempacotadas. Seu orçamento acompanha o crescimento, sem reservar 64 KiB adicionais por AS pequeno. A captura e o transporte de ações da prévia 4 permanecem. Clipes representativos ainda não fornecem fidelidade completa de arma/velocidade; cabelo, equipamentos, PvP e IA do mundo não estão integrados.
 
 ## O que compartilha
 

@@ -55,7 +55,7 @@ func TestProxyASSelectsVisualLeafAndRemovesEventGraph(t *testing.T) {
 		t.Fatal("source AS changed")
 	}
 	e := binary.LittleEndian
-	if 0x3c+int(e.Uint16(out[0x40:]))*4 != 0x54 || e.Uint16(out[0x42:]) != 1 || e.Uint16(out[0x5a:]) != 0 {
+	if e.Uint32(out[24:]) != 3 || e.Uint32(out[28:]) != 1 || e.Uint32(out[32:]) != 3 || e.Uint16(out[0x52:]) != 0 || len(out) != 140 {
 		t.Fatal("selector/events still reachable")
 	}
 	if _, err = ProxyAS(src[:50], "Wait"); err == nil {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,19 +30,21 @@ type ProbeCommand struct {
 	Error   string          `json:"error,omitempty"`
 }
 type Report struct {
-	Schema        int                `json:"schema"`
-	ProbeVersion  string             `json:"probe_version"`
-	Created       string             `json:"created_utc"`
-	Slot          int                `json:"slot"`
-	Port          int                `json:"control_port"`
-	ControlSource string             `json:"control_source,omitempty"`
-	NativeReady   bool               `json:"native_ready"`
-	NativeError   string             `json:"native_error,omitempty"`
-	Preview       PreviewDiagnostic  `json:"preview"`
-	Capabilities  *gen1.Capabilities `json:"capabilities,omitempty"`
-	Files         []FileMetadata     `json:"files"`
-	Queries       []ProbeCommand     `json:"queries"`
-	Inspection    *NativeInspection  `json:"native_inspection,omitempty"`
+	Schema          int                `json:"schema"`
+	ProbeVersion    string             `json:"probe_version"`
+	Created         string             `json:"created_utc"`
+	Slot            int                `json:"slot"`
+	Port            int                `json:"control_port"`
+	ControlSource   string             `json:"control_source,omitempty"`
+	NativeReady     bool               `json:"native_ready"`
+	NativeError     string             `json:"native_error,omitempty"`
+	Preview         PreviewDiagnostic  `json:"preview"`
+	Capabilities    *gen1.Capabilities `json:"capabilities,omitempty"`
+	Files           []FileMetadata     `json:"files"`
+	Queries         []ProbeCommand     `json:"queries"`
+	Inspection      *NativeInspection  `json:"native_inspection,omitempty"`
+	OverlayPolicy   string             `json:"overlay_policy,omitempty"`
+	RuntimeMessages []string           `json:"runtime_messages,omitempty"`
 }
 
 // FileInfo exports metadata only, never the game module or save bytes.
@@ -119,7 +122,7 @@ func Probe(ctx context.Context, cfg core.Config, slot, port int) (Report, error)
 // ProbeAt uses the folder of the selected config.json for launcher capture logs,
 // including when --config points outside the default AppDir.
 func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port int) (Report, error) {
-	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.4", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
+	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.5", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
 	if cfg.DataDir == "" || slot < 0 || slot > 2 {
 		return r, fmt.Errorf("configuração/pasta de dados ou instância inválida")
 	}
@@ -128,6 +131,35 @@ func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port in
 		data = core.InstanceDataDir(cfg, slot-1)
 	}
 	r.Files = append(r.Files, FileInfo("runtime", cfg.Executable), FileInfo("extracted/exefs/main", filepath.Join(cfg.DataDir, "extracted", "exefs", "main")))
+	var policy map[string]string
+	if b, e := os.ReadFile(filepath.Join(core.NativePreviewOverlay(cfg), "hyrulem-native-overlay.json")); e == nil && json.Unmarshal(b, &policy) == nil {
+		r.OverlayPolicy = policy["policy"]
+	}
+	for _, actor := range []string{"HyruleM_RemoteLink", "HyruleM_RemoteLink_Fallback"} {
+		path := filepath.Join(core.NativePreviewOverlay(cfg), "Actor", "Pack", actor+".sbactorpack")
+		if core.IsFile(path) {
+			r.Files = append(r.Files, FileInfo("overlay/"+actor, path))
+		}
+	}
+	logName := "sandbox-processo.log"
+	if slot > 0 {
+		logName = fmt.Sprintf("multiplayer-processo-%d.log", slot)
+	}
+	for _, line := range strings.Split(core.ReadLogTail(filepath.Join(appRoot, "logs", logName), 128*1024), "\n") {
+		lower := strings.ToLower(line)
+		if !strings.Contains(lower, "[hyrulem]") && !(strings.Contains(lower, "error") && (strings.Contains(lower, "resource") || strings.Contains(lower, "actor"))) {
+			continue
+		}
+		for _, private := range []string{cfg.DataDir, filepath.Dir(cfg.Executable), appRoot} {
+			if private != "" && private != "." {
+				line = strings.ReplaceAll(line, private, "<local>")
+			}
+		}
+		r.RuntimeMessages = append(r.RuntimeMessages, line)
+		if len(r.RuntimeMessages) > 32 {
+			r.RuntimeMessages = r.RuntimeMessages[1:]
+		}
+	}
 	for _, name := range []string{"swgame.dll", "swgame.so"} {
 		path := filepath.Join(data, name)
 		if _, err := os.Stat(path); err == nil {
