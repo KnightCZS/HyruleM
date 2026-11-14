@@ -1,44 +1,46 @@
-# HyruleM 0.5.0-preview.7
+# HyruleM 0.5.0-preview.8
 
-A [issue #6](https://github.com/KnightCZS/HyruleM/issues/6) confirma modelos carecas em T-pose no spawn. Os dois relatórios da prévia 6 mostram `native-access-timeout`, `lease-unavailable`, uma tentativa de criação e zero pedidos de animação. A espera adicional não bastou: o adaptador executava dentro do job de dano do Link local, onde a proteção nativa pode negar acesso ao outro ator.
+A prévia 7 foi confirmada pelo jogador com dois Links visíveis e em movimento. A prévia 8 mantém o callback após a espera das tarefas dos atores e acrescenta horário/clima do anfitrião, equipamento visual e melhorias na reprodução das ações. Os novos visuais ainda precisam de validação em dois jogos reais; os testes automatizados não verificam a GPU.
 
-A prévia 7 move criação, referências, posição, animação, limpeza e aplicação de vida para um callback depois que o jogo espera as tarefas dos atores e reinicia a fase de acesso. O código valida o contexto e recusa trabalhar se a fase ainda estiver ocupada. A proteção do jogo permanece ativa.
+## Instalar
 
-## Atualizar e testar
+1. Feche os dois jogos e o launcher. Extraia o **ZIP inteiro**, inclusive `runtime-update`, para uma pasta própria.
+2. Execute **Iniciar-Nativo.cmd**. Ele atualiza o runtime configurado com backup; não basta trocar apenas o EXE do launcher.
+3. Aguarde a preparação do overlay. Ele é regenerado nesta versão e deriva os prefabs visuais dos arquivos da sua própria instalação. Não contém modelos no download.
+4. Use a prévia 8 nos **dois clientes e no servidor**: ABI 5 / protocolo 5. A biblioteca gerada pela prévia 7 pode ser reaproveitada, pois os hooks/headers do gerador não mudaram; versões anteriores à 7 precisam regenerar. Se o runtime solicitar compilação, aguarde; nunca edite arquivos `.id` para contornar a verificação.
+5. Hospede na interface/IP do PC e porta escolhida. No mesmo computador, use os botões cliente 1 e cliente 2 e `127.0.0.1`; entre PCs/Radmin use o IP do anfitrião. Entre no mundo aberto e aproxime os jogadores.
 
-1. Feche os dois jogos e o launcher antigo. Extraia o ZIP inteiro.
-2. Execute **Iniciar-Nativo.cmd** para atualizar o runtime configurado com backup.
-3. **Deixe o runtime recompilar a biblioteca do jogo. ABI 4 exige o novo callback; a biblioteca ABI 3 não pode ser reutilizada.** O gerador novo altera a identidade da biblioteca e o runtime detecta a necessidade de recompilar. Aguarde essa etapa em cada instalação usada antes de conectar. Não altere arquivos `.id` para contornar a verificação.
-4. Abra os dois clientes e conecte-os. Teste caminhada, direção e ações nos dois sentidos. O overlay de recursos da prévia 5 continua válido; o protocolo da rede permanece 4.
+## O que mudou
 
-O resultado visual desta versão ainda precisa de confirmação em gameplay. O estado `active` informa componentes e aplicação aceitos, sem comprovar o desenho na GPU. Cabelo e equipamentos continuam pendentes.
+- **Horário e clima:** o primeiro jogador conectado é o anfitrião ambiental. Clientes seguem sua hora, pausa do relógio e clima atual; quem entra depois recebe o estado recente. O servidor escolhe um sucessor quando o anfitrião sai. Epoch/seq descartam amostras antigas e rejeitam alterações de outros clientes.
+- **Encerramento:** desconexão, troca de autoridade, carregamento ou amostra vencida restauram as políticas anteriores de clima/relógio, quando o controle está disponível, sem voltar a hora para o início da sessão nem sobrescrever uma política alterada manualmente.
+- **Runtime nativo e marionete:** criação, referências, movimento e limpeza continuam na thread do jogo, após a barreira dos jobs. São atores DemoNPC com controladores visuais; não se cria outro singleton Player. As verificações nativas de acesso permanecem ativas.
+- **Equipamento:** captura de espada/lança/arma de duas mãos, arco, escudo, cabeça, tronco e pernas. Cada peça remota é um ator visual independente, com transformação relativa ao dono. Cabeça padrão inclui cabelo. O gerador usa `bfres` e `mainModel` do ActorInfo; a instalação 1.9.0 analisada produziu 602 prefabs.
+- **Animações:** preserva os slots AS, evita reiniciar continuamente Wait/Move/Walk/Run iguais e conserva o Morph válido do clipe representativo. Ataques forçados com sequência nova continuam sendo reproduzidos.
+- **Movimento:** posição, rotação, ações e seis peças viajam em um comando atômico; snapshot local único, intervalo menor de leitura, interpolação de direção pelo caminho curto e suavização por frame. Saúde de monstros só gera comandos quando muda, com limite de quatro aplicações por rodada.
 
-## Recuperação visual e diagnóstico
+## Limites reais
 
-Se a criação principal for rejeitada, há uma única tentativa de contingência com os recursos originais da configuração anteriormente visível. O menu mostra **Modelo de contingência ativo · movimento sem animação**. Esse ator não recebe chamadas AS, para não executar seletores/eventos do Player. Isso é degradação explícita, não reprodução completa das ações.
+Equipamento é **aparência**, não cópia de itens: não altera inventário, durabilidade ou vida do outro jogador. Ainda não há sincronização exata de fase/velocidade dos clipes, expressões faciais, tinturas, máscaras especiais de corpo, capas, bainhas ou deformação do arco. Algumas combinações podem sobrepor malha, usar o clipe aproximado ou falhar no carregamento. Uma peça que falha não remove o Link nem provoca tentativas ilimitadas.
 
-O menu distingue **aguardando ativação** de modelo ativo. Estado transitório ou acesso temporariamente indisponível não encerra a sessão no primeiro callback. Uma geração de referência inválida continua sendo erro. A limpeza também aceita um personagem ainda não ativo; se o jogo negar acesso, a referência fica retida até a limpeza ser permitida, sem criar outro personagem. A contingência recebe seu próprio prazo no launcher, sem renovação ilimitada por pacotes repetidos.
+O clima atual do anfitrião é aplicado globalmente aos clientes, sem previsão independente por região. Datas, Blood Moon, missões, baús, coleta, árvores, mapa e IA de monstros continuam locais. O servidor **não executa BOTW** e o anfitrião ambiental ainda não é autoridade de toda a simulação.
 
-Um modelo pronto não é apagado só porque a animação está indisponível. Se as duas variantes falharem, a sessão para e o erro fica preservado. Não há um ciclo ilimitado de criação.
+A convergência de vida dos monstros de mapa permanece experimental: até 64 por leitura, 128 por sessão, identidade por hash/nome/posição original e menor vida conhecida, inclusive zero. Isso não sincroniza movimento, alvo, morte animada nem IA por proximidade. Reiniciar o servidor limpa esse registro.
 
-**Diagnosticar.cmd** consulta ambos os clientes em leitura. Os relatórios `native-preview-diag.7` incluem `callback_phase`, `rejected_callbacks`, `reference_status`, `actor_state`, `activation_wait_ticks`, `first_error`, `spawn_attempts`, `resource_fallback`, `visual_only`, política/identidade do overlay e mensagens recentes de criação. A presença de uma primeira falha seguida de contingência ativa não significa animação funcionando. `native_ready` permanece reservado à Gen1 completa, ainda incompleta.
+## Diagnóstico e teste sugerido
 
-As folhas AS agora são arquivos canônicos mínimos, e a ASList tem strings reempacotadas. Seu orçamento acompanha o crescimento, sem reservar 64 KiB adicionais por AS pequeno. A captura e o transporte de ações da prévia 4 permanecem. Clipes representativos ainda não fornecem fidelidade completa de arma/velocidade; cabelo, equipamentos, PvP e IA do mundo não estão integrados.
+Teste caminhada, corrida, salto, rotação e golpes nos dois sentidos. Troque cabeça/tronco/pernas, saque/guarde espada, arco e escudo. Confira se só o dono ganha/perde itens e vida. Feche o primeiro cliente e confira a sucessão do horário/clima no outro. Compare em mundo aberto; estar conectado não comprova renderização correta.
 
-## O que compartilha
+Se houver falha, rode **Diagnosticar.cmd** com ambos os jogos abertos e envie os dois JSONs. Os relatórios `native-preview-diag.8` incluem `time`, `weather`, estado local/equipamento e diagnóstico do ator. `equipment_active` e `equipment_json` mostram quantidade, modelo e erro por peça; `active` informa aceitação nativa, sem comprovar desenho na GPU. `native_ready` continua reservado à Gen1 completa.
 
-- Vida dos monstros do mapa observados a até 140 m, no máximo 64 por leitura e 128 por sessão.
-- Menor vida conhecida pelo servidor, incluindo zero. Não sincroniza ainda animação de morte, movimento ou autoridade da IA.
-- Só um monstro carregado com o mesmo hash, nome e posição original recebe o valor. Endereços e IDs de processo nunca viajam pela rede.
-- Saves, vida e inventário de cada jogador permanecem separados. O pacote não contém jogo, modelos, saves ou biblioteca recompilada.
+O modelo principal conserva uma única tentativa de contingência. **Modelo de contingência ativo · movimento sem animação** indica degradação explícita: não recebe AS do Player. A limpeza retém referências enquanto o jogo nega acesso, sem criar duplicatas.
 
-Teste no mundo aberto. Missões, baús, itens no chão, árvores, clima, horário, Blood Moon e mudanças de mapa não são sincronizados. Reiniciar o servidor inicia outra sessão de estado compartilhado.
+## Validação desta versão
 
-## Validação
+- Testes C com memória sintética: barreira pós-jobs, referências/gerações, CPU preservada, equipamento isolado, transformações, falhas limitadas, parsing atômico, slots/repetição AS e suavização a 30/60/120 Hz.
+- Hook emitido compilado e executado com memória sintética; 16 assinaturas únicas verificadas no módulo 1.9.0 privado.
+- Testes Go, detector de condições de corrida e vet: autoridade/sucessão/entrada tardia, rejeição de estado antigo, políticas ambientais, interpolação, orçamento de comandos e limites do protocolo.
+- Geração privada e leitura independente dos 602 packs: recursos, máscaras parciais de armadura, controladores Dummy/DemoNPC e arma rígida sem máscaras/animações do Player.
+- Compilação Windows, instalador com backup/rollback e abertura direta do launcher verificados pelo CI. Validação gráfica desta prévia depende do teste em jogo.
 
-- Callback real e armazenamento de HashId conferidos no módulo fornecido; dezesseis assinaturas únicas.
-- Testes C para barreira/estado de acesso, CPU, referências, criação/remoção e aplicação de vida após as tarefas dos atores. Fragmento do novo callback compilado e executado com memória sintética, preservando o load original e o restante da CPU.
-- Testes com dois clientes para dano/vida zero convergindo, observações atrasadas sem cura e identidade inválida.
-- Recursos derivados privadamente da instalação, preservando registros e subarquivos originais, sem controlador de física/dano do Player no proxy.
-
-Pesquisa: [RESEARCH_SYNC.md](RESEARCH_SYNC.md). Runtime base [Savage Wind](https://github.com/Revivedx/SavageWindRecomp/tree/740b18025fe11ba03c117dbb56668db304b5043e), licença MIT. Nenhum código ou asset do Milk Bar foi incorporado.
+Pesquisa: [RESEARCH_SYNC.md](RESEARCH_SYNC.md). Runtime [Savage Wind](https://github.com/Revivedx/SavageWindRecomp/tree/740b18025fe11ba03c117dbb56668db304b5043e), MIT. Nenhum código/BNP do Milk Bar foi incorporado. O pacote não contém jogo, modelos, saves nem biblioteca recompilada do jogo.

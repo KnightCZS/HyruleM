@@ -1,5 +1,13 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.8 (experimental)
+
+- Ambiente do anfitrião com sucessão e restauração; seis peças de equipamento apenas visual.
+- Frame nativo atômico, slots AS, deduplicação de locomoção e interpolação/suavização.
+- Prefabs derivados localmente e diagnóstico de falhas por peça; ABI 5/protocolo 5.
+- Presença/movimento da prévia 7 confirmados pelo jogador; novos visuais aguardam gameplay.
+- [Instalação e limites](native/README.md).
+
 ## Em desenvolvimento — geração nativa 1
 
 - Diagnóstico `gen1-diag.2`: corrige o caminho do log de processo do launcher, respeita configuração personalizada e separação de clientes; relatórios com data/hora e botão `Diagnosticar.cmd`.

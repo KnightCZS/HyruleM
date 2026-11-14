@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"hash/crc32"
+	"math"
 	"testing"
 )
 
@@ -64,5 +65,19 @@ func TestProxyASSelectsVisualLeafAndRemovesEventGraph(t *testing.T) {
 	e.PutUint32(src[0x84:], 0xffffff)
 	if _, err = ProxyAS(src, "Wait"); err == nil {
 		t.Fatal("invalid parameter reference accepted")
+	}
+}
+
+func TestProxyASMorphPreservesValidBlendAndRejectsInvalid(t *testing.T) {
+	for _, tt := range []struct{ in, want float32 }{{2.5, 2.5}, {0, 0}, {12, 12}, {-1, 4}, {13, 4}, {float32(math.NaN()), 4}} {
+		src := skeletalAS("Nml_Wait")
+		binary.LittleEndian.PutUint32(src[0x7c:], math.Float32bits(tt.in))
+		out, err := ProxyAS(src, "Wait")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := math.Float32frombits(binary.LittleEndian.Uint32(out[0x7c:])); got != tt.want {
+			t.Fatalf("blend %v -> %v", tt.in, got)
+		}
 	}
 }

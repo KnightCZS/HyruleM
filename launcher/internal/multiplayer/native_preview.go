@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Native presence and nearby map-enemy health use protocol 4. Full Gen1 combat
+// Native presence and nearby map-enemy health use protocol 5. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
 	session       string
@@ -20,6 +20,7 @@ type nativePreview struct {
 	waitingSince  time.Time
 	lastWorld     time.Time
 	spawnAttempts uint64
+	sentHealth    map[string]int
 }
 
 func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
@@ -101,7 +102,33 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 	if lower == "" {
 		lower = "-"
 	}
-	return fmt.Sprintf("hm_native_remote %s %d %.4f %.4f %.4f %.6f %s %s %d %d %s %d %d", session, seq, pose.Position.X, pose.Position.Y, pose.Position.Z, pose.Yaw, animation, upper, pose.Upper.Sequence, boolInt(pose.Upper.Force), lower, pose.Lower.Sequence, boolInt(pose.Lower.Force)), nil
+	command := fmt.Sprintf("hm_native_remote %s %d %.4f %.4f %.4f %.6f %s %s %d %d %s %d %d %d %d", session, seq, pose.Position.X, pose.Position.Y, pose.Position.Z, pose.Yaw, animation, upper, pose.Upper.Sequence, boolInt(pose.Upper.Force), lower, pose.Lower.Sequence, boolInt(pose.Lower.Force), pose.Upper.Slot, pose.Lower.Slot)
+	if len(pose.Equipment) > 0 {
+		var pieces [6]Equipment
+		for i := range pieces {
+			pieces[i].Slot = i
+			pieces[i].Matrix[0] = 1
+			pieces[i].Matrix[5] = 1
+			pieces[i].Matrix[10] = 1
+		}
+		for _, e := range pose.Equipment {
+			pieces[e.Slot] = e
+		}
+		for _, e := range pieces {
+			name := e.Name
+			if name == "" {
+				name = "-"
+			}
+			command += " " + name
+			for _, v := range e.Matrix {
+				command += fmt.Sprintf(" %.6f", v)
+			}
+		}
+	}
+	if len(command) > 4095 {
+		return "", fmt.Errorf("estado visual excede limite local")
+	}
+	return command, nil
 }
 func boolInt(b bool) int {
 	if b {
@@ -118,13 +145,25 @@ func (b *Bridge) capturePose(ctx context.Context, p *Pose) error {
 		LowerSequence uint64 `json:"lower_sequence"`
 		UpperForce    bool   `json:"upper_force"`
 		LowerForce    bool   `json:"lower_force"`
+		UpperSlot     int    `json:"upper_slot"`
+		LowerSlot     int    `json:"lower_slot"`
+		Ready         bool   `json:"ready"`
+		X, Y, Z       float64
+		Equipment     string `json:"equipment_json"`
 	}
 	if err := b.command(ctx, "hm_local_state", &s); err != nil {
 		return err
 	}
 	p.Yaw = s.Yaw
-	p.Upper = AnimationTrack{s.Upper, s.UpperSequence, s.UpperForce}
-	p.Lower = AnimationTrack{s.Lower, s.LowerSequence, s.LowerForce}
+	p.Position = Vec3{s.X, s.Y, s.Z}
+	p.Ready = s.Ready
+	p.Upper = AnimationTrack{s.Upper, s.UpperSequence, s.UpperForce, s.UpperSlot}
+	p.Lower = AnimationTrack{s.Lower, s.LowerSequence, s.LowerForce, s.LowerSlot}
+	if s.Equipment != "" {
+		if err := json.Unmarshal([]byte(s.Equipment), &p.Equipment); err != nil {
+			return fmt.Errorf("equipamento visual inválido: %w", err)
+		}
+	}
 	if !p.Valid() {
 		return fmt.Errorf("estado de animação local inválido")
 	}
@@ -241,15 +280,34 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 	for _, e := range b.Client.SharedEnemyHealth() {
 		byKey[e.key()] = e
 	}
+	if n.sentHealth == nil {
+		n.sentHealth = map[string]int{}
+	}
+	for key := range n.sentHealth {
+		if _, ok := byKey[key]; !ok {
+			delete(n.sentHealth, key)
+		}
+	}
+	writes := 0
 	for _, e := range local {
 		shared, ok := byKey[e.key()]
 		if !ok || shared.Health >= e.Health {
 			continue
 		}
+		// The native queue retains the lowest health for this session. Repeating
+		// every observed enemy would stall visual frames behind control replies.
+		if sent, ok := n.sentHealth[e.key()]; ok && sent <= shared.Health {
+			continue
+		}
+		if writes == 4 {
+			break
+		}
 		cmd := fmt.Sprintf("hm_enemy_health %s %d %s %.3f %.3f %.3f %d", n.session, e.Hash, e.Actor, e.Spawn.X, e.Spawn.Y, e.Spawn.Z, shared.Health)
 		if err := b.command(ctx, cmd, nil); err != nil {
 			return err
 		}
+		n.sentHealth[e.key()] = shared.Health
+		writes++
 	}
 	return nil
 }

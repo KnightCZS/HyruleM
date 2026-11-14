@@ -103,13 +103,18 @@ func TestEnemyIdentityAndBoundsPreventCrossActorWrites(t *testing.T) {
 type worldControl struct {
 	commands []string
 	health   int
+	enemies  []EnemyHealth
 }
 
 func (g *worldControl) Close() {}
 func (g *worldControl) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
 	g.commands = append(g.commands, cmd)
 	e := EnemyHealth{Hash: 42, Actor: "Enemy_Bokoblin_Junior", Spawn: Vec3{1, 2, 3}, Position: Vec3{1, 2, 3}, Health: g.health}
-	b, _ := json.Marshal([]EnemyHealth{e})
+	enemies := g.enemies
+	if enemies == nil {
+		enemies = []EnemyHealth{e}
+	}
+	b, _ := json.Marshal(enemies)
 	data, _ := json.Marshal(map[string]string{"enemies_json": string(b)})
 	return core.ControlReply{OK: true, Data: data}, nil
 }
@@ -140,5 +145,36 @@ func TestNativeWorldBridgeWritesOnlyLowerLifeForMatchingLoadedEnemy(t *testing.T
 	}
 	if len(g.commands) != 1 {
 		t.Fatal("stale snapshot tried to heal enemy", g.commands)
+	}
+}
+
+func TestHealthControlBudgetDoesNotBlockVisualFrames(t *testing.T) {
+	s := testServer(t)
+	a, b := testClient(t, s, "A"), testClient(t, s, "B")
+	p := Pose{Ready: true, Position: Vec3{1, 2, 3}}
+	_ = a.Publish(p)
+	_ = b.Publish(p)
+	shared := []EnemyHealth{}
+	local := []EnemyHealth{}
+	for i := 1; i <= 7; i++ {
+		e := EnemyHealth{Hash: uint32(i), Actor: "Enemy_Bokoblin_Junior", Spawn: p.Position, Position: p.Position, Health: 20}
+		shared = append(shared, e)
+		e.Health = 100
+		local = append(local, e)
+	}
+	_ = b.PublishEnemyHealth(shared)
+	eventually(t, func() bool { return len(a.SharedEnemyHealth()) == 7 })
+	g := &worldControl{enemies: local}
+	bridge := &Bridge{Client: a, control: g}
+	n := &nativePreview{session: "0123456789abcdef"}
+	for cycle, want := range []int{5, 4, 1} {
+		g.commands = nil
+		n.lastWorld = time.Time{}
+		if err := bridge.updateWorldHealth(context.Background(), n, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if len(g.commands) != want {
+			t.Fatalf("cycle %d commands=%v", cycle, g.commands)
+		}
 	}
 }

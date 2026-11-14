@@ -155,6 +155,22 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 			remote.Fields[key] = gamefmt.Text("Dummy")
 		}
 	}
+	var simpleModel []byte
+	if data, ok := bg.Get("Actor/Pack/Armor_Default_Extra_00.sbactorpack"); ok {
+		plain, _, e := gamefmt.Unpack(data)
+		if e != nil {
+			return nil, e
+		}
+		s, e := gamefmt.ReadSARC(plain)
+		if e != nil {
+			return nil, e
+		}
+		simpleModel, _ = s.Get("Actor/ModelList/Armor_Default_Extra_00.bmodellist")
+	}
+	equipmentPacks, equipmentRows, err := equipmentResources(player, simpleModel, files, link, actors.List, remote)
+	if err != nil {
+		return nil, err
+	}
 	type entry struct {
 		hash  uint32
 		actor *gamefmt.Node
@@ -171,6 +187,18 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 	legacyInfo := remote.CloneMap()
 	legacyInfo.Fields["name"] = gamefmt.Text(FallbackActor)
 	entries = append(entries, entry{crc32.ChecksumIEEE([]byte(FallbackActor)), legacyInfo, gamefmt.Uint})
+	knownHashes := map[uint32]bool{}
+	for _, e := range entries {
+		knownHashes[e.hash] = true
+	}
+	for _, row := range equipmentRows {
+		h := crc32.ChecksumIEEE([]byte(row.Get("name").Str()))
+		if knownHashes[h] {
+			return nil, fmt.Errorf("colisão de ator de equipamento")
+		}
+		knownHashes[h] = true
+		entries = append(entries, entry{h, row, gamefmt.Uint})
+	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].hash < entries[j].hash })
 	actors.List, hashes.List = nil, nil
 	for _, e := range entries {
@@ -203,5 +231,13 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 			return nil, err
 		}
 	}
-	return map[string][]byte{PackPath: gamefmt.PackYaz0(pack), FallbackPackPath: gamefmt.PackYaz0(legacyPack), InfoPath: gamefmt.PackYaz0(info), RSTBPath: gamefmt.PackYaz0(table.Bytes())}, nil
+	model, _ := player.Get("Actor/ModelList/Player_Link.bmodellist")
+	if err = reserveEquipment(table, equipmentPacks, len(model)); err != nil {
+		return nil, err
+	}
+	out := map[string][]byte{PackPath: gamefmt.PackYaz0(pack), FallbackPackPath: gamefmt.PackYaz0(legacyPack), InfoPath: gamefmt.PackYaz0(info), RSTBPath: gamefmt.PackYaz0(table.Bytes())}
+	for path, data := range equipmentPacks {
+		out[path] = data
+	}
+	return out, nil
 }

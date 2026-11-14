@@ -35,7 +35,11 @@ func (s *ControlStream) Command(ctx context.Context, cmd string) (ControlReply, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var r ControlReply
-	if s.Port < 1024 || s.Port > 65535 || cmd == "" || len(cmd) > 256 || strings.ContainsAny(cmd, "\r\n\x00") {
+	limit := 256
+	if strings.HasPrefix(cmd, "hm_native_remote ") {
+		limit = 4095
+	} // Atomic pose + six visual pieces; runtime MAX_LINE is4096.
+	if s.Port < 1024 || s.Port > 65535 || cmd == "" || len(cmd) > limit || strings.ContainsAny(cmd, "\r\n\x00") {
 		return r, fmt.Errorf("comando local inválido")
 	}
 	timeout := s.Timeout

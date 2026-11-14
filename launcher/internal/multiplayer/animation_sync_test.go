@@ -10,14 +10,14 @@ func TestTwoClientsPreserveRepeatedAttackAndMovementState(t *testing.T) {
 	s := testServer(t)
 	a := testClient(t, s, "A")
 	b := testClient(t, s, "B")
-	p := Pose{Ready: true, Position: Vec3{X: 10}, Upper: AnimationTrack{"CutS1", 7, true}, Lower: AnimationTrack{"Wait", 3, false}}
+	p := Pose{Ready: true, Position: Vec3{X: 10}, Upper: AnimationTrack{"CutS1", 7, true, 0}, Lower: AnimationTrack{"Wait", 3, false, 0}}
 	if err := a.Publish(p); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, func() bool { r := b.Remote(time.Now()); return len(r) == 1 && r[0].Pose.Upper == p.Upper })
 	p.Position.X = 15
 	p.Upper.Sequence = 8
-	p.Lower = AnimationTrack{"Move", 4, false}
+	p.Lower = AnimationTrack{"Move", 4, false, 0}
 	if err := a.Publish(p); err != nil {
 		t.Fatal(err)
 	}

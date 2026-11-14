@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"math"
 	"strings"
 )
 
@@ -46,6 +47,7 @@ func ProxyAS(src []byte, action string) ([]byte, error) {
 	}
 	best, score := -1, -100000
 	chosen := ""
+	chosenMorph := float32(4)
 	preferred := map[string]string{"Wait": "Nml_Wait", "WaitUpper": "Nml_Wait", "Move": "Nml_Move_Run", "MoveUpper": "Move_Upper_Run", "CutS1": "Sword_Attack_S1", "Jump": "Nml_Wait_Jump"}[action]
 	for i := 0; i < count; i++ {
 		leaf := children + i*12
@@ -56,6 +58,7 @@ func ProxyAS(src []byte, action string) ([]byte, error) {
 		}
 		kind := uint32(0)
 		name := ""
+		morph := float32(4)
 		for j := 0; j < no; j++ {
 			o := objects + j*8
 			if e.Uint32(src[o:]) != crc32.ChecksumIEEE([]byte("Parameters")) {
@@ -73,6 +76,13 @@ func ProxyAS(src []byte, action string) ([]byte, error) {
 					return nil, fmt.Errorf("AS: valor inválido")
 				}
 				switch e.Uint32(src[p:]) {
+				case crc32.ChecksumIEEE([]byte("Morph")):
+					if src[p+7] == 1 {
+						v := math.Float32frombits(e.Uint32(src[data:]))
+						if !math.IsNaN(float64(v)) && v >= 0 && v <= 12 {
+							morph = v
+						}
+					}
 				case crc32.ChecksumIEEE([]byte("TypeIndex")):
 					kind = e.Uint32(src[data:])
 				case crc32.ChecksumIEEE([]byte("FileName")):
@@ -106,12 +116,15 @@ func ProxyAS(src []byte, action string) ([]byte, error) {
 		if s > score {
 			best, score = leaf, s
 			chosen = name
+			chosenMorph = morph
 		}
 	}
 	if best < 0 {
 		return nil, fmt.Errorf("AS: nenhuma animação esquelética genérica")
 	}
-	return skeletalAS(chosen), nil
+	d := skeletalAS(chosen)
+	e.PutUint32(d[0x7c:], math.Float32bits(chosenMorph))
+	return d, nil
 }
 
 func skeletalAS(name string) []byte {

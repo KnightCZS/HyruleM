@@ -31,7 +31,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $source 'hyrulem-build.json'))) { th
 $source = (Resolve-Path -LiteralPath $source).Path
 $package = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'hyrulem-preview.json') -Encoding UTF8 -Raw | ConvertFrom-Json
 $build = Get-Content -LiteralPath (Join-Path $source 'hyrulem-build.json') -Encoding UTF8 -Raw | ConvertFrom-Json
-if ($package.schema -ne 1 -or $package.preview_abi -ne 4 -or $build.preview_abi -ne 4) { throw 'Pacote nativo antigo ou incompleto. Extraia o ZIP novo inteiro.' }
+if ($package.schema -ne 1 -or $package.preview_abi -ne 5 -or $build.preview_abi -ne 5) { throw 'Pacote nativo antigo ou incompleto. Extraia o ZIP novo inteiro.' }
 if ((Get-FileHash -LiteralPath (Join-Path $source 'savagewind.exe') -Algorithm SHA256).Hash.ToLower() -ne $package.runtime_sha256) { throw 'O runtime do pacote nao corresponde ao manifesto. Extraia o ZIP novo inteiro.' }
 $sourceFiles = @(Get-ChildItem -LiteralPath $source -Recurse -File)
 function Test-InstalledFiles {
@@ -44,7 +44,7 @@ function Test-InstalledFiles {
     return $true
 }
 if ($Ensure -and (Test-InstalledFiles)) {
-    Write-Output "Runtime nativo ABI 4 conferido: $exe"
+    Write-Output "Runtime nativo ABI 5 conferido: $exe"
     return
 }
 $active = Get-Process -Name savagewind -ErrorAction SilentlyContinue
@@ -79,5 +79,5 @@ try {
     throw
 }
 Write-Output "Runtime experimental instalado. Backup: $backup"
-Write-Output "Executavel atualizado e conferido (ABI 4): $exe"
+Write-Output "Executavel atualizado e conferido (ABI 5): $exe"
 Write-Output 'Abra a configuração do Savage Wind e permita reconstruir a biblioteca do jogo. Depois abra Iniciar-Nativo.cmd.'

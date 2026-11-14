@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 4
+const Protocol = 5
 const MaxLine = 65536
 const MaxPlayers = 2
 
@@ -43,22 +43,24 @@ func (a Vec3) Valid() bool {
 }
 
 type Pose struct {
-	Position Vec3           `json:"position"`
-	Velocity Vec3           `json:"velocity"`
-	Yaw      float64        `json:"yaw"`
-	Phase    float64        `json:"phase"`
-	Ready    bool           `json:"ready"`
-	Upper    AnimationTrack `json:"upper,omitempty"`
-	Lower    AnimationTrack `json:"lower,omitempty"`
+	Position  Vec3           `json:"position"`
+	Velocity  Vec3           `json:"velocity"`
+	Yaw       float64        `json:"yaw"`
+	Phase     float64        `json:"phase"`
+	Ready     bool           `json:"ready"`
+	Upper     AnimationTrack `json:"upper,omitempty"`
+	Lower     AnimationTrack `json:"lower,omitempty"`
+	Equipment []Equipment    `json:"equipment,omitempty"`
 }
 type AnimationTrack struct {
 	Name     string `json:"name,omitempty"`
 	Sequence uint64 `json:"sequence,omitempty"`
 	Force    bool   `json:"force,omitempty"`
+	Slot     int    `json:"slot,omitempty"`
 }
 
 func (a AnimationTrack) Valid() bool {
-	if len(a.Name) > 63 || a.Sequence > math.MaxInt64 {
+	if len(a.Name) > 63 || a.Sequence > math.MaxInt64 || a.Slot < 0 || a.Slot > 1 {
 		return false
 	}
 	for _, r := range a.Name {
@@ -70,6 +72,16 @@ func (a AnimationTrack) Valid() bool {
 }
 
 func (p Pose) Valid() bool {
+	if len(p.Equipment) > 6 {
+		return false
+	}
+	seen := [6]bool{}
+	for _, e := range p.Equipment {
+		if !e.Valid() || seen[e.Slot] {
+			return false
+		}
+		seen[e.Slot] = true
+	}
 	return p.Position.Valid() && p.Velocity.Valid() && p.Velocity.Len() <= 500 && finite(p.Yaw) && finite(p.Phase) && math.Abs(p.Yaw) <= 10000 && math.Abs(p.Phase) <= 10000 && p.Upper.Valid() && p.Lower.Valid()
 }
 
@@ -80,17 +92,20 @@ type Player struct {
 	Pose Pose   `json:"pose"`
 }
 type Message struct {
-	Type     string        `json:"type"`
-	Protocol int           `json:"protocol,omitempty"`
-	Name     string        `json:"name,omitempty"`
-	ID       string        `json:"id,omitempty"`
-	Slot     int           `json:"slot,omitempty"`
-	Spawn    *Vec3         `json:"spawn,omitempty"`
-	Pose     *Pose         `json:"pose,omitempty"`
-	Players  []Player      `json:"players,omitempty"`
-	Sequence uint64        `json:"sequence,omitempty"`
-	Error    string        `json:"error,omitempty"`
-	Enemies  []EnemyHealth `json:"enemies,omitempty"`
+	Type        string        `json:"type"`
+	Protocol    int           `json:"protocol,omitempty"`
+	Name        string        `json:"name,omitempty"`
+	ID          string        `json:"id,omitempty"`
+	Slot        int           `json:"slot,omitempty"`
+	Spawn       *Vec3         `json:"spawn,omitempty"`
+	Pose        *Pose         `json:"pose,omitempty"`
+	Players     []Player      `json:"players,omitempty"`
+	Sequence    uint64        `json:"sequence,omitempty"`
+	Error       string        `json:"error,omitempty"`
+	Enemies     []EnemyHealth `json:"enemies,omitempty"`
+	HostID      string        `json:"host_id,omitempty"`
+	Epoch       uint64        `json:"epoch,omitempty"`
+	Environment *Environment  `json:"environment,omitempty"`
 }
 
 func NormalizeName(s string) (string, error) {

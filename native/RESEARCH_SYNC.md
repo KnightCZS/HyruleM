@@ -1,8 +1,33 @@
+# Prévia 8: ambiente e aparência
+
+O retorno do jogador confirma visibilidade e movimento com a prévia 7. A etapa seguinte mantém essa integração e acrescenta as etapas 1–4 solicitadas; ainda não equivale a mundo/IA compartilhados.
+
+| Etapa | Implementação atual | Limite |
+|---|---|---|
+| 1. Horário e clima | Servidor escolhe anfitrião/época; bridge lê e aplica comandos existentes; sucessão, entrada tardia e restauração de políticas | Clima global do host, sem dia/Blood Moon/eventos |
+| 2. Módulo nativo | C no runtime, fila local e callback após os jobs | Alvo estrito Switch 1.9.0 |
+| 3. Marionete | DemoNPC derivado localmente por overlay, referências nativas e criação assíncrona | Sem controlador Player/IA/física de combate |
+| 4. Animação/equipamento | AS de dois canais e slots, seis peças visuais, matrizes relativas, suavização | Sem fase exata de clipe, tinturas, máscaras especiais e bainhas |
+
+ABI 5/protocolo 5 exigem atualizar runtime, launcher e servidor. Sites, emissor e headers usados pela biblioteca gerada permanecem os da prévia 7. O overlay ganha nova identidade para obrigar regeneração com os jogos fechados.
+
+## O relatório do Milk Bar e as diferenças
+
+O README e o código de Player/LocalInstance mostram servidor C#, DLL C++, WPF e pacote BNP. Há pedidos explícitos de criação na fila: não é correto concluir apenas que a DLL espera passivamente um ator criado por dados. A ideia aproveitável é separar ciclo de vida, pose, aparência e mundo; nenhum código ou BNP foi copiado.
+
+Aqui a criação nativa já foi localizada e confirmada em jogo. Trocar esse caminho comprovado por um spawn indireto de mapa acrescentaria outra dependência. Mantemos o corpo DemoNPC e usamos prefabs derivados dos dados locais para as peças visuais. ActorInfo define o arquivo/unidade real de cada modelo; armas usam template rígido simples e armaduras mantêm máscaras parciais do esqueleto.
+
+O projeto zeldaret/botw identifica Switch 1.5.0. Nomes podem orientar pesquisa conceitual, mas não fornecem offsets reutilizáveis na 1.9.0; não usamos código decompilado. Os getters/transformações foram conferidos no módulo fornecido privadamente.
+
+Os testes sintéticos comprovam enfileiramento, referências, preservação de CPU e valores aplicados. A leitura independente dos packs comprova estrutura e recursos. Somente o teste com dois jogos pode confirmar aparência, alinhamento e animação na GPU.
+
+## Histórico: correção da issue #6
+
 # Atualização após as tarefas dos atores — issue #6
 
 Os relatórios da prévia 6 confirmaram criação/visibilidade estática, mas nenhum movimento ou pedido AS: o resolver nativo retornou acesso negado durante toda a janela. A integração anterior dentro do job de dano do jogador podia atingir a proteção de acesso concorrente a outros atores. A correção atual substitui esse ponto pelo retorno da espera das tarefas dos atores, após o reset nativo da fase de acesso. A validação em execução privada com memória sintética reproduziu negação de um ator ativo no worker, espera de dois workers e resolução permitida após o reset. Não constitui teste gráfico.
 
-ABI 4 exige recompilar a biblioteca com o gerador novo; protocolo 4 e recursos permanecem. O adaptador não desliga os checks nativos, não resolve por ponteiro bruto e não usa a thread do renderer. A captura local de AS mantém seu hook separado, somente de leitura.
+Na prévia 7, ABI 4 exigiu recompilar a biblioteca com o gerador novo; o protocolo era 4. O adaptador não desliga os checks nativos, não resolve por ponteiro bruto e não usa a thread do renderer. A captura local de AS mantém seu hook separado, somente de leitura.
 
 ## Histórico da integração anterior
 

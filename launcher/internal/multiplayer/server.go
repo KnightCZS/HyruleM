@@ -28,15 +28,19 @@ type serverPeer struct {
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
 
 type Server struct {
-	mu          sync.Mutex
-	cfg         ServerConfig
-	peers       map[string]*serverPeer
-	connections map[net.Conn]bool
-	listener    net.Listener
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	closed      bool
-	enemies     map[string]EnemyHealth
+	mu               sync.Mutex
+	cfg              ServerConfig
+	peers            map[string]*serverPeer
+	connections      map[net.Conn]bool
+	listener         net.Listener
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+	closed           bool
+	enemies          map[string]EnemyHealth
+	environmentHost  string
+	environmentEpoch uint64
+	environment      *Environment
+	environmentAt    time.Time
 }
 
 func Listen(address string, cfg ServerConfig) (*Server, error) {
@@ -122,8 +126,16 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 	}
 	p := &serverPeer{conn: c, player: Player{ID: id, Name: name, Slot: slot}, out: make(chan Message, 2), done: make(chan struct{})}
 	s.peers[id] = p
+	s.chooseEnvironmentHostLocked()
 	s.mu.Unlock()
-	defer func() { p.stop(); s.mu.Lock(); delete(s.peers, id); s.mu.Unlock(); s.log(name + " saiu") }()
+	defer func() {
+		p.stop()
+		s.mu.Lock()
+		delete(s.peers, id)
+		s.chooseEnvironmentHostLocked()
+		s.mu.Unlock()
+		s.log(name + " saiu")
+	}()
 	spawn := s.cfg.Spawn
 	spawn.X += float64(slot*2-1) * 2
 	spawn.Y += 0.8
@@ -182,6 +194,21 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				s.log(name + ": " + err.Error())
 				return
 			}
+		case "environment":
+			if m.Environment == nil || !m.Environment.Valid() || m.Environment.AgeMS != 0 {
+				return
+			}
+			s.mu.Lock()
+			if id != s.environmentHost {
+				s.mu.Unlock()
+				return
+			}
+			if m.Environment.Epoch == s.environmentEpoch && p.player.Pose.Ready && (s.environment == nil || m.Environment.Sequence > s.environment.Sequence) {
+				copy := *m.Environment
+				s.environment = &copy
+				s.environmentAt = time.Now()
+			}
+			s.mu.Unlock()
 		case "ping":
 		case "leave":
 			return
@@ -202,6 +229,13 @@ func (s *Server) broadcast(ctx context.Context) {
 		case <-ticker.C:
 		}
 		s.mu.Lock()
+		host, epoch := s.environmentHost, s.environmentEpoch
+		var environment *Environment
+		if s.environment != nil && time.Since(s.environmentAt) < 3*time.Second {
+			copy := *s.environment
+			copy.AgeMS = uint64(time.Since(s.environmentAt) / time.Millisecond)
+			environment = &copy
+		}
 		enemies := make([]EnemyHealth, 0, len(s.enemies))
 		for _, e := range s.enemies {
 			enemies = append(enemies, e)
@@ -216,7 +250,7 @@ func (s *Server) broadcast(ctx context.Context) {
 		sort.Slice(players, func(i, j int) bool { return players[i].Slot < players[j].Slot })
 		sequence++
 		sort.Slice(enemies, func(i, j int) bool { return enemies[i].key() < enemies[j].key() })
-		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence, Enemies: enemies}
+		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence, Enemies: enemies, HostID: host, Epoch: epoch, Environment: environment}
 		for _, p := range targets {
 			select {
 			case <-p.done:

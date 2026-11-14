@@ -1,10 +1,6 @@
 # HyruleM
 
-Hotfix experimental [0.5.0-preview.7](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.7): move posição, animação e ciclo de vida para depois da espera das tarefas dos atores, tratando o acesso negado permanente da [issue #6](https://github.com/KnightCZS/HyruleM/issues/6). **ABI 4 / protocolo 4. É necessário recompilar a biblioteca do jogo.** [Instalação e limites](native/README.md).
-
-Prévia experimental [0.5.0-preview.4](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.4): captura e transporte de ações AS em dois canais, direção real e transformação do ator. **ABI 3 / protocolo 4 — biblioteca do jogo precisa ser regenerada.** [Instalação e limites](native/README.md). [Proposta de host do mundo](docs/HOST_WORLD.md).
-
-Prévia experimental [0.5.0-preview.3](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.3): corrige instalação e seleção do modo nativo após os relatórios da issue #4 mostrarem ABI 1 ainda em uso. `Iniciar-Nativo.cmd` confere e atualiza o runtime configurado; o EXE do pacote também seleciona o modo nativo automaticamente. [Instruções](native/README.md). A visibilidade em gameplay ainda requer validação com ABI 2.
+Atualização experimental [0.5.0-preview.8](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.8): horário/clima do anfitrião, equipamento visual em seis slots e melhorias de animação/interpolação. Dois Links visíveis e em movimento foram confirmados pelo jogador na prévia 7; os novos visuais da 8 ainda precisam de teste em jogo. **ABI 5 / protocolo 5: atualize o ZIP inteiro nos dois clientes.** [Instalação, testes e limites](native/README.md) · [Host do mundo](docs/HOST_WORLD.md).
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 
@@ -12,7 +8,7 @@ Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo
 
 **Atualização experimental 0.5.0-preview.2:** corrige o callback que impedia o ator remoto de ser criado, retira o teleporte automático ao conectar e adiciona convergência de vida dos monstros próximos. Ambos os jogadores e o servidor precisam do protocolo 3. Veja [instalação, limites e validação](native/README.md). A renderização dos dois Links ainda exige confirmação em gameplay; PvP, coleta e IA compartilhada continuam pendentes. O restante desta seção descreve o protótipo visual estável 0.4.2.
 
-**Desenvolvimento da geração nativa:** esta branch contém as regras autoritativas e agora um [adaptador experimental de presença nativa](native/README.md), com build próprio do runtime, criação/movimento/remoção de ator e geração local dos recursos. Esse caminho ainda não foi validado com dois jogos e não implementa combate/coleta/IA completos. Não é a Gen1 jogável. O pacote estável 0.4.2 continua sendo o protótipo visual descrito abaixo. Veja também [Gen1: estado e diagnóstico](docs/gen1/README.md).
+**Desenvolvimento da geração nativa:** esta branch contém as regras autoritativas e agora um [adaptador experimental de presença nativa](native/README.md), com build próprio do runtime, criação/movimento/remoção de ator e geração local dos recursos. A presença e o movimento já foram confirmados pelo jogador com dois jogos; combate/coleta/IA completos ainda não estão implementados. Não é a Gen1 jogável. O pacote estável 0.4.2 continua sendo o protótipo visual descrito abaixo. Veja também [Gen1: estado e diagnóstico](docs/gen1/README.md).
 
 Hotfix dos [issues #1](https://github.com/KnightCZS/HyruleM/issues/1) e [#2](https://github.com/KnightCZS/HyruleM/issues/2): leitura de fluxos EVFL válidos sem entradas e preparação automática do filtro antes de conectar. [Notas 0.4.2](releases/v0.4.2.md).
 

@@ -174,16 +174,31 @@ func (b *Bridge) run(ctx context.Context) {
 	autoFOV := 0.0
 	up := Vec3{Y: 1}
 	var native *nativePreview
+	var environment environmentSync
+	var environmentIssue time.Time
 	defer func() {
 		if native != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
 			defer cancel()
 			_ = b.clearNative(cleanup, native)
+			b.restoreEnvironment(cleanup, &environment)
 		}
 	}()
 	for ctx.Err() == nil && b.Client.Connected() {
 		var pos Vec3
-		if e := b.command(ctx, "pos", &pos); e != nil || !pos.Valid() {
+		var captured Pose
+		var readErr error
+		if b.native && native != nil {
+			readErr = b.capturePose(ctx, &captured)
+			pos = captured.Position
+			if readErr == nil && !captured.Ready {
+				readErr = fmt.Errorf("mundo nativo aguardando atualização")
+			}
+		} else {
+			readErr = b.command(ctx, "pos", &pos)
+		}
+		if e := readErr; e != nil || !pos.Valid() {
+			b.restoreEnvironment(ctx, &environment)
 			if native != nil {
 				_ = b.clearNative(ctx, native)
 			}
@@ -281,7 +296,12 @@ func (b *Bridge) run(ctx context.Context) {
 		at = now
 		pose := Pose{Position: pos, Velocity: velocity, Yaw: yaw, Phase: phase, Ready: true}
 		if native != nil {
-			if err := b.capturePose(ctx, &pose); err != nil {
+			if captured.Ready {
+				pose.Yaw = captured.Yaw
+				pose.Upper = captured.Upper
+				pose.Lower = captured.Lower
+				pose.Equipment = captured.Equipment
+			} else if err := b.capturePose(ctx, &pose); err != nil {
 				b.fail("Captura nativa interrompida: " + err.Error())
 				return
 			}
@@ -298,7 +318,11 @@ func (b *Bridge) run(ctx context.Context) {
 				b.fail("Sincronização do mundo interrompida: " + err.Error())
 				return
 			}
-			if !wait(ctx, 80*time.Millisecond) {
+			if err := b.updateEnvironment(ctx, &environment, now); err != nil && now.Sub(environmentIssue) > 15*time.Second {
+				b.say("Presença ativa; ambiente aguardando o jogo: " + err.Error())
+				environmentIssue = now
+			}
+			if !wait(ctx, 16*time.Millisecond) {
 				return
 			}
 			continue

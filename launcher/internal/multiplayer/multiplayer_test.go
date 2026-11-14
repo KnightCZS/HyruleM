@@ -165,6 +165,12 @@ func (f *fakeGame) Command(ctx context.Context, cmd string) (core.ControlReply, 
 		data = f.position
 	case cmd == "camera":
 		data = map[string]float64{"x": f.position.X, "y": f.position.Y + 2, "z": f.position.Z + 10, "dx": 0, "dy": 0, "dz": -1}
+	case cmd == "time":
+		data = map[string]any{"hour": 12, "hour_held": false}
+	case cmd == "weather":
+		data = map[string]string{"weather": "game", "now": "clear"}
+	case strings.HasPrefix(cmd, "time ") || strings.HasPrefix(cmd, "weather "):
+		data = map[string]bool{"applied": true}
 	case strings.HasPrefix(cmd, "goto "):
 		if f.spawnError {
 			return core.ControlReply{}, fmt.Errorf("teleport unavailable")

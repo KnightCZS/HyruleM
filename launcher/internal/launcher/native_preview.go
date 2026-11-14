@@ -13,7 +13,7 @@ import (
 )
 
 const NativePreviewEnv = "HYRULEM_NATIVE_PREVIEW"
-const nativeOverlayPolicy = "remote-demo-npc-v5-canonical-as-with-fallback"
+const nativeOverlayPolicy = "remote-demo-npc-v8-visual-equipment"
 
 func nativePreviewRequested(env []string) bool {
 	for _, entry := range env {

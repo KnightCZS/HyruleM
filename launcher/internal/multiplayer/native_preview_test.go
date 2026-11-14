@@ -95,7 +95,7 @@ func TestOldRuntimeRejectionSurvivesDisconnectCleanup(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("old runtime was not rejected")
 	}
-	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 4") {
+	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 5") {
 		t.Fatal("specific native failure replaced by generic disconnection", c.Reason())
 	}
 }
@@ -110,11 +110,11 @@ func (f *fakeNativeGame) Command(ctx context.Context, cmd string) (core.ControlR
 	var data any = map[string]bool{"queued": true}
 	switch {
 	case cmd == "hm_caps":
-		data = map[string]any{"runtime": "SavageWind-HyruleM", "game_version": "1.9.0", "preview_abi": 4, "native_preview": true, "shared_enemy_health": true, "animation_capture": true, "actor_job_barrier": true}
+		data = map[string]any{"runtime": "SavageWind-HyruleM", "game_version": "1.9.0", "preview_abi": 5, "native_preview": true, "shared_enemy_health": true, "animation_capture": true, "actor_job_barrier": true}
 	case cmd == "hm_native_status":
 		data = map[string]any{"state": "idle", "game_ticks": 12, "tick_age_ms": 0, "active": f.active, "model_ready": f.active, "animation_ready": f.active}
 	case cmd == "hm_local_state":
-		data = map[string]any{"yaw": 0, "upper": "WaitUpper", "lower": "Wait"}
+		data = map[string]any{"yaw": 0, "upper": "WaitUpper", "lower": "Wait", "ready": true, "x": f.position.X, "y": f.position.Y, "z": f.position.Z}
 	case cmd == "hm_world_status":
 		data = map[string]string{"enemies_json": "[]"}
 	case strings.HasPrefix(cmd, "hm_native_remote "):

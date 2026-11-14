@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -15,18 +16,19 @@ type Welcome struct {
 	Spawn Vec3
 }
 type Client struct {
-	mu        sync.Mutex
-	writeMu   sync.Mutex
-	conn      net.Conn
-	welcome   Welcome
-	frames    []Frame
-	latest    uint64
-	enemies   []EnemyHealth
-	connected bool
-	reason    string
-	done      chan struct{}
-	once      sync.Once
-	onStatus  func(string)
+	mu          sync.Mutex
+	writeMu     sync.Mutex
+	conn        net.Conn
+	welcome     Welcome
+	frames      []Frame
+	latest      uint64
+	enemies     []EnemyHealth
+	environment EnvironmentView
+	connected   bool
+	reason      string
+	done        chan struct{}
+	once        sync.Once
+	onStatus    func(string)
 }
 type Frame struct {
 	At      time.Time
@@ -105,6 +107,7 @@ func (c *Client) fail(reason string) {
 		c.connected = false
 		c.reason = reason
 		c.frames = nil
+		c.environment = EnvironmentView{}
 		c.mu.Unlock()
 		close(c.done)
 		c.conn.Close()
@@ -152,8 +155,27 @@ func (c *Client) read(r *bufio.Reader) {
 				return
 			}
 		}
+		if m.HostID != "" && (!ids[m.HostID] || m.Epoch == 0) {
+			c.fail("Autoridade de ambiente inválida")
+			return
+		}
 		c.mu.Lock()
 		if m.Sequence > c.latest {
+			if m.Environment != nil && (!m.Environment.Valid() || m.Environment.Epoch != m.Epoch || m.HostID == "") {
+				c.mu.Unlock()
+				c.fail("Ambiente do servidor inválido")
+				return
+			}
+			c.environment = EnvironmentView{HostID: m.HostID, Epoch: m.Epoch, State: m.Environment, At: time.Now()}
+			for _, p := range m.Players {
+				if p.ID == m.HostID {
+					c.environment.HostName = p.Name
+					break
+				}
+			}
+			if m.Environment != nil {
+				c.environment.At = c.environment.At.Add(-time.Duration(m.Environment.AgeMS) * time.Millisecond)
+			}
 			c.enemies = append([]EnemyHealth(nil), m.Enemies...)
 			c.latest = m.Sequence
 			c.frames = append(c.frames, Frame{At: time.Now(), Players: append([]Player(nil), m.Players...)})
@@ -214,6 +236,12 @@ func (c *Client) Remote(now time.Time) []Player {
 		for _, old := range a.Players {
 			if old.ID == p.ID && old.Pose.Ready && p.Pose.Position.Sub(old.Pose.Position).Len() < 20 {
 				p.Pose.Position = old.Pose.Position.Mul(1 - alpha).Add(p.Pose.Position.Mul(alpha))
+				p.Pose.Yaw = old.Pose.Yaw + math.Remainder(p.Pose.Yaw-old.Pose.Yaw, 2*math.Pi)*alpha
+				if alpha < 1 {
+					p.Pose.Upper = old.Pose.Upper
+					p.Pose.Lower = old.Pose.Lower
+				}
+				p.Pose.Equipment = interpolateEquipment(old.Pose.Equipment, p.Pose.Equipment, alpha)
 				break
 			}
 		}
