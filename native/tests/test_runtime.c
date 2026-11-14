@@ -11,7 +11,7 @@ const char *g_game_version="1.9.0";
 static unsigned calls, creates, deletes, moves, plays;
 static uint64_t mock_actor=HEAP_BASE+0x3000, retained=HEAP_BASE+0x4000;
 static bool reject,fail_handle,deny_lease;
-static uint64_t ground_pouch_item;static unsigned inventory_grants;static bool inventory_full,inventory_ambiguous;
+static uint64_t ground_pouch_item;static unsigned inventory_grants,inventory_debits;static bool inventory_full,inventory_ambiguous,remove_ambiguous;
 static unsigned create_state=1;
 static uint64_t local_equipped[6],gear_handles[32],gear_actors[32];static unsigned gear_allocations,gear_handles_count;static bool reject_equipment;
 void *hle_alloc(uint64_t size) { assert(size==BYTES);return (void *)(uintptr_t)(storage?HLE_HEAP+0x1000+0x400*gear_allocations++:HLE_HEAP); }
@@ -20,7 +20,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     calls++;
     if (fn==g_site.hm_create) {
         creates++;uint64_t a=mock_actor;bool gear=c->x[3]!=HLE_HEAP+HANDLE;
-        if(gear) {if(reject_equipment){c->x[0]=0;return;}assert(gear_handles_count<32);a=HEAP_BASE+0x20000+0x1000*gear_handles_count;gear_handles[gear_handles_count]=c->x[3];gear_actors[gear_handles_count++]=a;uint64_t request=HEAP_BASE+0xfc000+gear_handles_count*0x20;ST64(c->x[3],request);ST64(request+0x10,a);ST64(a+0x560,HEAP_BASE+0x5000);ST64(a+0x4e0,a+0x900);ST64(a+0x10,a+0xa00);snprintf((char *)(uintptr_t)(a+0xa00),48,"%s",(char *)(uintptr_t)c->x[1]);}
+        if(gear) {if(reject_equipment){c->x[0]=0;return;}assert(gear_handles_count<32);a=HEAP_BASE+0x20000+0x1000*gear_handles_count;gear_handles[gear_handles_count]=c->x[3];gear_actors[gear_handles_count++]=a;uint64_t request=HEAP_BASE+0xfc000+gear_handles_count*0x20;ST64(c->x[3],request);ST64(request+0x10,a);ST64(a+0x560,HEAP_BASE+0x5000);ST64(a+0x4e0,a+0x900);ST64(a+0x10,a+0xa00);snprintf((char *)(uintptr_t)(a+0xa00),48,"%s",(char *)(uintptr_t)c->x[1]);float initial[12]={1,0,0,0,0,1,0,0,0,0,1,0};for(int j=0;j<3;j++)initial[j*4+3]=read_float(c->x[3]+VECTOR+j*4);memcpy((void *)(uintptr_t)(a+0x398),initial,sizeof initial);}
         ST8(a+0x64,create_state);c->x[0]=!reject;
     }
     else if (fn==g_site.hm_handle_ready) c->x[0]=1;
@@ -41,11 +41,12 @@ void guest_call(Cpu *c,uint64_t fn) {
     else if (fn==g_site.hm_play_as) {assert(c->x[0]==HEAP_BASE+0x5000);plays++;}
     else if(fn==g_site.pouch_page_count)c->x[0]=1;
     else if(fn==g_site.pouch_page_item)c->x[0]=ground_pouch_item;
+    else if(fn==g_site.hm_item_remove){assert(c->x[2]==1&&c->x[3]==0);if(LD32(ground_pouch_item+0x20)>0){ST32(ground_pouch_item+0x20,LD32(ground_pouch_item+0x20)-1);inventory_debits++;if(remove_ambiguous){ST32(ground_pouch_item+0x20,UINT32_MAX);deny_lease=true;}}}
     else if(fn==g_site.hm_item_get){assert(c->x[2]==1&&c->x[3]==0);if(!inventory_full){ST32(ground_pouch_item+0x20,LD32(ground_pouch_item+0x20)+1);inventory_grants++;if(inventory_ambiguous)ST32(ground_pouch_item+0x20,UINT32_MAX);}}
     // Deliberately clobber every register: the hook must preserve the caller.
     memset(c->v,0x5a,sizeof c->v);c->x[3]=0xdeadbeef;c->nzcv=0xabcdef;c->fpsr=91;
 }
-void control_register(const ControlCmd *cmds,int n) {assert(n==14);}
+void control_register(const ControlCmd *cmds,int n) {assert(n==15);}
 void control_field_str(ControlReply *r,const char *k,const char *v) {}
 void control_field_int(ControlReply *r,const char *k,int64_t v) {}
 void control_field_num(ControlReply *r,const char *k,double v) {}
@@ -222,11 +223,11 @@ int main(void) {
     player_root[3]=3439.5f;memcpy((void *)(uintptr_t)(apple+0x398),player_root,sizeof player_root);for(int j=0;j<3;j++){float v=player_root[j*4+3];memcpy((void *)(uintptr_t)(applemap+0x5c+j*4),&v,4);}
     ST64(head,apple+0x7b8);ST64(apple+0x7b8,head);ST32(creator+0x48,1);ground_scan_at=0;
     ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(ground_seen_count==1&&ground_seen[0].hash==123);
-    char *material[]={"hm_item_state","0123456789abcdef","0123456789abcdef01234567","1","Item_Fruit_A","123","3439.5","235.9","2101.5","3439.5","235.9","2101.5","1","1","0","0"};ground_update(16,material,&r);assert(!r.failed);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    char *material[]={"hm_item_state","0123456789abcdef","0123456789abcdef01234567","1","Item_Fruit_A","123","3439.5","235.9","2101.5","3439.5","235.9","2101.5","1","1","0","0","0","-"};ground_update(18,material,&r);assert(!r.failed);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     uint64_t accessor=HEAP_BASE+0xf1000,safe=HEAP_BASE+0xf1100;ST64(accessor+8,apple);ST64(safe+8,apple+0x900);Cpu pickup=before;pickup.x[0]=accessor;pickup.x[1]=safe;Cpu pickup_before=pickup;unsigned grant_before=inventory_grants,calls_before=calls;
     assert(rt_hyrulem_item_pickup(&pickup));assert(!memcmp(&pickup,&pickup_before,sizeof pickup)&&calls==calls_before&&inventory_grants==grant_before);
     assert(ground_events[0].request==1&&ground_events[0].id==1);assert(rt_hyrulem_item_pickup(&pickup)&&ground_next_request==1);
-    material[14]="1";material[15]="1";ground_update(16,material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    material[14]="1";material[15]="1";ground_update(18,material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     assert(inventory_grants==grant_before+1&&LD32(ground_pouch_item+0x20)==4&&ground_receipts[0].request==1&&ground_receipts[0].result==1);
     ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_grants==grant_before+1); // lost receipt cannot grant twice
     assert(!memcmp(&cpu,&before,sizeof cpu));
@@ -237,13 +238,30 @@ int main(void) {
     uint64_t untouched=HEAP_BASE+0x74000,untouched_map=HEAP_BASE+0x7a000;ST8(untouched+0x64,1);ST64(untouched+0x10,untouched+0x900);strcpy((char *)(uintptr_t)(untouched+0x900),"Item_Fruit_A");ST64(untouched+0x7c8,untouched_map);ST32(untouched_map+0x58,124);memcpy((void *)(uintptr_t)(untouched+0x398),player_root,sizeof player_root);for(int j=0;j<3;j++){float v=player_root[j*4+3];memcpy((void *)(uintptr_t)(untouched_map+0x5c+j*4),&v,4);}ST64(head,untouched+0x7b8);ST64(untouched+0x7b8,head);ground_scan_at=0;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     // A replica can join the creator list before its async handle is drained.
     // Identify it from our handle, not from its position or a guessed name.
-    char *early_material[16];memcpy(early_material,material,sizeof early_material);early_material[3]="2";early_material[4]="Item_PlantGet_A";early_material[5]="0";early_material[12]="999";early_material[13]="0";early_material[14]="0";early_material[15]="0";ground_update(16,early_material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    char *early_material[18];memcpy(early_material,material,sizeof early_material);early_material[3]="2";early_material[4]="Item_PlantGet_A";early_material[5]="125";early_material[12]="999";early_material[13]="0";early_material[14]="0";early_material[15]="0";ground_update(18,early_material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     uint64_t early=ground_pending_actor(ground_replica[1].visual.storage);assert(early&&ground_replica[1].visual.spawning&&!ground_replica[1].visual.actor);memcpy((void *)(uintptr_t)(early+0x398),player_root,sizeof player_root);
     ST64(head,early+0x7b8);ST64(early+0x7b8,untouched+0x7b8);ST64(untouched+0x7b8,head);ST32(creator+0x48,2);ground_scan_at=0;ground_scan(&cpu,HEAP_BASE+0x1000,&ground_live);
     for(int j=0;j<GROUND_MAX;j++)assert(ground_local[j].actor!=early);
     ST64(accessor+8,early);ST64(safe+8,early+0xa00);calls_before=calls;assert(rt_hyrulem_item_pickup(&pickup)&&ground_events[1].id==2&&calls==calls_before);
     ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
-    char *material_close[]={"hm_items_close","0123456789abcdef","0123456789abcdef01234567"};ground_close(3,material_close,&r);unsigned deleted=deletes;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(deletes==deleted+1&&LD8(untouched+0x64)==1&&!rt_hyrulem_item_pickup(&pickup));
+    // Server preparation names the identity before an inventory debit. A drop
+    // becomes publishable only after exactly one apple was removed.
+    char *drop_state[18];memcpy(drop_state,material,sizeof drop_state);drop_state[3]="3";drop_state[5]="0";drop_state[12]="1";drop_state[13]="1";drop_state[14]="4";drop_state[15]="0";drop_state[16]="1";drop_state[17]="0123456789abcdef";ground_update(18,drop_state,&r);assert(!r.failed);
+    char *drop_command[]={"hm_item_drop","0123456789abcdef","0123456789abcdef01234567","3","1"};ground_drop_command(5,drop_command,&r);assert(!r.failed);unsigned debit_before=inventory_debits;uint32_t apples_before=LD32(ground_pouch_item+0x20);
+    ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_debits==debit_before);
+    ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(ground_drop_last_result==1&&ground_drop_last_request==1&&inventory_debits==debit_before+1&&LD32(ground_pouch_item+0x20)==apples_before-1);
+    ground_drop_command(5,drop_command,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_debits==debit_before+1&&!memcmp(&cpu,&before,sizeof cpu));
+    // An uncertain debit followed by denied cleanup is terminal: subsequent
+    // ticks may clean up, but cannot touch the inventory a second time.
+    char *uncertain_state[18];memcpy(uncertain_state,drop_state,sizeof uncertain_state);uncertain_state[3]="4";uncertain_state[12]="2";ground_update(18,uncertain_state,&r);
+    char *uncertain_command[]={"hm_item_drop","0123456789abcdef","0123456789abcdef01234567","4","2"};ground_drop_command(5,uncertain_command,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    remove_ambiguous=true;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);remove_ambiguous=false;assert(ground_drop_last_result==2&&ground_drops[1].active&&ground_drops[1].terminal==2&&inventory_debits==debit_before+2);
+    ST32(ground_pouch_item+0x20,apples_before-2);for(int j=0;j<3;j++)ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_debits==debit_before+2&&ground_drops[1].active);
+    deny_lease=false;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(!ground_drops[1].active&&inventory_debits==debit_before+2);
+    GroundSource other_drop=ground_drops[0].source;other_drop.origin[0]='f';assert(!ground_source_equal(&other_drop,&ground_drops[0].source));
+    uint64_t natural=HEAP_BASE+0x7b000;ST8(natural+0x64,1);ST64(natural+0x10,natural+0x900);strcpy((char *)(uintptr_t)(natural+0x900),"Item_Fruit_A");memcpy((void *)(uintptr_t)(natural+0x398),player_root,sizeof player_root);ST64(natural+0x7c8,0);ST64(head,natural+0x7b8);ST64(natural+0x7b8,head);ST32(creator+0x48,1);ground_scan_at=0;ground_scan(&cpu,HEAP_BASE+0x1000,&ground_live);for(int j=0;j<GROUND_MAX;j++)assert(ground_local[j].actor!=natural);
+    ST64(accessor+8,natural);ST64(safe+8,natural+0x900);assert(!rt_hyrulem_item_pickup(&pickup));
+    char *material_close[]={"hm_items_close","0123456789abcdef","0123456789abcdef01234567"};ground_close(3,material_close,&r);unsigned deleted=deletes;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(deletes==deleted+2&&LD8(untouched+0x64)==1&&!rt_hyrulem_item_pickup(&pickup));
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");
     puts("map-enemy identity, deferred life application and no-heal checks passed");

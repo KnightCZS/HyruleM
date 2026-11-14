@@ -65,6 +65,7 @@ func findGameWindow(pid int) uintptr {
 	return enumBest
 }
 func (u *multiplayerUI) tick() {
+	u.updateDropButtons()
 	for i := range u.slots {
 		s := &u.slots[i]
 		if s.bridge == nil || s.bridge.NativePreview() {

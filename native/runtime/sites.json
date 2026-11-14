@@ -131,5 +131,12 @@
     "kind": "got",
     "pattern": "90000017/9f00001f aa0003f5 f94002f7/ffc003ff 910003e0 f94002f6 94000000/fc000000 2a0003e2 aa1603e0",
     "at": 2
+  },
+  {
+    "name": "hm_item_remove",
+    "address": "0x7000d99a74",
+    "kind": "code",
+    "pattern": "d10543ff a9127bfd a91357fc a9144ff4 910483fd 52800808 5280002a 39014fff",
+    "at": 0
   }
 ]

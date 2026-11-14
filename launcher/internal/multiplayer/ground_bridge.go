@@ -9,14 +9,27 @@ import (
 )
 
 type groundSync struct {
-	last, heartbeat time.Time
-	world           string
-	sent            map[uint64]string
-	closed          map[uint64]bool
-	receiptAt       map[uint64]time.Time
+	last, heartbeat                 time.Time
+	world                           string
+	sent                            map[uint64]string
+	closed                          map[uint64]bool
+	receiptAt                       map[uint64]time.Time
+	dropRequest, dropItem, dropNext uint64
+	dropSource                      GroundSource
 }
 
 func (b *Bridge) closeGround(ctx context.Context, n *groundSync) bool {
+	b.dropReady.Store(false)
+	if n.dropRequest != 0 && n.dropItem != 0 {
+		_ = b.Client.FinishGroundDrop(GroundDropFinish{Request: n.dropRequest, Item: n.dropItem, Result: 2})
+	}
+	n.dropRequest = 0
+	n.dropItem = 0
+	b.dropBusy.Store(false)
+	select {
+	case <-b.dropRequests:
+	default:
+	}
 	if n.world != "" {
 		if b.command(ctx, "hm_items_close "+b.nativeSession+" "+n.world, nil) != nil {
 			return false
@@ -29,17 +42,23 @@ func (b *Bridge) closeGround(ctx context.Context, n *groundSync) bool {
 // The active native session is supplied explicitly; no identity travels as a
 // process address. Separate fields allow ordinary presence without this layer.
 
+func originArg(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
 func groundCommand(session, world, self string, item GroundItem) (string, error) {
 	if !item.Valid() || len(session) != 16 || len(world) != 24 {
 		return "", fmt.Errorf("estado de material inválido")
 	}
-	state := map[string]int{"available": 0, "reserved": 1, "taken": 2, "uncertain": 3}[item.State]
+	state := map[string]int{"available": 0, "reserved": 1, "taken": 2, "uncertain": 3, "spawning": 4, "cancelled": 5}[item.State]
 	request := uint64(0)
 	if item.Claimant == self && item.State == "reserved" {
 		request = item.Request
 	}
 	g := item.Source
-	cmd := fmt.Sprintf("hm_item_state %s %s %d %s %d %.3f %.3f %.3f %.3f %.3f %.3f %d %d %d %d", session, world, item.ID, g.Actor, g.Hash, g.Spawn.X, g.Spawn.Y, g.Spawn.Z, g.Position.X, g.Position.Y, g.Position.Z, g.Local, boolInt(item.Owner == self), state, request)
+	cmd := fmt.Sprintf("hm_item_state %s %s %d %s %d %.3f %.3f %.3f %.3f %.3f %.3f %d %d %d %d %d %s", session, world, item.ID, g.Actor, g.Hash, g.Spawn.X, g.Spawn.Y, g.Spawn.Z, g.Position.X, g.Position.Y, g.Position.Z, g.Local, boolInt(item.Owner == self), state, request, boolInt(g.Drop), originArg(g.Origin))
 	if len(cmd) > 511 {
 		return "", fmt.Errorf("estado de material excede limite")
 	}
@@ -73,13 +92,20 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		n.heartbeat = now
 	}
 	var status struct {
-		Items    string `json:"items_json"`
-		Events   string `json:"events_json"`
-		Receipts string `json:"receipts_json"`
+		Items        string `json:"items_json"`
+		Events       string `json:"events_json"`
+		Receipts     string `json:"receipts_json"`
+		DropSequence uint64 `json:"drop_sequence"`
+		DropOrigin   string `json:"drop_origin"`
+		DropRequest  uint64 `json:"drop_request"`
+		DropItem     uint64 `json:"drop_item"`
+		DropResult   int    `json:"drop_result"`
+		DropSource   string `json:"drop_source_json"`
 	}
 	if err := b.command(ctx, "hm_items_status", &status); err != nil {
 		return err
 	}
+	b.dropReady.Store(validOrigin(status.DropOrigin))
 	var observations []GroundSource
 	var events []GroundClaim
 	var receipts []GroundReceipt
@@ -94,6 +120,12 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 	}
 	if len(events) > MaxGroundItems || len(receipts) > MaxGroundItems {
 		return fmt.Errorf("fila nativa de materiais excessiva")
+	}
+	if err := b.finishDrop(ctx, n, status.DropRequest, status.DropItem, status.DropResult, status.DropSource); err != nil {
+		return err
+	}
+	if err := b.prepareDropFromUI(n, status.DropOrigin, status.DropSequence); err != nil {
+		return err
 	}
 	if err := b.Client.PublishGround(observations); err != nil {
 		return err
@@ -133,7 +165,9 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 	}
 	items := append([]GroundItem(nil), v.Items...)
 	self := b.Client.Welcome().ID
-	sort.SliceStable(items, func(i, j int) bool { return items[i].Claimant == self && items[j].Claimant != self })
+	sort.SliceStable(items, func(i, j int) bool {
+		return (items[i].Claimant == self || items[i].State == "spawning" && items[i].Owner == self) && !(items[j].Claimant == self || items[j].State == "spawning" && items[j].Owner == self)
+	})
 	for _, item := range items {
 		cmd, err := groundCommand(session, v.World, self, item)
 		if err != nil {
@@ -151,5 +185,22 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		n.sent[item.ID] = cmd
 		budget--
 	}
+	if n.dropRequest != 0 && n.dropItem != 0 {
+		for _, item := range items {
+			if item.ID == n.dropItem && item.State == "spawning" {
+				cmd, err := groundCommand(session, v.World, self, item)
+				if err != nil {
+					return err
+				}
+				if n.sent[item.ID] == cmd {
+					if err = b.command(ctx, fmt.Sprintf("hm_item_drop %s %s %d %d", session, v.World, n.dropItem, n.dropRequest), nil); err != nil {
+						return err
+					}
+				}
+				break
+			}
+		}
+	}
+
 	return nil
 }

@@ -45,6 +45,8 @@ const (
 	mpLocalTest  = 528
 	mpHostPort   = 529
 	mpItemsMode  = 530
+	mpDrop1      = 531
+	mpDrop2      = 532
 )
 
 type mpSlot struct {
@@ -183,7 +185,7 @@ func (u *multiplayerUI) build() {
 	for _, v := range []struct {
 		id    int
 		label string
-	}{{mpItemsMode, "Materiais: desligados"}, {mpHost, "Hospedar sessão"}, {mpArrange, "Organizar janelas"}, {mpNetworks, "Atualizar IPs"}, {mpLogs, "Diagnóstico"}, {mpSpawn, "Reunir em Hateno"}, {mpSetFOV, "Aplicar FOV"}, {mpLocalTest, "+ Testar dois jogos neste PC"}} {
+	}{{mpDrop1, "Largar 1 maçã"}, {mpDrop2, "Largar maçã · J2"}, {mpItemsMode, "Materiais: desligados"}, {mpHost, "Hospedar sessão"}, {mpArrange, "Organizar janelas"}, {mpNetworks, "Atualizar IPs"}, {mpLogs, "Diagnóstico"}, {mpSpawn, "Reunir em Hateno"}, {mpSetFOV, "Aplicar FOV"}, {mpLocalTest, "+ Testar dois jogos neste PC"}} {
 		u.add(v.id, "BUTTON", v.label, 0x10000|0xb, 0, 0, 10, 10)
 	}
 	u.add(mpIP, "EDIT", u.settings.IP, 0x00810080, 0, 0, 10, 10)
@@ -286,6 +288,7 @@ func (u *multiplayerUI) refresh() {
 		}
 		enableWindow.Call(u.controls[mpLeave1+i], leave)
 	}
+	u.updateDropButtons()
 	u.a.refresh()
 }
 func (u *multiplayerUI) host() {
@@ -612,6 +615,12 @@ func multiplayerProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		}
 		id := int(w & 0xffff)
 		switch id {
+		case mpDrop1, mpDrop2:
+			i := id - mpDrop1
+			if b := u.slots[i].bridge; b == nil || !b.RequestAppleDrop() {
+				u.say(i, "Ative os materiais ao hospedar, conecte e aguarde o mundo de Hateno.")
+			}
+			u.updateDropButtons()
 		case mpItemsMode:
 			if u.server == nil && !u.hostStopping {
 				u.settings.ShareItems = !u.settings.ShareItems
@@ -744,4 +753,14 @@ func (u *multiplayerUI) updateItemsLabel() {
 	}
 	u.set(mpItemsMode, label)
 	invalidate.Call(u.window, 0, 0)
+}
+
+func (u *multiplayerUI) updateDropButtons() {
+	for i := range u.slots {
+		on := uintptr(0)
+		if b := u.slots[i].bridge; b != nil && b.CanDropApple() {
+			on = 1
+		}
+		enableWindow.Call(u.controls[mpDrop1+i], on)
+	}
 }

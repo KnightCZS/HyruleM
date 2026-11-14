@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,6 +30,9 @@ type Bridge struct {
 	spawnRequest  chan struct{}
 	native        bool
 	nativeSession string
+	dropRequests  chan struct{}
+	dropBusy      atomic.Bool
+	dropReady     atomic.Bool
 }
 
 func NewBridge(parent context.Context, c *Client, game GameControl, fov float64, status func(string)) *Bridge {
@@ -36,7 +40,7 @@ func NewBridge(parent context.Context, c *Client, game GameControl, fov float64,
 		fov = 40
 	}
 	ctx, cancel := context.WithCancel(parent)
-	b := &Bridge{Client: c, control: game, cancel: cancel, done: make(chan struct{}), fov: fov, status: status, spawnRequest: make(chan struct{}, 1)}
+	b := &Bridge{Client: c, control: game, cancel: cancel, done: make(chan struct{}), fov: fov, status: status, spawnRequest: make(chan struct{}, 1), dropRequests: make(chan struct{}, 1)}
 	b.native = os.Getenv(core.NativePreviewEnv) == "1"
 	go b.run(ctx)
 	return b
@@ -153,6 +157,7 @@ func (b *Bridge) probeCamera(ctx context.Context) (float64, Vec3, bool) {
 }
 func (b *Bridge) run(ctx context.Context) {
 	defer close(b.done)
+	defer b.dropBusy.Store(false)
 	defer b.Client.Close()
 	defer b.control.Close()
 	go func() {

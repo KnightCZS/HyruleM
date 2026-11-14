@@ -59,8 +59,10 @@ func TestGroundDropFailedGrantAndUnknownDisconnect(t *testing.T) {
 	p := Pose{Ready: true, Position: s.cfg.Spawn}
 	_ = host.Publish(p)
 	_ = guest.Publish(p)
-	drop := GroundSource{Local: 8, Actor: "Item_PlantGet_A", Position: p.Position, Spawn: p.Position}
-	_ = guest.PublishGround([]GroundSource{drop})
+	drop := GroundSource{Local: 1, Drop: true, Origin: "0123456789abcdef", Actor: "Item_Fruit_A", Position: p.Position, Spawn: p.Position}
+	_ = guest.PrepareGroundDrop(1, drop)
+	eventually(t, func() bool { return guest.Ground().DropResult != nil && guest.Ground().DropResult.Status == "prepared" })
+	_ = guest.FinishGroundDrop(GroundDropFinish{Request: 1, Item: guest.Ground().DropResult.Item, Result: 1, Source: drop})
 	eventually(t, func() bool { return len(host.Ground().Items) == 1 })
 	id := host.Ground().Items[0].ID
 	_ = host.ClaimGround(GroundClaim{Request: 1, Item: id, Source: drop})
@@ -81,7 +83,7 @@ func TestGroundBoundsAndSnapshotFitsTransport(t *testing.T) {
 	p := &serverPeer{player: Player{ID: "host", Pose: Pose{Ready: true, Position: s.cfg.Spawn}}, poseAt: time.Now(), groundClaims: map[uint64]GroundClaim{}}
 	s.environmentHost = "host"
 	for i := uint64(1); i <= MaxGroundItems; i++ {
-		g := GroundSource{Local: i, Actor: "Item_Fruit_A", Position: s.cfg.Spawn, Spawn: s.cfg.Spawn}
+		g := GroundSource{Local: i, Hash: uint32(i), Actor: "Item_Fruit_A", Position: s.cfg.Spawn, Spawn: s.cfg.Spawn}
 		if e := s.observeGround(p, []GroundSource{g}, time.Now()); e != nil {
 			t.Fatal(e)
 		}
@@ -106,9 +108,51 @@ func TestGroundBoundsAndSnapshotFitsTransport(t *testing.T) {
 		t.Fatal("non-material accepted")
 	}
 	p.player.Pose.Position.X += 200
-	g := GroundSource{Local: 100, Actor: "Item_Fruit_A", Position: s.cfg.Spawn, Spawn: s.cfg.Spawn}
+	g := GroundSource{Local: 100, Drop: true, Origin: "0123456789abcdef", Actor: "Item_Fruit_A", Position: s.cfg.Spawn, Spawn: s.cfg.Spawn}
 	_ = s.claimGround(p, GroundClaim{Request: 100, Source: g}, time.Now())
 	if p.groundClaims[100].Status != "denied" {
 		t.Fatal("distant pickup accepted")
+	}
+}
+
+// Reservations consume the bounded identity slot before the game can debit.
+func TestGroundDropCapacityReservedBeforeDebit(t *testing.T) {
+	s := groundServer(t)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	a := &serverPeer{player: Player{ID: "host", Pose: Pose{Ready: true, Position: s.cfg.Spawn}}, poseAt: now}
+	b := &serverPeer{player: Player{ID: "guest", Pose: Pose{Ready: true, Position: s.cfg.Spawn}}, poseAt: now}
+	s.environmentHost = "host"
+	for i := uint64(1); i < MaxGroundItems; i++ {
+		g := GroundSource{Local: i, Hash: uint32(i), Actor: "Item_Fruit_A", Position: s.cfg.Spawn, Spawn: s.cfg.Spawn}
+		if err := s.observeGround(a, []GroundSource{g}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source := GroundSource{Local: 1, Drop: true, Origin: "0123456789abcdef", Actor: "Item_Fruit_A", Position: s.cfg.Spawn, Spawn: s.cfg.Spawn}
+	if err := s.prepareGroundDrop(a, GroundDropFinish{Request: 1, Source: source}, now); err != nil {
+		t.Fatal(err)
+	}
+	source.Origin = "abcdef0123456789"
+	if err := s.prepareGroundDrop(b, GroundDropFinish{Request: 1, Source: source}, now); err != nil {
+		t.Fatal(err)
+	}
+	if a.groundDrop.Status != "prepared" || b.groundDrop.Status != "rejected" || len(s.groundItems) != MaxGroundItems {
+		t.Fatal("last slot admitted multiple debits", a.groundDrop, b.groundDrop)
+	}
+	if err := s.finishGroundDrop(a, GroundDropFinish{Request: 1, Item: a.groundDrop.Item, Result: -1}); err != nil {
+		t.Fatal(err)
+	}
+	if s.groundItems[a.groundDrop.Item].State != "cancelled" {
+		t.Fatal("failed debit became collectible")
+	}
+	// A delayed success cannot overturn a terminal failure.
+	source.Origin = "0123456789abcdef"
+	if err := s.finishGroundDrop(a, GroundDropFinish{Request: 1, Item: a.groundDrop.Item, Result: 1, Source: source}); err != nil {
+		t.Fatal(err)
+	}
+	if s.groundItems[a.groundDrop.Item].State != "cancelled" {
+		t.Fatal("late receipt resurrected cancelled drop")
 	}
 }

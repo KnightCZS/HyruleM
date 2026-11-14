@@ -6,7 +6,7 @@ Launcher reorganizado, correções da revisão e primeiro experimento de materia
 
 1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, inclusive `runtime-update`.
 2. Execute **Iniciar-Nativo.cmd**. O instalador atualiza o runtime configurado com backup.
-3. **Aguarde a regeneração/compilação da biblioteca do jogo.** A prévia 9 adiciona um hook de coleta e três sites; as bibliotecas geradas pelas prévias 7/8 não servem para esta integração. Não edite `.id` para contornar a verificação.
+3. **Aguarde a regeneração/compilação da biblioteca do jogo.** A prévia 9 adiciona um hook de coleta e quatro sites; as bibliotecas geradas pelas prévias 7/8 não servem para esta integração. Não edite `.id` para contornar a verificação.
 4. Atualize os dois clientes e o servidor: **ABI 6 / protocolo 6**. O overlay visual da prévia 8 pode ser reutilizado; os recursos continuam derivados localmente da instalação do proprietário.
 
 ## Launcher
@@ -25,17 +25,17 @@ A opção **Materiais: experimental** fica desligada inicialmente. Ative no pain
 Nesta primeira etapa entram apenas `Item_Fruit_A`, `Item_Fruit_B`, `Item_Fruit_F`, `Item_Mushroom_A` e `Item_PlantGet_A`: três frutas, um cogumelo e uma erva identificados pelos IDs do jogo. A implementação:
 
 1. O anfitrião publica materiais observados do mapa com hash/nome/posição original. Ausência em uma leitura não significa coleta.
-2. Materiais largados pelo inventário de qualquer jogador são publicados pelo dono. **Afaste-se pelo menos 1,5 m** para o objeto sair da região das mãos; a leitura ocorre fora do menu/pausa.
+2. Para largar, use **Largar 1 maçã** no cartão do jogador no launcher. O servidor primeiro reserva uma identidade. O runtime cria o objeto, confirma que está ativo próximo ao jogador e só então pede a retirada de **uma maçã** do inventário pessoal. O objeto só é publicado após conferir a diferença de exatamente uma unidade. Sem maçã ou sem criação válida, não há descarte confirmado. Não se infere descarte a partir de atores sem hash: frutos naturais também podem ser criados assim.
 3. Os outros clientes associam seu objeto correspondente ou criam uma réplica nativa usando os recursos originais da própria instalação. Réplicas próprias são reconhecidas inclusive durante a criação assíncrona e não são anunciadas como novos drops.
 4. O hook intercepta a concessão nativa do material e enfileira um pedido. O servidor reserva o objeto para um único jogador, validando alcance/estado recente.
 5. Após os jobs, o runtime confere a quantidade no inventário, solicita **uma unidade** pela função nativa e confere a diferença. O recibo confirma a coleta; o objeto some nos outros clientes. Um recibo repetido não concede outra unidade.
 6. Falha confirmada libera o objeto. Resultado ambíguo ou desconexão durante uma reserva **não libera o item automaticamente para outra pessoa**: a sessão conserva a pendência para impedir concessão duplicada.
 
-O registro é limitado a **32 identidades por sessão**, incluindo objetos já coletados. A reserva e os tombstones sobrevivem à troca de anfitrião e à entrada tardia, enquanto o servidor continuar aberto. O registro não é persistido em disco nem recuperado por perfil após reconexão; para uma reserva incerta a recuperação automática ainda não está implementada.
+O registro é limitado a **32 identidades por sessão**, incluindo objetos coletados e descartes cancelados. A reserva consome uma posição antes da retirada do inventário. Cada instância mantém no máximo oito descartes próprios ativos; recolha-os para liberar atores locais. A reserva e os tombstones sobrevivem à troca de anfitrião e à entrada tardia, enquanto o servidor continuar aberto. O registro não é persistido em disco nem recuperado por perfil após reconexão; para uma reserva incerta a recuperação automática ainda não está implementada.
 
-**Limites:** não inclui armas/durabilidade, modificadores, comida preparada, itens de missão, pilhas múltiplas por objeto, coleta em lojas/baús, toda a física de objetos, arremesso de um objeto do mapa com transferência de autoridade, cutscenes/fanfarras de primeira coleta ou interiores/santuários. Posições dos objetos do mapa seguem o anfitrião; drops seguem quem os originou. Objetos queimados/consumidos por física não são um evento de coleta confirmado. O raio de Hateno é uma restrição inicial, não uma identidade geral de todos os mapas. **Esse fluxo exige validação real antes de ampliar o escopo.**
+**Limites:** o botão inicial larga somente maçã; descarte/arremesso pelo menu normal do inventário e frutos sem identidade de mapa continuam locais, fora deste experimento. Não inclui armas/durabilidade, modificadores, comida preparada, itens de missão, pilhas múltiplas por objeto, coleta em lojas/baús, toda a física de objetos, arremesso de um objeto do mapa com transferência de autoridade, cutscenes/fanfarras de primeira coleta ou interiores/santuários. Posições dos objetos do mapa seguem o anfitrião; drops seguem quem os originou. Objetos queimados/consumidos por física não são um evento de coleta confirmado. O raio de Hateno é uma restrição inicial, não uma identidade geral de todos os mapas. **Esse fluxo exige validação real antes de ampliar o escopo.**
 
-Saves, vida e inventário seguem pessoais. Só o vencedor de uma coleta confirmada recebe aquela unidade. Encerrar o experimento limpa réplicas pertencentes ao mod e solta referências dos objetos originais; não apaga os objetos originais apenas para desligar o modo.
+Saves, vida e inventário seguem pessoais. Só o vencedor de uma coleta confirmada recebe aquela unidade. **Recolha as maçãs largadas antes de encerrar a sessão:** elas pertencem à sessão, sem persistência nem devolução automática ao inventário. Encerrar o experimento limpa essas maçãs e as réplicas pertencentes ao mod e solta referências dos objetos originais; não apaga os materiais originais do mapa apenas para desligar o modo.
 
 ## Presença, aparência e ambiente
 
@@ -55,12 +55,14 @@ A vida de monstros de mapa ainda converge para a menor observação válida, por
 - `replica_handles` / `replica_failures`: criações e falhas de réplicas.
 - `pickup_intercepts`: entradas que passaram pelo hook de coleta.
 - `events_json` / `receipts_json`: pedidos e resultados verificáveis.
+- `drop_request` / `drop_item` / `drop_result`: descarte preparado e resultado da retirada; `1` confirmado, `-1` sem retirada confirmada, `2` ambíguo.
+- `drop_origin` / `drop_sequence`: identidade por inicialização e sequência que impede repetir a retirada.
 - `pending_inventory_checks`: resultado de quantidade ainda ambíguo.
 
 Um handle/modelo ativo não comprova desenho na GPU. `native_ready` permanece reservado à Gen1 completa; combate, coleta geral e IA ainda não estão finalizados.
 
 ## Validação
 
-Testes C de CPU/barreira/referências, coleta adiada, quantidade exata, repetição de recibo, limpeza e resultados ambíguos; dois fragmentos de hooks compilados; **19 assinaturas únicas** verificadas no módulo privado 1.9.0; testes Go com dois clientes TCP, disputa de coleta, falha de inventário, reconexão/entrada tardia, limites e orçamento de comandos. Windows valida UI, backup/rollback e compilação. As capturas da interface usam dados sintéticos, sem jogo aberto.
+Testes C de CPU/barreira/referências, coleta adiada, quantidades exatas de concessão/retirada, repetição de recibo, limpeza negada depois de retirada ambígua, exclusão de frutos naturais sem hash e resultados ambíguos; dois fragmentos de hooks compilados; **20 assinaturas únicas** verificadas no módulo privado 1.9.0; testes Go com dois clientes TCP, disputa de coleta, falha de inventário, reconexão/entrada tardia, limites e orçamento de comandos. Windows valida UI, backup/rollback e compilação. As capturas da interface usam dados sintéticos, sem jogo aberto.
 
 [Auditoria desta atualização](../docs/AUDITORIA_0.5.0-preview.9.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime base: Savage Wind, MIT. Sem código/BNP do Milk Bar, sem arquivos do jogo, saves ou biblioteca recompilada no download.

@@ -92,28 +92,30 @@ type Player struct {
 	Pose Pose   `json:"pose"`
 }
 type Message struct {
-	Type          string         `json:"type"`
-	Protocol      int            `json:"protocol,omitempty"`
-	Name          string         `json:"name,omitempty"`
-	ID            string         `json:"id,omitempty"`
-	Slot          int            `json:"slot,omitempty"`
-	Spawn         *Vec3          `json:"spawn,omitempty"`
-	Pose          *Pose          `json:"pose,omitempty"`
-	Players       []Player       `json:"players,omitempty"`
-	Sequence      uint64         `json:"sequence,omitempty"`
-	Error         string         `json:"error,omitempty"`
-	Enemies       []EnemyHealth  `json:"enemies,omitempty"`
-	HostID        string         `json:"host_id,omitempty"`
-	Epoch         uint64         `json:"epoch,omitempty"`
-	Environment   *Environment   `json:"environment,omitempty"`
-	GroundEnabled bool           `json:"ground_enabled,omitempty"`
-	GroundWorld   string         `json:"ground_world,omitempty"`
-	GroundZone    *Vec3          `json:"ground_zone,omitempty"`
-	GroundItems   []GroundItem   `json:"ground_items,omitempty"`
-	GroundClaims  []GroundClaim  `json:"ground_claims,omitempty"`
-	GroundSources []GroundSource `json:"ground_sources,omitempty"`
-	GroundClaim   *GroundClaim   `json:"ground_claim,omitempty"`
-	GroundReceipt *GroundReceipt `json:"ground_receipt,omitempty"`
+	Type             string            `json:"type"`
+	Protocol         int               `json:"protocol,omitempty"`
+	Name             string            `json:"name,omitempty"`
+	ID               string            `json:"id,omitempty"`
+	Slot             int               `json:"slot,omitempty"`
+	Spawn            *Vec3             `json:"spawn,omitempty"`
+	Pose             *Pose             `json:"pose,omitempty"`
+	Players          []Player          `json:"players,omitempty"`
+	Sequence         uint64            `json:"sequence,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	Enemies          []EnemyHealth     `json:"enemies,omitempty"`
+	HostID           string            `json:"host_id,omitempty"`
+	Epoch            uint64            `json:"epoch,omitempty"`
+	Environment      *Environment      `json:"environment,omitempty"`
+	GroundEnabled    bool              `json:"ground_enabled,omitempty"`
+	GroundWorld      string            `json:"ground_world,omitempty"`
+	GroundZone       *Vec3             `json:"ground_zone,omitempty"`
+	GroundItems      []GroundItem      `json:"ground_items,omitempty"`
+	GroundClaims     []GroundClaim     `json:"ground_claims,omitempty"`
+	GroundSources    []GroundSource    `json:"ground_sources,omitempty"`
+	GroundClaim      *GroundClaim      `json:"ground_claim,omitempty"`
+	GroundDrop       *GroundDropFinish `json:"ground_drop,omitempty"`
+	GroundDropResult *GroundDropResult `json:"ground_drop_result,omitempty"`
+	GroundReceipt    *GroundReceipt    `json:"ground_receipt,omitempty"`
 }
 
 func NormalizeName(s string) (string, error) {

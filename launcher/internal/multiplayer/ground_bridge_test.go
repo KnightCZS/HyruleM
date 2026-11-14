@@ -11,10 +11,14 @@ import (
 )
 
 type groundGame struct {
-	observations []GroundSource
-	events       []GroundClaim
-	receipts     []GroundReceipt
-	commands     []string
+	observations          []GroundSource
+	events                []GroundClaim
+	receipts              []GroundReceipt
+	commands              []string
+	dropOrigin            string
+	dropRequest, dropItem uint64
+	dropResult            int
+	dropSource            string
 }
 
 func (g *groundGame) Close() {}
@@ -34,7 +38,7 @@ func (g *groundGame) Command(ctx context.Context, cmd string) (core.ControlReply
 		if g.receipts == nil {
 			r = []byte("[]")
 		}
-		data = map[string]any{"items_json": string(a), "events_json": string(e), "receipts_json": string(r)}
+		data = map[string]any{"items_json": string(a), "events_json": string(e), "receipts_json": string(r), "drop_origin": g.dropOrigin, "drop_request": g.dropRequest, "drop_item": g.dropItem, "drop_result": g.dropResult, "drop_source_json": g.dropSource}
 	}
 	b, _ := json.Marshal(data)
 	return core.ControlReply{OK: true, Data: b}, nil
@@ -68,7 +72,7 @@ func TestGroundBridgeGrantsOnlyAfterReservationAndRepeatsReceiptUntilCommit(t *t
 	step(b, bn)
 	found := false
 	for _, cmd := range gg.commands {
-		if strings.HasPrefix(cmd, "hm_item_state ") && strings.HasSuffix(cmd, " 1 1") {
+		if strings.HasPrefix(cmd, "hm_item_state ") && strings.Contains(cmd, " 1 1 0 -") {
 			found = true
 		}
 	}
@@ -94,5 +98,61 @@ func TestGroundBridgeGrantsOnlyAfterReservationAndRepeatsReceiptUntilCommit(t *t
 	}
 	if !b.closeGround(context.Background(), bn) || bn.world != "" {
 		t.Fatal("ground session retained")
+	}
+}
+
+func TestGroundBridgePreparesDropBeforeNativeDebitAndCommitsBothViews(t *testing.T) {
+	s := groundServer(t)
+	host, guest := testClient(t, s, "Host"), testClient(t, s, "Guest")
+	p := Pose{Ready: true, Position: s.cfg.Spawn}
+	_ = host.Publish(p)
+	_ = guest.Publish(p)
+	eventually(t, func() bool {
+		_, ready := host.LocalPose()
+		return ready && host.Ground().Enabled && guest.Ground().Enabled
+	})
+	game := &groundGame{dropOrigin: "0123456789abcdef"}
+	b := &Bridge{Client: host, control: game, native: true, nativeSession: game.dropOrigin, dropRequests: make(chan struct{}, 1)}
+	n := &groundSync{}
+	step := func() {
+		t.Helper()
+		n.last = time.Time{}
+		if err := b.updateGround(context.Background(), n, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	step()
+	if !b.RequestAppleDrop() || b.RequestAppleDrop() {
+		t.Fatal("drop UI did not enforce one pending request")
+	}
+	step()
+	eventually(t, func() bool { r := host.Ground().DropResult; return r != nil && r.Status == "prepared" })
+	step()
+	stateIndex, dropIndex := -1, -1
+	for i, cmd := range game.commands {
+		if strings.HasPrefix(cmd, "hm_item_state ") {
+			stateIndex = i
+		}
+		if strings.HasPrefix(cmd, "hm_item_drop ") {
+			dropIndex = i
+		}
+	}
+	if stateIndex < 0 || dropIndex <= stateIndex || !b.DropBusy() {
+		t.Fatal("native debit preceded server preparation", game.commands)
+	}
+	source, _ := json.Marshal(n.dropSource)
+	game.dropRequest = n.dropRequest
+	game.dropItem = n.dropItem
+	game.dropResult = 1
+	game.dropSource = string(source)
+	step()
+	eventually(t, func() bool { v := guest.Ground(); return len(v.Items) == 1 && v.Items[0].State == "available" })
+	eventually(t, func() bool { return host.Ground().DropResult.Status == "committed" })
+	step()
+	if b.DropBusy() || n.dropRequest != 0 || !host.Connected() || !guest.Connected() {
+		t.Fatal("committed drop retained pending UI state")
+	}
+	if !b.closeGround(context.Background(), n) || b.CanDropApple() {
+		t.Fatal("drop UI remained enabled after cleanup")
 	}
 }

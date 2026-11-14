@@ -698,6 +698,7 @@ static void receive_health(int argc,char **argv,ControlReply *r) {
 }
 void control_hyrulem_init(void) {
     static const ControlCmd cmds[]={
+        {"hm_item_drop","<session> <world> <id> <request>","Queue a server-prepared one-apple drop",ground_drop_command,0},
         {"hm_items_open","<session> <world> <x> <y> <z>","Enable bounded experimental material sharing",ground_open,0},
         {"hm_items_close","<session> <world>","Stop sharing and clean only owned replicas",ground_close,0},
         {"hm_item_state","<session> <world> <id> <actor> <hash> <sx> <sy> <sz> <x> <y> <z> <local> <own> <state> <request>","Queue material visibility/reservation",ground_update,0},

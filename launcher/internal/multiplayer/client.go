@@ -188,7 +188,7 @@ func (c *Client) read(r *bufio.Reader) {
 					}
 					seen[i.ID] = true
 				}
-				c.ground = GroundView{Enabled: true, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now()}
+				c.ground = GroundView{Enabled: true, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult}
 			} else {
 				c.ground = GroundView{}
 			}

@@ -20,6 +20,11 @@ Revisão dos módulos escritos para launcher, preparação/sandbox/filtro, inst�
 | Materiais | Uma leitura ambígua após concessão poderia liberar o objeto e duplicar a unidade | Mantém a reserva pendente; não confirma falha nem repete a concessão |
 | Materiais | Uma réplica ainda em criação poderia reaparecer na varredura como novo drop | Identificação pelo próprio handle assíncrono e filtro das réplicas; nenhuma heurística de sumiço para coleta |
 
+| Descarte | Um fruto natural sem hash de mapa poderia ser classificado como item largado | Só identidades válidas de mapa e descartes explícitos de maçã; regressão com fruto natural sem hash |
+| Descarte | Dois jogadores poderiam consumir a última posição do registro depois de debitar | Reserva de capacidade no servidor antes de criar/debitar; teste com 31 de 32 identidades ocupadas |
+| Descarte | Limpeza negada após retirada ambígua poderia repetir a função de inventário | Resultado terminal antes da limpeza; próximos ticks só removem o ator; teste com acesso negado e recibos repetidos |
+| Descarte | Uma réplica poderia duplicar o próprio objeto confirmado antes da próxima varredura | Identificação direta dos descartes próprios pelo ID reservado, além do handle/index |
+
 ## Itens revisados que permanecem deliberadamente restritos
 
 - A conexão de controle continua local, com limites por comando, enquadramento por linha e descarte do socket em resposta inválida. A moldura visual completa usa um comando atômico; materiais têm limite próprio de 511 bytes.
@@ -33,9 +38,9 @@ Revisão dos módulos escritos para launcher, preparação/sandbox/filtro, inst�
 ## Validação e limites da conclusão
 
 - Testes Go de protocolo/servidor/bridge, incluindo detector de corrida e vet dos pacotes internos; dois clientes TCP reais em memória sintética de jogo.
-- Testes C de vida útil, CPU, barreira dos jobs, roupa/armas, coleta adiada, quantidade exata, repetição e resultado ambíguo.
+- Testes C de vida útil, CPU, barreira dos jobs, roupa/armas, coleta adiada, concessão/retirada exata, reserva antes do descarte, repetição, fruto natural sem hash e limpeza negada após resultado ambíguo.
 - Fragmentos do callback de mundo e do hook de coleta compilados/executados, preservando também a instrução substituída.
-- Dezenove padrões únicos conferidos na cópia privada do módulo 1.9.0. Os offsets não foram importados da versão 1.5.0 de decompilação.
+- Vinte padrões únicos conferidos na cópia privada do módulo 1.9.0. Os offsets não foram importados da versão 1.5.0 de decompilação.
 - UI Windows exercitada com preparação que falha de propósito, hospedagem, navegação, dois clientes, mudança de DPI e capturas de cada página. Os logs completos continuam disponíveis quando uma mensagem visual é resumida.
 - Compilação/instalador Windows e integridade do ZIP registrados no CI da versão.
 

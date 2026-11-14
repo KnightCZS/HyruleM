@@ -20,18 +20,31 @@ func GroundActor(s string) bool {
 
 type GroundSource struct {
 	Local    uint64 `json:"local"`
+	Drop     bool   `json:"drop,omitempty"`
+	Origin   string `json:"origin,omitempty"`
 	Hash     uint32 `json:"hash"`
 	Actor    string `json:"actor"`
 	Spawn    Vec3   `json:"spawn"`
 	Position Vec3   `json:"position"`
 }
 
+func validOrigin(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
 func (g GroundSource) Valid() bool {
-	return g.Local > 0 && g.Local <= math.MaxInt64 && GroundActor(g.Actor) && g.Spawn.Valid() && g.Position.Valid() && g.Hash != math.MaxUint32
+	return (g.Hash != 0 && !g.Drop || g.Hash == 0 && g.Drop && validOrigin(g.Origin)) && g.Local > 0 && g.Local <= math.MaxInt64 && GroundActor(g.Actor) && g.Spawn.Valid() && g.Position.Valid() && g.Hash != math.MaxUint32
 }
 func (g GroundSource) key(owner string) string {
 	if g.Hash == 0 {
-		return fmt.Sprintf("d:%s:%d", owner, g.Local)
+		return fmt.Sprintf("d:%s:%d", g.Origin, g.Local)
 	}
 	return fmt.Sprintf("m:%08x:%s:%.3f:%.3f:%.3f", g.Hash, g.Actor, g.Spawn.X, g.Spawn.Y, g.Spawn.Z)
 }
@@ -50,7 +63,7 @@ func (i GroundItem) Valid() bool {
 		return false
 	}
 	switch i.State {
-	case "available":
+	case "available", "spawning", "cancelled":
 		return i.Claimant == "" && i.Request == 0
 	case "reserved", "taken", "uncertain":
 		return i.Claimant != "" && i.Request > 0 && i.Request <= math.MaxInt64
@@ -70,12 +83,13 @@ type GroundReceipt struct {
 	Applied bool   `json:"applied"`
 }
 type GroundView struct {
-	Enabled bool
-	World   string
-	Zone    Vec3
-	Items   []GroundItem
-	Claims  []GroundClaim
-	At      time.Time
+	Enabled    bool
+	World      string
+	Zone       Vec3
+	Items      []GroundItem
+	Claims     []GroundClaim
+	At         time.Time
+	DropResult *GroundDropResult
 }
 
 func (c *Client) Ground() GroundView {
@@ -84,6 +98,10 @@ func (c *Client) Ground() GroundView {
 	v := c.ground
 	v.Items = append([]GroundItem(nil), v.Items...)
 	v.Claims = append([]GroundClaim(nil), v.Claims...)
+	if v.DropResult != nil {
+		copy := *v.DropResult
+		v.DropResult = &copy
+	}
 	return v
 }
 func (c *Client) PublishGround(v []GroundSource) error {
@@ -133,6 +151,9 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 		key := g.key(p.player.ID)
 		id := s.groundKeys[key]
 		if id == 0 {
+			if g.Drop {
+				continue
+			}
 			if len(s.groundItems) >= MaxGroundItems {
 				continue
 			}

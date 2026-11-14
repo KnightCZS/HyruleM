@@ -81,6 +81,17 @@ func (u *multiplayerUI) layoutSession() {
 		bottom = 836
 	}
 	place(mpSpawn, 28, bottom, 216, 38)
+	if os.Getenv(core.NativePreviewEnv) == "1" {
+		if u.localTest {
+			dw := (leftRight - 270) / 2
+			place(mpDrop1, 258, bottom, dw, 38)
+			place(mpDrop2, 270+dw, bottom, dw, 38)
+			u.set(mpDrop1, "Largar maçã · J1")
+		} else {
+			place(mpDrop1, 258, bottom, leftRight-258, 38)
+			u.set(mpDrop1, "Largar 1 maçã")
+		}
+	}
 	if os.Getenv(core.NativePreviewEnv) != "1" {
 		place(mpFOV, 28, bottom+66, 80, 34)
 		place(mpSetFOV, 120, bottom+66, 126, 34)

@@ -26,6 +26,7 @@ type serverPeer struct {
 	once         sync.Once
 	poseAt       time.Time
 	groundClaims map[uint64]GroundClaim
+	groundDrop   *GroundDropResult
 }
 
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
@@ -148,7 +149,11 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 		p.stop()
 		s.mu.Lock()
 		for key, item := range s.groundItems {
-			if item.Claimant == id && item.State == "reserved" {
+			if item.Claimant == id && item.State == "reserved" || item.Owner == id && item.State == "spawning" {
+				if item.State == "spawning" {
+					item.Request = item.Source.Local
+					item.Claimant = id
+				}
 				item.State = "uncertain"
 				s.groundItems[key] = item
 			}
@@ -235,10 +240,18 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				s.environmentAt = time.Now()
 			}
 			s.mu.Unlock()
-		case "ground_observe", "ground_claim", "ground_receipt":
+		case "ground_observe", "ground_claim", "ground_receipt", "ground_drop_prepare", "ground_drop_finish":
 			s.mu.Lock()
 			var err error
 			switch m.Type {
+			case "ground_drop_prepare", "ground_drop_finish":
+				if m.GroundDrop == nil {
+					err = fmt.Errorf("drop ausente")
+				} else if m.Type == "ground_drop_prepare" {
+					err = s.prepareGroundDrop(p, *m.GroundDrop, time.Now())
+				} else {
+					err = s.finishGroundDrop(p, *m.GroundDrop)
+				}
 			case "ground_observe":
 				err = s.observeGround(p, m.GroundSources, time.Now())
 			case "ground_claim":
@@ -305,6 +318,10 @@ func (s *Server) broadcast(ctx context.Context) {
 			if s.cfg.SharedItems {
 				s.mu.Lock()
 				packet.GroundItems, packet.GroundClaims = s.groundSnapshot(p)
+				if p.groundDrop != nil {
+					v := *p.groundDrop
+					packet.GroundDropResult = &v
+				}
 				s.mu.Unlock()
 				packet.GroundEnabled = true
 				packet.GroundWorld = s.groundWorld
