@@ -96,5 +96,19 @@
     "kind": "code",
     "pattern": "d10203ff fd0023e8 a9057bfd a90657f6 a9074ff4 910143fd b9401828 aa0003f4",
     "at": 0
+  },
+  {
+    "name": "hm_world_tick",
+    "address": "0x70011292dc",
+    "kind": "code",
+    "pattern": "94000000/fc000000 f94002c0 3908027f 390a827f 390d027f 94000000/fc000000 f94002c8 39058914 a9444ff4 f9400bf9",
+    "at": 6
+  },
+  {
+    "name": "hm_actor_mgr",
+    "address": "0x7001e937f8",
+    "kind": "got",
+    "pattern": "90000016/9f00001f aa0003f3 f94002d6/ffc003ff 5280042a 0a0a010a f94002c0 7100815f 39458809 7a400924 54000000/ff00001f 121a7908 52800021",
+    "at": 2
   }
 ]

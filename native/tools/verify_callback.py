@@ -23,8 +23,13 @@ m = Main(Nso(args.module))
 assert m.word(0x7000cc4c3c + 0x20) == 0xf9400c14
 assert m.word(0x70010a3f54) == 0xb9005a88
 assert bytes(m.nso.image[0x1626a71:0x1626a78]) == b"HashId\0"
+# The new world callback follows a native worker wait and access-phase reset.
+# Merely moving a callback away from PlayerDamage is not enough evidence.
+assert m.target('call',0x70011292c4)==0x7000f94100
+assert m.target('call',0x70011292d8)==0x70015194f0
+assert m.word(0x70011292dc)==0xf94002c8
 sites = json.loads((Path(__file__).parents[1] / "runtime/sites.json").read_text())
 for s in sites:
     found, count = m.locate(Site(s["name"], s["kind"], s["pattern"], s["at"]))
     assert found == int(s["address"], 16) and count == 1, s["name"]
-print("Verified: damage-component owner, map HashId storage and native signatures")
+print("Verified: post-job wait/reset callback, map HashId storage and native signatures")

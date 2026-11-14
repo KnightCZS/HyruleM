@@ -35,6 +35,7 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		ABI     int    `json:"preview_abi"`
 		Enabled bool   `json:"native_preview"`
 		Health  bool   `json:"shared_enemy_health"`
+		Barrier bool   `json:"actor_job_barrier"`
 	}
 	if q.Error != "" || json.Unmarshal(q.Data, &caps) != nil {
 		p.Status, p.Message = "adapter_missing", "O jogo não responde ao adaptador HyruleM. Feche os jogos e abra Iniciar-Nativo.cmd do pacote novo."
@@ -52,6 +53,10 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 	}
 	if !caps.Health {
 		p.Status, p.Message = "library_outdated", "As assinaturas da biblioteca estão incompletas. Reconstrua a biblioteca do jogo com o gerador instalado pelo pacote novo."
+		return p
+	}
+	if !caps.Barrier {
+		p.Status, p.Message = "library_outdated", "A biblioteca não possui a atualização após as tarefas dos atores. Recompile-a com o gerador da prévia 7 antes de conectar."
 		return p
 	}
 	p.Compatible = true

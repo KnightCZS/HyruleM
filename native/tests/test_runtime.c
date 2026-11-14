@@ -51,19 +51,22 @@ int main(void) {
     #undef SITE
     g_site.player_info=HEAP_BASE;g_site.hm_creator=HEAP_BASE+8;g_site.hm_heap_mgr=HEAP_BASE+16;
     ST64(g_site.player_info,HEAP_BASE+0x100);ST64(HEAP_BASE+0x160,HEAP_BASE+0x1000);
+    ST8(HEAP_BASE+0x1064,1);
+    g_site.hm_actor_mgr=HEAP_BASE+0x28;uint64_t manager=HEAP_BASE+0xd000;
+    ST64(g_site.hm_actor_mgr,manager);ST8(manager+0x29,7);ST8(manager+0x2a,8);
     ST64(g_site.hm_creator,HEAP_BASE+0x200);ST64(g_site.hm_heap_mgr,HEAP_BASE+0x300);
     ST64(HEAP_BASE+0x328,HEAP_BASE+0x400);
     ST8(mock_actor+0x64,1);ST64(mock_actor+0x560,HEAP_BASE+0x5000);ST64(mock_actor+0x4e0,HEAP_BASE+0x6000);
     ST32(HEAP_BASE+0x5138,400);ST32(HEAP_BASE+0x50b8,2);ST64(HEAP_BASE+0x50c0,HEAP_BASE+0xb000);
-    // The real guest entry receives a damage component with its owner at +0x18.
-    ST64(HEAP_BASE+0x2018,HEAP_BASE+0x1000);
-    Cpu cpu={0};cpu.x[0]=HEAP_BASE+0x2000;cpu.sp=HEAP_BASE+0xf000;cpu.v[3]=123;cpu.fpsr=77;Cpu before=cpu;
+    // The barrier caller owns the other registers; preserve all of them.
+    Cpu cpu={0};cpu.x[0]=HEAP_BASE+0x2000;cpu.x[22]=g_site.hm_actor_mgr;cpu.sp=HEAP_BASE+0xf000;cpu.v[3]=123;cpu.fpsr=77;Cpu before=cpu;
     ControlReply r={0};
     char *start[]={"hm_native_open","0123456789abcdef"};open_session(2,start,&r);assert(!r.failed && calls==0);
     char *pose[]={"hm_native_remote","0123456789abcdef","1","3434","236","2101","0.5","move","-","0","0","-","0","0"};
     remote(14,pose,&r);assert(!r.failed && calls==0); // control thread never touches the game
-    cpu.x[0]=mock_actor;rt_hyrulem_tick(&cpu,0);assert(calls==0);cpu=before; // only local update may drain
-    cpu.x[0]=HEAP_BASE+0x1000;rt_hyrulem_tick(&cpu,0);assert(calls==0);cpu=before; // regression: Actor != damage component
+    cpu.x[22]=0;rt_hyrulem_tick(&cpu,0);assert(calls==0);cpu=before; // Worker/control callbacks cannot drain.
+    ST8(manager+0x160,1);rt_hyrulem_tick(&cpu,0);assert(calls==0&&published.rejected_callbacks==1);ST8(manager+0x160,0);
+    ST8(manager+0x28,2);rt_hyrulem_tick(&cpu,0);assert(calls==0&&published.rejected_callbacks==2);ST8(manager+0x28,0);
     rt_hyrulem_tick(&cpu,0x7000001000);assert(creates==1 && spawning);assert(!memcmp(&before,&cpu,sizeof cpu));
     spawning_at=now_ms()-16000; // Ready handle must survive a long menu/loading pause.
     rt_hyrulem_tick(&cpu,0x7000001000);assert(published.active && moves==2 && plays==2);assert(!memcmp(&before,&cpu,sizeof cpu));

@@ -63,20 +63,40 @@ def apply(root):
         "                sites.pop(key)\n"
         "    return name, sites")
     patch = root / "tools/patches.py"
-    replace_once(patch,
-        "return ('{ extern void rt_item_tick(Cpu *, uint64_t, uint64_t, uint64_t); '",
-        "return ('{ extern void rt_hyrulem_tick(Cpu *, uint64_t); '\n            'extern void rt_item_tick(Cpu *, uint64_t, uint64_t, uint64_t); '")
-    replace_once(patch,
-        'f\'rt_item_tick(c, {get:#x}ull, {gen.sites["pouch_mgr"]:#x}ull, LD64({got:#x}ull) + 0x10); c->sp -= 0x70; }}\'',
-        'f\'rt_hyrulem_tick(c, LD64({got:#x}ull) + 0x10); rt_item_tick(c, {get:#x}ull, {gen.sites["pouch_mgr"]:#x}ull, LD64({got:#x}ull) + 0x10); c->sp -= 0x70; }}\'')
+    # Remove the previous worker hook when updating an already-patched tree.
+    # Cross-actor work belongs after the engine's job wait, not in PlayerDamage.
+    text=patch.read_text().replace("return ('{ extern void rt_hyrulem_tick(Cpu *, uint64_t); '\n            'extern void rt_item_tick(Cpu *, uint64_t, uint64_t, uint64_t); '",
+        "return ('{ extern void rt_item_tick(Cpu *, uint64_t, uint64_t, uint64_t); '")
+    text=text.replace('rt_hyrulem_tick(c, LD64({got:#x}ull) + 0x10); rt_item_tick(c,', 'rt_item_tick(c,')
+    patch.write_text(text)
     replace_once(root / "runtime/control_game.c", "void control_game_init(void) {",
         "void control_hyrulem_init(void);\nvoid control_game_init(void) {\n    control_hyrulem_init();")
-    replace_once(patch, "def table(sites):", "def _hm_capture_as(gen, a):\n"
+    # Canonicalize our section when upgrading a previously patched source tree.
+    # Both callbacks must be inserted together for repeated applies to be stable.
+    text=patch.read_text()
+    marker="# HyruleM native game hooks"
+    start=text.find(marker)
+    if start<0:start=text.find("def _hm_capture_as(")
+    if start>=0:
+        end=text.index("def table(sites):",start)
+        text=text[:start]+text[end:]
+        patch.write_text(text)
+    replace_once(patch, "def table(sites):", marker+"\ndef _hm_capture_as(gen, a):\n"
         "    assert _word(gen, a) == 0xd10203ff, hex(_word(gen, a))\n"
         "    return '{ extern void rt_hyrulem_capture_as(Cpu *); rt_hyrulem_capture_as(c); c->sp -= 0x80; }'\n\n\n"
-        "PATCHES['hm_as_play_entry'] = _hm_capture_as\n\n\ndef table(sites):")
+        "PATCHES['hm_as_play_entry'] = _hm_capture_as\n\n\n"
+        "def _hm_world_tick(gen, a):\n"
+        "    assert _word(gen, a) == 0xf94002c8, hex(_word(gen, a))\n"
+        "    # The original caller has joined the actor jobs and reset access phase.\n"
+        "    get = gen.sites['pouch_item_get']\n"
+        "    adrp, ldr = _word(gen, get + 0x24), _word(gen, get + 0x30)\n"
+        "    assert adrp & 0x9f00001f == 0x9000001a and ldr & 0xffc003ff == 0xf940035a\n"
+        "    got = adrp_page(adrp, get + 0x24) + ((ldr >> 10) & 0xfff) * 8\n"
+        "    return ('{ extern void rt_hyrulem_tick(Cpu *, uint64_t); '\n"
+        "            f'rt_hyrulem_tick(c, LD64({got:#x}ull) + 0x10); c->x[8] = LD64(c->x[22]); }}')\n\n\n"
+        "PATCHES['hm_world_tick'] = _hm_world_tick\n\n\ndef table(sites):")
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
-    stamp = {"upstream": UPSTREAM, "preview_abi": 3, "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
+    stamp = {"upstream": UPSTREAM, "preview_abi": 4, "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
     (root / "hyrulem-build.json").write_text(json.dumps(stamp, indent=2) + "\n")
 
 

@@ -1,3 +1,11 @@
+# Atualização após as tarefas dos atores — issue #6
+
+Os relatórios da prévia 6 confirmaram criação/visibilidade estática, mas nenhum movimento ou pedido AS: o resolver nativo retornou acesso negado durante toda a janela. A integração anterior dentro do job de dano do jogador podia atingir a proteção de acesso concorrente a outros atores. A correção atual substitui esse ponto pelo retorno da espera das tarefas dos atores, após o reset nativo da fase de acesso. A validação em execução privada com memória sintética reproduziu negação de um ator ativo no worker, espera de dois workers e resolução permitida após o reset. Não constitui teste gráfico.
+
+ABI 4 exige recompilar a biblioteca com o gerador novo; protocolo 4 e recursos permanecem. O adaptador não desliga os checks nativos, não resolve por ponteiro bruto e não usa a thread do renderer. A captura local de AS mantém seu hook separado, somente de leitura.
+
+## Histórico da integração anterior
+
 # Comparação e correção da presença invisível
 
 O relato do teste anterior confirmou conexão sem visibilidade do outro Link. A inspeção do módulo encontrou um erro suficiente para bloquear toda a criação: o parâmetro da rotina interceptada é o controlador de dano e o ator está em `this + 0x18`. O teste anterior usava diretamente um ator como parâmetro e não reproduzia a chamada do jogo. A correção e a regressão usam agora o controlador com seu dono.

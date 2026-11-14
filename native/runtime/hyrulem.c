@@ -1,5 +1,5 @@
 // HyruleM's experimental remote actor adapter. Original implementation; no
-// game code or resources. All guest calls run from Link's native update hook.
+// game code or resources. Guest calls run after the native actor-job barrier.
 #include "hle.h"
 #include "game_sites.h"
 #include "control.h"
@@ -34,6 +34,7 @@ typedef struct {
     char reference_status[48];
     int actor_state;
     uint64_t activation_wait_ticks;
+    uint64_t rejected_callbacks;
 } Published;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static Desired desired;
@@ -79,7 +80,8 @@ static bool supported(void) {
         g_site.hm_handle_wake && g_site.hm_handle_delete && g_site.hm_param_add &&
         g_site.hm_set_mtx && g_site.hm_delete_actor && g_site.hm_play_as && g_site.hm_as_play_entry &&
         g_site.actor_index_assign && g_site.actor_index_resolve &&
-        g_site.actor_index_release && g_site.actor_link_release;
+        g_site.actor_index_release && g_site.actor_link_release &&
+        g_site.hm_world_tick && g_site.hm_actor_mgr;
 }
 static bool clip_name(const char *s) {
     size_t n=strnlen(s,64);if(!n||n>=64)return false;
@@ -280,17 +282,23 @@ static void set_pose(Cpu *c, uint64_t a, Desired *d, uint64_t vt,bool animate) {
     }
 }
 
-// Hooked only at the original local Player update. Full Cpu state is preserved
-// by each call; no actor work ever runs on the presenter/control thread.
+// Hooked after the engine joins actor jobs and resets their access phase.
+// The previous PlayerDamage worker could retain a valid actor but the native
+// scheduler consistently denied access to it (issue #6). Never disable that
+// protection or fall back to using a raw pointer from a rejected resolver.
 void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     if (!supported() || !range(g_site.player_info,8)) return;
+    if(c->x[22]!=g_site.hm_actor_mgr||!range(g_site.hm_actor_mgr,8))return;
+    uint64_t manager=LD64(g_site.hm_actor_mgr);
+    if(!range(manager,0x178)||LD8(manager+0x160)||LD8(manager+0x164)||
+        LD8(manager+0x28)!=0||LD8(manager+0x29)!=7||LD8(manager+0x2a)!=8) {
+        pthread_mutex_lock(&mutex);published.rejected_callbacks++;pthread_mutex_unlock(&mutex);
+        return;
+    }
     uint64_t info=LD64(g_site.player_info);
     if (!range(info,0x68)) return;
-    uint64_t local=LD64(info+0x60), damage=c->x[0];
-    // The hooked function is PlayerDamage::update, not Player::update.
-    // Its original first loads read the owner Actor from this + 0x18. Comparing
-    // the component pointer itself with PlayerInfo::actor skipped every frame.
-    if (!range(local,0x600) || !range(damage,0x20) || LD64(damage+0x18)!=local) return;
+    uint64_t local=LD64(info+0x60);
+    if (!range(local,0x600)||LD8(local+0x64)!=1) return;
     tick_count++;
     pthread_mutex_lock(&mutex);
     local_yaw=atan2f(read_float(local+0x3a0),read_float(local+0x398));
@@ -298,6 +306,11 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     pthread_mutex_unlock(&mutex);
     Desired d;
     pthread_mutex_lock(&mutex); d=desired; pthread_mutex_unlock(&mutex);
+    if(range(g_site.pause_state,4)&&LD32(g_site.pause_state)) {
+        if(spawning_at)spawning_at=now_ms();
+        if(activation_waiting)activation_wait_at=now_ms();
+        return;
+    }
     world_scan(c,local,d.session[0]&&d.received&&now_ms()-d.received<2500);
     if (!storage) {
         if (!d.session[0]) return;
@@ -426,7 +439,8 @@ static bool number(const char *s, float *out, float limit) {
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",3); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",4); control_field_bool(r,"native_preview",supported());
+    control_field_bool(r,"actor_job_barrier",supported());
     control_field_bool(r,"animation_capture",supported()&&g_site.hm_as_play_entry);
     control_field_bool(r,"visual_fallback",supported());
     control_field_bool(r,"shared_enemy_health",world_supported());
@@ -496,6 +510,8 @@ static void status(int argc,char **argv,ControlReply *r) {
     control_field_str(r,"reference_status",p.reference_status);
     control_field_int(r,"actor_state",p.reference_status[0]?p.actor_state:-1);
     control_field_int(r,"activation_wait_ticks",p.activation_wait_ticks);
+    control_field_str(r,"callback_phase","post-actor-jobs");
+    control_field_int(r,"rejected_callbacks",p.rejected_callbacks);
 }
 static void local_state(int argc,char **argv,ControlReply *r) {
     Track tracks[2];float yaw;uint64_t count;

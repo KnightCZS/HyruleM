@@ -30,6 +30,7 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 		NativePreview    bool   `json:"native_preview"`
 		SharedHealth     bool   `json:"shared_enemy_health"`
 		AnimationCapture bool   `json:"animation_capture"`
+		ActorJobBarrier  bool   `json:"actor_job_barrier"`
 	}
 	if err := b.command(ctx, "hm_caps", &caps); err != nil {
 		return nil, fmt.Errorf("o runtime não possui o adaptador nativo: %w", err)
@@ -45,6 +46,9 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 	}
 	if !caps.AnimationCapture {
 		return nil, fmt.Errorf("a captura de animações está ausente; reconstrua a biblioteca do jogo com o gerador novo")
+	}
+	if !caps.ActorJobBarrier {
+		return nil, fmt.Errorf("o ponto de atualização após as tarefas dos atores está ausente; recompile a biblioteca do jogo com o gerador da prévia 7")
 	}
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
