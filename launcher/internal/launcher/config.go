@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const Version = "0.5.0-preview.8"
+const Version = "0.5.0-preview.9"
 
 type Backend string
 

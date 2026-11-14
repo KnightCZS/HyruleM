@@ -191,11 +191,20 @@ func TestNativeWindowsRegression(t *testing.T) {
 			pump()
 			captureReview(t, a.window, filepath.Join(dir, v.name+".png"))
 		}
+		t.Setenv(core.NativePreviewEnv, "1")
 		u.localTest = false
 		u.layout()
 		updateWindow.Call(u.window)
 		pump()
 		captureReview(t, u.window, filepath.Join(dir, "multiplayer.png"))
+		a.changePage(idHome)
+		suggested := rect{10, 10, 1510, 1150}
+		windowProc(a.window, 0x2e0, 144|144<<16, uintptr(unsafe.Pointer(&suggested)))
+		pump()
+		captureReview(t, a.window, filepath.Join(dir, "home-150.png"))
+		suggested = rect{10, 10, 1010, 770}
+		windowProc(a.window, 0x2e0, 96|96<<16, uintptr(unsafe.Pointer(&suggested)))
+		pump()
 		u.localTest = true
 		u.layout()
 		u.scroll = u.px(180)

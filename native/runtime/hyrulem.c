@@ -388,6 +388,10 @@ static void gear_tick(Cpu *c,Desired *d,uint64_t vt,bool animate) {
     json[used++]=']';json[used]=0;pthread_mutex_lock(&mutex);snprintf(published.equipment_json,sizeof published.equipment_json,"%s",json);published.equipment_active=active;pthread_mutex_unlock(&mutex);
 }
 
+static void ground_tick(Cpu *,uint64_t,uint64_t);
+static void ground_reset(void);
+static void ground_pause(void);
+
 // Hooked after the engine joins actor jobs and resets their access phase.
 // The previous PlayerDamage worker could retain a valid actor but the native
 // scheduler consistently denied access to it (issue #6). Never disable that
@@ -414,11 +418,13 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     Desired d;
     pthread_mutex_lock(&mutex); d=desired; pthread_mutex_unlock(&mutex);
     if(range(g_site.pause_state,4)&&LD32(g_site.pause_state)) {
+        ground_pause();
         if(spawning_at)spawning_at=now_ms();
         if(activation_waiting)activation_wait_at=now_ms();
         for(int i=0;i<GEAR_COUNT;i++)if(gear_visual[i].spawning||gear_visual[i].actor)gear_visual[i].started=now_ms();
         return;
     }
+    ground_tick(c,local,safe_string_vtable);
     world_scan(c,local,d.session[0]&&d.received&&now_ms()-d.received<2500);
     if (!storage) {
         if (!d.session[0]) return;
@@ -524,6 +530,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
 }
 
 RT_ON_RESET(hyrulem_reset) {
+    ground_reset();
     pthread_mutex_lock(&mutex);
     memset(&desired,0,sizeof desired); memset(&published,0,sizeof published);
     memset(local_tracks,0,sizeof local_tracks);memset(remote_tracks,0,sizeof remote_tracks);capture_count=0;local_yaw=0;
@@ -549,12 +556,15 @@ static bool number(const char *s, float *out, float limit) {
     char *end; errno=0; *out=strtof(s,&end);
     return *s && !errno && !*end && isfinite(*out) && fabsf(*out)<=limit;
 }
+#include "hyrulem_items.inc"
+
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",5); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",6); control_field_bool(r,"native_preview",supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());
+    control_field_bool(r,"shared_ground_materials",ground_supported());
     control_field_bool(r,"actor_job_barrier",supported());
     control_field_bool(r,"animation_capture",supported()&&g_site.hm_as_play_entry);
     control_field_bool(r,"visual_fallback",supported());
@@ -688,6 +698,11 @@ static void receive_health(int argc,char **argv,ControlReply *r) {
 }
 void control_hyrulem_init(void) {
     static const ControlCmd cmds[]={
+        {"hm_items_open","<session> <world> <x> <y> <z>","Enable bounded experimental material sharing",ground_open,0},
+        {"hm_items_close","<session> <world>","Stop sharing and clean only owned replicas",ground_close,0},
+        {"hm_item_state","<session> <world> <id> <actor> <hash> <sx> <sy> <sz> <x> <y> <z> <local> <own> <state> <request>","Queue material visibility/reservation",ground_update,0},
+        {"hm_item_deny","<session> <world> <request>","Acknowledge completed material request",ground_deny,0},
+        {"hm_items_status","","Material observations, pickup requests and verified receipts",ground_status,CONTROL_PLAYER},
         {"hm_caps","","HyruleM native capabilities and preview availability",caps,CONTROL_PLAYER},
         {"hm_native_status","","Native actor game-thread acknowledgement",status,CONTROL_PLAYER},
         {"hm_native_open","<session>","Open an experimental native actor session",open_session,0},

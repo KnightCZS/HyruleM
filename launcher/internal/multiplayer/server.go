@@ -13,16 +13,19 @@ import (
 )
 
 type ServerConfig struct {
-	Spawn Vec3
-	Tick  time.Duration
-	Log   func(string)
+	Spawn       Vec3
+	Tick        time.Duration
+	Log         func(string)
+	SharedItems bool
 }
 type serverPeer struct {
-	conn   net.Conn
-	player Player
-	out    chan Message
-	done   chan struct{}
-	once   sync.Once
+	conn         net.Conn
+	player       Player
+	out          chan Message
+	done         chan struct{}
+	once         sync.Once
+	poseAt       time.Time
+	groundClaims map[uint64]GroundClaim
 }
 
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
@@ -41,6 +44,10 @@ type Server struct {
 	environmentEpoch uint64
 	environment      *Environment
 	environmentAt    time.Time
+	groundWorld      string
+	groundItems      map[uint64]GroundItem
+	groundKeys       map[string]uint64
+	groundCounter    uint64
 }
 
 func Listen(address string, cfg ServerConfig) (*Server, error) {
@@ -59,6 +66,15 @@ func Listen(address string, cfg ServerConfig) (*Server, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{cfg: cfg, peers: map[string]*serverPeer{}, connections: map[net.Conn]bool{}, listener: l, cancel: cancel, enemies: map[string]EnemyHealth{}}
+	var world [12]byte
+	if _, e := rand.Read(world[:]); e != nil {
+		l.Close()
+		cancel()
+		return nil, e
+	}
+	s.groundWorld = hex.EncodeToString(world[:])
+	s.groundItems = map[uint64]GroundItem{}
+	s.groundKeys = map[string]uint64{}
 	s.wg.Add(2)
 	go s.accept(ctx)
 	go s.broadcast(ctx)
@@ -102,7 +118,7 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 	name, e := NormalizeName(hello.Name)
 	if e != nil || hello.Type != "hello" || hello.Protocol != Protocol {
 		c.SetWriteDeadline(time.Now().Add(time.Second))
-		WriteMessage(c, Message{Type: "error", Error: "nome ou versão de protocolo inválidos"})
+		WriteMessage(c, Message{Type: "error", Error: "Cliente e servidor incompatíveis. Atualize ambos para o mesmo pacote e confira o nome do jogador."})
 		return
 	}
 	s.mu.Lock()
@@ -124,13 +140,19 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 			slot = 1
 		}
 	}
-	p := &serverPeer{conn: c, player: Player{ID: id, Name: name, Slot: slot}, out: make(chan Message, 2), done: make(chan struct{})}
+	p := &serverPeer{conn: c, player: Player{ID: id, Name: name, Slot: slot}, out: make(chan Message, 2), done: make(chan struct{}), groundClaims: map[uint64]GroundClaim{}}
 	s.peers[id] = p
 	s.chooseEnvironmentHostLocked()
 	s.mu.Unlock()
 	defer func() {
 		p.stop()
 		s.mu.Lock()
+		for key, item := range s.groundItems {
+			if item.Claimant == id && item.State == "reserved" {
+				item.State = "uncertain"
+				s.groundItems[key] = item
+			}
+		}
 		delete(s.peers, id)
 		s.chooseEnvironmentHostLocked()
 		s.mu.Unlock()
@@ -177,6 +199,7 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 			}
 			s.mu.Lock()
 			p.player.Pose = *m.Pose
+			p.poseAt = time.Now()
 			s.mu.Unlock()
 		case "rename":
 			newName, e := NormalizeName(m.Name)
@@ -188,7 +211,10 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 			s.mu.Unlock()
 		case "enemy_health":
 			s.mu.Lock()
-			err := mergeEnemyHealth(s.enemies, m.Enemies, p.player.Pose)
+			var err error
+			if p.player.Pose.Ready && time.Since(p.poseAt) < 2*time.Second {
+				err = mergeEnemyHealth(s.enemies, m.Enemies, p.player.Pose)
+			}
 			s.mu.Unlock()
 			if err != nil {
 				s.log(name + ": " + err.Error())
@@ -203,12 +229,35 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				s.mu.Unlock()
 				return
 			}
-			if m.Environment.Epoch == s.environmentEpoch && p.player.Pose.Ready && (s.environment == nil || m.Environment.Sequence > s.environment.Sequence) {
+			if m.Environment.Epoch == s.environmentEpoch && p.player.Pose.Ready && time.Since(p.poseAt) < 2*time.Second && (s.environment == nil || m.Environment.Sequence > s.environment.Sequence) {
 				copy := *m.Environment
 				s.environment = &copy
 				s.environmentAt = time.Now()
 			}
 			s.mu.Unlock()
+		case "ground_observe", "ground_claim", "ground_receipt":
+			s.mu.Lock()
+			var err error
+			switch m.Type {
+			case "ground_observe":
+				err = s.observeGround(p, m.GroundSources, time.Now())
+			case "ground_claim":
+				if m.GroundClaim == nil {
+					err = fmt.Errorf("pedido ausente")
+				} else {
+					err = s.claimGround(p, *m.GroundClaim, time.Now())
+				}
+			case "ground_receipt":
+				if m.GroundReceipt == nil {
+					err = fmt.Errorf("recibo ausente")
+				} else {
+					err = s.receiptGround(p, *m.GroundReceipt)
+				}
+			}
+			s.mu.Unlock()
+			if err != nil {
+				return
+			}
 		case "ping":
 		case "leave":
 			return
@@ -252,20 +301,30 @@ func (s *Server) broadcast(ctx context.Context) {
 		sort.Slice(enemies, func(i, j int) bool { return enemies[i].key() < enemies[j].key() })
 		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence, Enemies: enemies, HostID: host, Epoch: epoch, Environment: environment}
 		for _, p := range targets {
+			packet := m
+			if s.cfg.SharedItems {
+				s.mu.Lock()
+				packet.GroundItems, packet.GroundClaims = s.groundSnapshot(p)
+				s.mu.Unlock()
+				packet.GroundEnabled = true
+				packet.GroundWorld = s.groundWorld
+				zone := s.cfg.Spawn
+				packet.GroundZone = &zone
+			}
 			select {
 			case <-p.done:
 				continue
 			default:
 			}
 			select {
-			case p.out <- m:
+			case p.out <- packet:
 			default:
 				select {
 				case <-p.out:
 				default:
 				}
 				select {
-				case p.out <- m:
+				case p.out <- packet:
 				default:
 				}
 			}

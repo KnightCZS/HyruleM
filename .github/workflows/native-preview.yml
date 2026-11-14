@@ -100,7 +100,7 @@ jobs:
         run: |
           $version = [regex]::Match((Get-Content launcher/internal/launcher/config.go -Raw), 'const Version = "([^"]+)"').Groups[1].Value
           if (-not $version) { throw 'Launcher version missing' }
-          @{ schema = 1; version = $version; preview_abi = 5; runtime_sha256 = (Get-FileHash preview/runtime-update/savagewind.exe -Algorithm SHA256).Hash.ToLower() } | ConvertTo-Json | Set-Content -Encoding utf8NoBOM preview/hyrulem-preview.json
+          @{ schema = 1; version = $version; preview_abi = 6; runtime_sha256 = (Get-FileHash preview/runtime-update/savagewind.exe -Algorithm SHA256).Hash.ToLower() } | ConvertTo-Json | Set-Content -Encoding utf8NoBOM preview/hyrulem-preview.json
       - name: Verify installer with the existing official runtime dependencies
         shell: pwsh
         run: |
@@ -190,14 +190,14 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          tag=v0.5.0-preview.8
+          tag=v0.5.0-preview.9
           existing=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish 2>/dev/null || true)
           if [ -n "$existing" ] && [ "$existing" != "$RELEASE_SHA" ]; then
             echo 'This preview tag already points at another commit; bump the version for another release.'
             exit 0
           fi
           if [ -z "$existing" ]; then
-            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.8 — ambiente, animações e equipamento visual' --notes-file releases/v0.5.0-preview.8.md --prerelease --latest=false --draft
+            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.9 — launcher reorganizado e materiais compartilhados' --notes-file releases/v0.5.0-preview.9.md --prerelease --latest=false --draft
           fi
           gh release upload "$tag" release-assets/HyruleM-NativePreview-Windows-x64.zip release-assets/SHA256.txt --clobber
           gh release edit "$tag" --draft=false --prerelease --latest=false

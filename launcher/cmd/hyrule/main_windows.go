@@ -963,6 +963,27 @@ func (a *app) label(dc uintptr, s, font string, color uintptr, r rect, flags uin
 }
 func (a *app) paint(dc uintptr) { a.paintDashboard(dc) }
 func (a *app) paintButton(d *drawItem) {
+	parent := colorBG
+	id := int(d.ID)
+	if id == idHome || id == idSandboxPage || id == idSettingsPage || id == idMultiplayer || id == idLogs || id == 141 {
+		parent = rgb(16, 22, 28)
+	}
+	if id == idPlay || id == idSandbox || id >= 500 && id < 528 {
+		parent = colorCard
+	}
+	if id == mpItemsMode {
+		parent = colorCard
+	}
+	if id == mpSpawn || id == mpArrange || id == mpSetFOV || id == mpLocalTest {
+		parent = colorBG
+	}
+	if id == idHomeJoin {
+		parent = rgb(24, 46, 43)
+	}
+	brush, _, _ := createBrush.Call(parent)
+	fillRect.Call(d.DC, uintptr(unsafe.Pointer(&d.Rect)), brush)
+	deleteObject.Call(brush)
+
 	background, border, foreground := rgb(31, 43, 55), colorLine, colorText
 	if int(d.ID) == idHomeJoin || int(d.ID) == mpJoin1 || int(d.ID) == mpHost || int(d.ID) == idPlay || int(d.ID) == idSandbox {
 		background = colorGold

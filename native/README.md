@@ -1,46 +1,66 @@
-# HyruleM 0.5.0-preview.8
+# HyruleM 0.5.0-preview.9
 
-A prévia 7 foi confirmada pelo jogador com dois Links visíveis e em movimento. A prévia 8 mantém o callback após a espera das tarefas dos atores e acrescenta horário/clima do anfitrião, equipamento visual e melhorias na reprodução das ações. Os novos visuais ainda precisam de validação em dois jogos reais; os testes automatizados não verificam a GPU.
+Launcher reorganizado, correções da revisão e primeiro experimento de materiais compartilhados. A visibilidade/movimento dos dois Links foi confirmada pelo jogador na prévia 7. Equipamentos da 8 e a interação com materiais da 9 **ainda não foram confirmados em gameplay**. Testes sintéticos, testes Windows e análise das assinaturas não substituem esse teste.
 
-## Instalar
+## Atualizar
 
-1. Feche os dois jogos e o launcher. Extraia o **ZIP inteiro**, inclusive `runtime-update`, para uma pasta própria.
-2. Execute **Iniciar-Nativo.cmd**. Ele atualiza o runtime configurado com backup; não basta trocar apenas o EXE do launcher.
-3. Aguarde a preparação do overlay. Ele é regenerado nesta versão e deriva os prefabs visuais dos arquivos da sua própria instalação. Não contém modelos no download.
-4. Use a prévia 8 nos **dois clientes e no servidor**: ABI 5 / protocolo 5. A biblioteca gerada pela prévia 7 pode ser reaproveitada, pois os hooks/headers do gerador não mudaram; versões anteriores à 7 precisam regenerar. Se o runtime solicitar compilação, aguarde; nunca edite arquivos `.id` para contornar a verificação.
-5. Hospede na interface/IP do PC e porta escolhida. No mesmo computador, use os botões cliente 1 e cliente 2 e `127.0.0.1`; entre PCs/Radmin use o IP do anfitrião. Entre no mundo aberto e aproxime os jogadores.
+1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, inclusive `runtime-update`.
+2. Execute **Iniciar-Nativo.cmd**. O instalador atualiza o runtime configurado com backup.
+3. **Aguarde a regeneração/compilação da biblioteca do jogo.** A prévia 9 adiciona um hook de coleta e três sites; as bibliotecas geradas pelas prévias 7/8 não servem para esta integração. Não edite `.id` para contornar a verificação.
+4. Atualize os dois clientes e o servidor: **ABI 6 / protocolo 6**. O overlay visual da prévia 8 pode ser reutilizado; os recursos continuam derivados localmente da instalação do proprietário.
 
-## O que mudou
+## Launcher
 
-- **Horário e clima:** o primeiro jogador conectado é o anfitrião ambiental. Clientes seguem sua hora, pausa do relógio e clima atual; quem entra depois recebe o estado recente. O servidor escolhe um sucessor quando o anfitrião sai. Epoch/seq descartam amostras antigas e rejeitam alterações de outros clientes.
-- **Encerramento:** desconexão, troca de autoridade, carregamento ou amostra vencida restauram as políticas anteriores de clima/relógio, quando o controle está disponível, sem voltar a hora para o início da sessão nem sobrescrever uma política alterada manualmente.
-- **Runtime nativo e marionete:** criação, referências, movimento e limpeza continuam na thread do jogo, após a barreira dos jobs. São atores DemoNPC com controladores visuais; não se cria outro singleton Player. As verificações nativas de acesso permanecem ativas.
-- **Equipamento:** captura de espada/lança/arma de duas mãos, arco, escudo, cabeça, tronco e pernas. Cada peça remota é um ator visual independente, com transformação relativa ao dono. Cabeça padrão inclui cabelo. O gerador usa `bfres` e `mainModel` do ActorInfo; a instalação 1.9.0 analisada produziu 602 prefabs.
-- **Animações:** preserva os slots AS, evita reiniciar continuamente Wait/Move/Walk/Run iguais e conserva o Morph válido do clipe representativo. Ataques forçados com sequência nova continuam sendo reproduzidos.
-- **Movimento:** posição, rotação, ações e seis peças viajam em um comando atômico; snapshot local único, intervalo menor de leitura, interpolação de direção pelo caminho curto e suavização por frame. Saúde de monstros só gera comandos quando muda, com limite de quatro aplicações por rodada.
+- **Início:** multiplayer em destaque, campanha offline e sandbox.
+- **Sandbox:** região inicial, save base, perfil de missões e ferramentas em jogo.
+- **Configurações:** executável, dados, preparação e instalação.
+- **Multiplayer:** IP/porta para conectar e painel separado para hospedar. A porta do servidor local tem campo próprio. Nome, conexão e estado ficam no cartão do jogador.
+- **Testar dois jogos neste PC:** expande o segundo cliente e o botão de organizar janelas. As instâncias mantêm saves, caches e portas locais próprios.
+- Fechar o menu mantém a conexão; sair do launcher encerra a rede.
 
-## Limites reais
+## Materiais de Hateno — experimento inicial
 
-Equipamento é **aparência**, não cópia de itens: não altera inventário, durabilidade ou vida do outro jogador. Ainda não há sincronização exata de fase/velocidade dos clipes, expressões faciais, tinturas, máscaras especiais de corpo, capas, bainhas ou deformação do arco. Algumas combinações podem sobrepor malha, usar o clipe aproximado ou falhar no carregamento. Uma peça que falha não remove o Link nem provoca tentativas ilimitadas.
+A opção **Materiais: experimental** fica desligada inicialmente. Ative no painel de hospedagem **antes** de iniciar o servidor; o cliente convidado recebe a configuração. No servidor independente use `--shared-items`. O escopo padrão é o mundo aberto de Hateno, até 90 m do ponto de encontro.
 
-O clima atual do anfitrião é aplicado globalmente aos clientes, sem previsão independente por região. Datas, Blood Moon, missões, baús, coleta, árvores, mapa e IA de monstros continuam locais. O servidor **não executa BOTW** e o anfitrião ambiental ainda não é autoridade de toda a simulação.
+Nesta primeira etapa entram apenas `Item_Fruit_A`, `Item_Fruit_B`, `Item_Fruit_F`, `Item_Mushroom_A` e `Item_PlantGet_A`: três frutas, um cogumelo e uma erva identificados pelos IDs do jogo. A implementação:
 
-A convergência de vida dos monstros de mapa permanece experimental: até 64 por leitura, 128 por sessão, identidade por hash/nome/posição original e menor vida conhecida, inclusive zero. Isso não sincroniza movimento, alvo, morte animada nem IA por proximidade. Reiniciar o servidor limpa esse registro.
+1. O anfitrião publica materiais observados do mapa com hash/nome/posição original. Ausência em uma leitura não significa coleta.
+2. Materiais largados pelo inventário de qualquer jogador são publicados pelo dono. **Afaste-se pelo menos 1,5 m** para o objeto sair da região das mãos; a leitura ocorre fora do menu/pausa.
+3. Os outros clientes associam seu objeto correspondente ou criam uma réplica nativa usando os recursos originais da própria instalação. Réplicas próprias são reconhecidas inclusive durante a criação assíncrona e não são anunciadas como novos drops.
+4. O hook intercepta a concessão nativa do material e enfileira um pedido. O servidor reserva o objeto para um único jogador, validando alcance/estado recente.
+5. Após os jobs, o runtime confere a quantidade no inventário, solicita **uma unidade** pela função nativa e confere a diferença. O recibo confirma a coleta; o objeto some nos outros clientes. Um recibo repetido não concede outra unidade.
+6. Falha confirmada libera o objeto. Resultado ambíguo ou desconexão durante uma reserva **não libera o item automaticamente para outra pessoa**: a sessão conserva a pendência para impedir concessão duplicada.
 
-## Diagnóstico e teste sugerido
+O registro é limitado a **32 identidades por sessão**, incluindo objetos já coletados. A reserva e os tombstones sobrevivem à troca de anfitrião e à entrada tardia, enquanto o servidor continuar aberto. O registro não é persistido em disco nem recuperado por perfil após reconexão; para uma reserva incerta a recuperação automática ainda não está implementada.
 
-Teste caminhada, corrida, salto, rotação e golpes nos dois sentidos. Troque cabeça/tronco/pernas, saque/guarde espada, arco e escudo. Confira se só o dono ganha/perde itens e vida. Feche o primeiro cliente e confira a sucessão do horário/clima no outro. Compare em mundo aberto; estar conectado não comprova renderização correta.
+**Limites:** não inclui armas/durabilidade, modificadores, comida preparada, itens de missão, pilhas múltiplas por objeto, coleta em lojas/baús, toda a física de objetos, arremesso de um objeto do mapa com transferência de autoridade, cutscenes/fanfarras de primeira coleta ou interiores/santuários. Posições dos objetos do mapa seguem o anfitrião; drops seguem quem os originou. Objetos queimados/consumidos por física não são um evento de coleta confirmado. O raio de Hateno é uma restrição inicial, não uma identidade geral de todos os mapas. **Esse fluxo exige validação real antes de ampliar o escopo.**
 
-Se houver falha, rode **Diagnosticar.cmd** com ambos os jogos abertos e envie os dois JSONs. Os relatórios `native-preview-diag.8` incluem `time`, `weather`, estado local/equipamento e diagnóstico do ator. `equipment_active` e `equipment_json` mostram quantidade, modelo e erro por peça; `active` informa aceitação nativa, sem comprovar desenho na GPU. `native_ready` continua reservado à Gen1 completa.
+Saves, vida e inventário seguem pessoais. Só o vencedor de uma coleta confirmada recebe aquela unidade. Encerrar o experimento limpa réplicas pertencentes ao mod e solta referências dos objetos originais; não apaga os objetos originais apenas para desligar o modo.
 
-O modelo principal conserva uma única tentativa de contingência. **Modelo de contingência ativo · movimento sem animação** indica degradação explícita: não recebe AS do Player. A limpeza retém referências enquanto o jogo nega acesso, sem criar duplicatas.
+## Presença, aparência e ambiente
 
-## Validação desta versão
+A criação/movimento/remoção dos Links continua no callback posterior à espera dos jobs, com referências e verificações nativas. Os corpos e as seis peças visuais são DemoNPCs sem controlador Player de física/dano. As roupas/armas são aparência e não concessões de inventário.
 
-- Testes C com memória sintética: barreira pós-jobs, referências/gerações, CPU preservada, equipamento isolado, transformações, falhas limitadas, parsing atômico, slots/repetição AS e suavização a 30/60/120 Hz.
-- Hook emitido compilado e executado com memória sintética; 16 assinaturas únicas verificadas no módulo 1.9.0 privado.
-- Testes Go, detector de condições de corrida e vet: autoridade/sucessão/entrada tardia, rejeição de estado antigo, políticas ambientais, interpolação, orçamento de comandos e limites do protocolo.
-- Geração privada e leitura independente dos 602 packs: recursos, máscaras parciais de armadura, controladores Dummy/DemoNPC e arma rígida sem máscaras/animações do Player.
-- Compilação Windows, instalador com backup/rollback e abertura direta do launcher verificados pelo CI. Validação gráfica desta prévia depende do teste em jogo.
+Mantêm-se os slots AS, a suavização de posição/rotação e o Morph do clipe representativo. A deduplicação agora usa nomes exatos de locomoção, e o prazo do equipamento é renovado enquanto ativo/pausado. Fase/velocidade exatas de clipes, tinturas, máscaras especiais, capas/bainhas e expressões ainda não estão completas.
 
-Pesquisa: [RESEARCH_SYNC.md](RESEARCH_SYNC.md). Runtime [Savage Wind](https://github.com/Revivedx/SavageWindRecomp/tree/740b18025fe11ba03c117dbb56668db304b5043e), MIT. Nenhum código/BNP do Milk Bar foi incorporado. O pacote não contém jogo, modelos, saves nem biblioteca recompilada do jogo.
+O primeiro jogador é o anfitrião de horário/clima; há sucessão e descarte de amostras antigas. A restauração das políticas agora pode retentar uma falha parcial. O clima é global do anfitrião, sem previsão por região. Dia, Blood Moon, missões, IA e eventos completos continuam locais. O servidor não executa BOTW.
+
+A vida de monstros de mapa ainda converge para a menor observação válida, por identidade de mapa e posição original; isso não fornece movimento, alvo ou IA compartilhados.
+
+## Diagnóstico
+
+**Diagnosticar.cmd** gera dois relatórios `native-preview-diag.9`. Inclui capacidades, fase do callback, referências, estado dos atores/peças, horário/clima e `hm_items_status`:
+
+- `source_materials`: materiais locais observados.
+- `replica_handles` / `replica_failures`: criações e falhas de réplicas.
+- `pickup_intercepts`: entradas que passaram pelo hook de coleta.
+- `events_json` / `receipts_json`: pedidos e resultados verificáveis.
+- `pending_inventory_checks`: resultado de quantidade ainda ambíguo.
+
+Um handle/modelo ativo não comprova desenho na GPU. `native_ready` permanece reservado à Gen1 completa; combate, coleta geral e IA ainda não estão finalizados.
+
+## Validação
+
+Testes C de CPU/barreira/referências, coleta adiada, quantidade exata, repetição de recibo, limpeza e resultados ambíguos; dois fragmentos de hooks compilados; **19 assinaturas únicas** verificadas no módulo privado 1.9.0; testes Go com dois clientes TCP, disputa de coleta, falha de inventário, reconexão/entrada tardia, limites e orçamento de comandos. Windows valida UI, backup/rollback e compilação. As capturas da interface usam dados sintéticos, sem jogo aberto.
+
+[Auditoria desta atualização](../docs/AUDITORIA_0.5.0-preview.9.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime base: Savage Wind, MIT. Sem código/BNP do Milk Bar, sem arquivos do jogo, saves ou biblioteca recompilada no download.

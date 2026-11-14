@@ -36,6 +36,9 @@ func (s *ControlStream) Command(ctx context.Context, cmd string) (ControlReply, 
 	defer s.mu.Unlock()
 	var r ControlReply
 	limit := 256
+	if strings.HasPrefix(cmd, "hm_item_state ") {
+		limit = 511
+	}
 	if strings.HasPrefix(cmd, "hm_native_remote ") {
 		limit = 4095
 	} // Atomic pose + six visual pieces; runtime MAX_LINE is4096.

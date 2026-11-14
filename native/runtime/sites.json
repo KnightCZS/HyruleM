@@ -110,5 +110,26 @@
     "kind": "got",
     "pattern": "90000016/9f00001f aa0003f3 f94002d6/ffc003ff 5280042a 0a0a010a f94002c0 7100815f 39458809 7a400924 54000000/ff00001f 121a7908 52800021",
     "at": 2
+  },
+  {
+    "name": "hm_item_pickup",
+    "address": "0x7000be1330",
+    "kind": "code",
+    "pattern": "a9bc7bfd a9015ffc 910003fd a90257f6 a9034ff4 d10903ff aa0003f4 aa0103e0",
+    "at": 0
+  },
+  {
+    "name": "hm_item_get",
+    "address": "0x7000d921bc",
+    "kind": "code",
+    "pattern": "d10243ff a9037bfd a9046ffc a90567fa a9065ff8 a90757f6 a9084ff4 9100c3fd f90003e3",
+    "at": 0
+  },
+  {
+    "name": "hm_pouch_mgr",
+    "address": "0x7001e18570",
+    "kind": "got",
+    "pattern": "90000017/9f00001f aa0003f5 f94002f7/ffc003ff 910003e0 f94002f6 94000000/fc000000 2a0003e2 aa1603e0",
+    "at": 2
   }
 ]

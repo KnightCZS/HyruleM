@@ -37,9 +37,9 @@ func (u *multiplayerUI) layoutSession() {
 		return
 	}
 	width, leftRight, hostX := u.sessionGeometry()
-	total := 680
+	total := 714
 	if u.localTest {
-		total = 950
+		total = 980
 	}
 	maximum := u.px(total) - r.Bottom
 	if maximum < 0 {
@@ -65,7 +65,7 @@ func (u *multiplayerUI) layoutSession() {
 		if i == 1 && !u.localTest {
 			continue
 		}
-		y := 270 + i*270
+		y := 270 + i*304
 		place(mpName1+i, 52, y+72, leftRight-220, 36)
 		place(mpRename1+i, leftRight-144, y+72, 120, 36)
 		place(mpJoin1+i, 52, y+124, leftRight-232, 44)
@@ -88,9 +88,10 @@ func (u *multiplayerUI) layoutSession() {
 	place(mpBind, hostX+24, 192, width-hostX-76, 180)
 	place(mpNetworks, hostX+24, 244, width-hostX-76, 34)
 	place(mpHostPort, hostX+24, 322, width-hostX-76, 36)
-	place(mpHost, hostX+24, 376, width-hostX-76, 44)
-	place(mpHostStatus, hostX+24, 440, width-hostX-76, 100)
-	place(mpLogs, hostX+24, 570, width-hostX-76, 38)
+	place(mpItemsMode, hostX+24, 366, width-hostX-76, 34)
+	place(mpHost, hostX+24, 416, width-hostX-76, 44)
+	place(mpHostStatus, hostX+24, 480, width-hostX-76, 100)
+	place(mpLogs, hostX+24, 630, width-hostX-76, 38)
 	for id, h := range u.controls {
 		v := uintptr(0)
 		if shown[id] {
@@ -119,14 +120,14 @@ func (u *multiplayerUI) paint(dc uintptr) {
 	label("Jogue em companhia.", "title", colorText, 28, 28, width-28, 72)
 	label("Conecte a um servidor ou crie um encontro na sua rede.", "body", colorMuted, 28, 84, width-28, 114)
 	v.box(dc, rect{p(28), p(138), p(leftRight), p(246)}, colorCard, colorLine, 14)
-	label("CONEXÃO DIRETA", "label", colorGold, 52, 154, leftRight-24, 178)
+	label("CONEXÃO DIRETA", "label", colorGold, 52, 154, leftRight-24, 172)
 	label("IP do servidor", "small", colorMuted, 52, 173, leftRight-170, 190)
 	label("Porta", "small", colorMuted, leftRight-144, 173, leftRight-24, 190)
 	for i := 0; i < 2; i++ {
 		if i == 1 && !u.localTest {
 			continue
 		}
-		y := 270 + i*270
+		y := 270 + i*304
 		v.box(dc, rect{p(28), p(y), p(leftRight), p(y + 230)}, colorCard, colorLine, 14)
 		title := "SEU JOGADOR"
 		if i == 1 {
@@ -135,19 +136,25 @@ func (u *multiplayerUI) paint(dc uintptr) {
 		label(title, "label", colorGold, 52, y+18, leftRight-24, y+40)
 		label("Nome em jogo", "small", colorMuted, 52, y+48, leftRight-24, y+70)
 	}
-	v.box(dc, rect{p(hostX), p(138), p(width - 28), p(630)}, colorCard, colorLine, 14)
-	label("HOSPEDAR", "label", colorGold, hostX+24, 154, width-52, 178)
+	v.box(dc, rect{p(hostX), p(138), p(width - 28), p(686)}, colorCard, colorLine, 14)
+	label("HOSPEDAR", "label", colorGold, hostX+24, 154, width-52, 172)
 	label("Interface · LAN ou VPN/Radmin", "small", colorMuted, hostX+24, 173, width-52, 190)
 	label("Porta do seu servidor", "small", colorMuted, hostX+24, 296, width-52, 320)
 	foot := 626
+	if os.Getenv(core.NativePreviewEnv) != "1" {
+		foot = 700
+	}
 	if u.localTest {
 		foot = 890
+		if os.Getenv(core.NativePreviewEnv) != "1" {
+			foot = 970
+		}
 	}
 	label("Fechar este menu mantém a sessão.\nSair do launcher encerra a conexão de rede.", "small", colorMuted, 28, foot, leftRight, foot+44)
 	if u.server != nil {
-		label(fmt.Sprintf("%d / 2 jogadores", u.server.Count()), "small", colorGreen, hostX+24, 542, width-52, 566)
+		label(fmt.Sprintf("%d / 2 jogadores", u.server.Count()), "small", colorGreen, hostX+24, 596, width-52, 620)
 	} else {
-		label("Sessão local · até 2 jogadores", "small", colorMuted, hostX+24, 542, width-52, 566)
+		label("Sessão local · até 2 jogadores", "small", colorMuted, hostX+24, 596, width-52, 620)
 	}
 	setViewport.Call(dc, 0, 0, 0)
 }

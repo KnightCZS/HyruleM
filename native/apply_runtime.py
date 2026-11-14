@@ -95,8 +95,19 @@ def apply(root):
         "    return ('{ extern void rt_hyrulem_tick(Cpu *, uint64_t); '\n"
         "            f'rt_hyrulem_tick(c, LD64({got:#x}ull) + 0x10); c->x[8] = LD64(c->x[22]); }}')\n\n\n"
         "PATCHES['hm_world_tick'] = _hm_world_tick\n\n\ndef table(sites):")
+    text=patch.read_text()
+    marker="# HyruleM material award hook"
+    if marker in text:
+        a=text.index(marker);b=text.index("def table(sites):",a);text=text[:a]+text[b:]
+    addition=(marker+"\ndef _hm_item_pickup(gen, a):\n"
+        "    assert _word(gen, a) == 0xa9bc7bfd, hex(_word(gen, a))\n"
+        "    return '{ extern _Bool rt_hyrulem_item_pickup(Cpu *); if (rt_hyrulem_item_pickup(c)) return; c->sp -= 0x40; ST64(c->sp, c->x[29]); ST64(c->sp + 8, c->x[30]); }'\n\n"
+        "PATCHES['hm_item_pickup'] = _hm_item_pickup\n\n\n")
+    text=text.replace("def table(sites):",addition+"def table(sites):")
+    patch.write_text(text)
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
-    stamp = {"upstream": UPSTREAM, "preview_abi": 5, "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
+    shutil.copyfile(HERE / "runtime/hyrulem_items.inc", root / "runtime/hyrulem_items.inc")
+    stamp = {"upstream": UPSTREAM, "preview_abi": 6, "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
     (root / "hyrulem-build.json").write_text(json.dumps(stamp, indent=2) + "\n")
 
 

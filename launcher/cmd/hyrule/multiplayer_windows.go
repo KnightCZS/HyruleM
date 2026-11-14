@@ -44,6 +44,7 @@ const (
 	mpLogs       = 527
 	mpLocalTest  = 528
 	mpHostPort   = 529
+	mpItemsMode  = 530
 )
 
 type mpSlot struct {
@@ -57,12 +58,13 @@ type mpSlot struct {
 	cancel        context.CancelFunc
 }
 type mpSettings struct {
-	IP       string
-	BindIP   string
-	Port     int
-	HostPort int
-	Names    [2]string
-	FOV      float64
+	IP         string
+	BindIP     string
+	Port       int
+	HostPort   int
+	ShareItems bool
+	Names      [2]string
+	FOV        float64
 }
 type multiplayerUI struct {
 	a            *app
@@ -181,7 +183,7 @@ func (u *multiplayerUI) build() {
 	for _, v := range []struct {
 		id    int
 		label string
-	}{{mpHost, "Hospedar sessão"}, {mpArrange, "Organizar janelas"}, {mpNetworks, "Atualizar IPs"}, {mpLogs, "Diagnóstico"}, {mpSpawn, "Reunir em Hateno"}, {mpSetFOV, "Aplicar FOV"}, {mpLocalTest, "+ Testar dois jogos neste PC"}} {
+	}{{mpItemsMode, "Materiais: desligados"}, {mpHost, "Hospedar sessão"}, {mpArrange, "Organizar janelas"}, {mpNetworks, "Atualizar IPs"}, {mpLogs, "Diagnóstico"}, {mpSpawn, "Reunir em Hateno"}, {mpSetFOV, "Aplicar FOV"}, {mpLocalTest, "+ Testar dois jogos neste PC"}} {
 		u.add(v.id, "BUTTON", v.label, 0x10000|0xb, 0, 0, 10, 10)
 	}
 	u.add(mpIP, "EDIT", u.settings.IP, 0x00810080, 0, 0, 10, 10)
@@ -203,6 +205,7 @@ func (u *multiplayerUI) build() {
 		u.add(mpStatus1+i, "STATIC", "Pronto para conectar", 0, 0, 0, 10, 10)
 	}
 	u.loadNetworks()
+	u.updateItemsLabel()
 	u.layout()
 	u.refresh()
 }
@@ -210,8 +213,13 @@ func (u *multiplayerUI) set(id int, s string) {
 	setText.Call(u.controls[id], uintptr(unsafe.Pointer(wide(s))))
 }
 func (u *multiplayerUI) say(i int, s string) {
+	original := s
+	full := []rune(s)
+	if len(full) > 170 {
+		s = string(full[:150]) + "… Veja Diagnóstico."
+	}
 	u.set(mpStatus1+i, s)
-	core.AppendLog(filepath.Join(u.a.root, "logs", fmt.Sprintf("multiplayer-%d.log", i+1)), s)
+	core.AppendLog(filepath.Join(u.a.root, "logs", fmt.Sprintf("multiplayer-%d.log", i+1)), original)
 }
 func (u *multiplayerUI) post(f func()) {
 	u.mu.Lock()
@@ -260,6 +268,11 @@ func (u *multiplayerUI) refresh() {
 	}
 	enableWindow.Call(u.controls[mpHostPort], hostInput)
 	enableWindow.Call(u.controls[mpBind], hostInput)
+	itemInput := hostInput
+	if os.Getenv(core.NativePreviewEnv) != "1" {
+		itemInput = 0
+	}
+	enableWindow.Call(u.controls[mpItemsMode], itemInput)
 	for i := range u.slots {
 		s := &u.slots[i]
 		enabled := uintptr(1)
@@ -303,7 +316,7 @@ func (u *multiplayerUI) host() {
 		u.set(mpHostStatus, err.Error())
 		return
 	}
-	s, err := mp.Listen(address, mp.ServerConfig{Spawn: mp.Vec3{X: 3437.5, Y: 235.9, Z: 2101.5}, Log: func(s string) { core.AppendLog(filepath.Join(u.a.root, "logs", "servidor.log"), s) }})
+	s, err := mp.Listen(address, mp.ServerConfig{SharedItems: u.settings.ShareItems && os.Getenv(core.NativePreviewEnv) == "1", Spawn: mp.Vec3{X: 3437.5, Y: 235.9, Z: 2101.5}, Log: func(s string) { core.AppendLog(filepath.Join(u.a.root, "logs", "servidor.log"), s) }})
 	if err != nil {
 		u.set(mpHostStatus, "Não foi possível hospedar: "+err.Error())
 		return
@@ -599,6 +612,12 @@ func multiplayerProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		}
 		id := int(w & 0xffff)
 		switch id {
+		case mpItemsMode:
+			if u.server == nil && !u.hostStopping {
+				u.settings.ShareItems = !u.settings.ShareItems
+				u.updateItemsLabel()
+				u.save()
+			}
 		case mpLocalTest:
 			if u.localTest && (u.slots[1].pending || u.slots[1].bridge != nil || u.slots[1].session.Busy()) {
 				u.say(1, "Encerre o segundo jogo para ocultar este painel.")
@@ -716,4 +735,13 @@ func (u *multiplayerUI) updateFont() {
 	for _, f := range old {
 		deleteObject.Call(f)
 	}
+}
+
+func (u *multiplayerUI) updateItemsLabel() {
+	label := "Materiais: desligados"
+	if u.settings.ShareItems {
+		label = "Materiais: experimental"
+	}
+	u.set(mpItemsMode, label)
+	invalidate.Call(u.window, 0, 0)
 }

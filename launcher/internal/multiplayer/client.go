@@ -3,6 +3,7 @@ package multiplayer
 import (
 	"bufio"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"net"
@@ -24,6 +25,7 @@ type Client struct {
 	latest      uint64
 	enemies     []EnemyHealth
 	environment EnvironmentView
+	ground      GroundView
 	connected   bool
 	reason      string
 	done        chan struct{}
@@ -165,6 +167,30 @@ func (c *Client) read(r *bufio.Reader) {
 				c.mu.Unlock()
 				c.fail("Ambiente do servidor inválido")
 				return
+			}
+			if m.GroundEnabled {
+				if len(m.GroundWorld) != 24 || m.GroundZone == nil || !m.GroundZone.Valid() || len(m.GroundItems) > MaxGroundItems || len(m.GroundClaims) > 128 {
+					c.mu.Unlock()
+					c.fail("mundo de materiais inválido")
+					return
+				}
+				if raw, err := hex.DecodeString(m.GroundWorld); err != nil || len(raw) != 12 {
+					c.mu.Unlock()
+					c.fail("identidade do mundo inválida")
+					return
+				}
+				seen := map[uint64]bool{}
+				for _, i := range m.GroundItems {
+					if !i.Valid() || seen[i.ID] {
+						c.mu.Unlock()
+						c.fail("item compartilhado inválido")
+						return
+					}
+					seen[i.ID] = true
+				}
+				c.ground = GroundView{Enabled: true, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now()}
+			} else {
+				c.ground = GroundView{}
 			}
 			c.environment = EnvironmentView{HostID: m.HostID, Epoch: m.Epoch, State: m.Environment, At: time.Now()}
 			for _, p := range m.Players {

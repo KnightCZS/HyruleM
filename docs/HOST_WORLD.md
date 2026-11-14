@@ -15,3 +15,9 @@ Isso evita duas IAs decidindo destinos diferentes para o mesmo monstro. Ainda ex
 Para a próxima camada de mundo, implementar primeiro um monstro identificado pelo objeto do mapa: host publica posição/vida/alvo, cliente deixa de simular a IA daquele monstro e reproduz o estado. O servidor valida autoridade e sequência; um cliente que entra depois recebe o snapshot atual. Troca de host exige uma época nova e descarte de eventos da autoridade anterior. Essa troca ainda não existe para IA/eventos; a prévia 8 implementa épocas e sucessão somente para horário/clima.
 
 **Estado da prévia 8:** há presença nativa confirmada pelo jogador, transporte de animação/equipamento, convergência inicial de vida de monstros e autoridade de horário/clima com sucessão. Não há host de simulação, IA compartilhada, mapa criado no servidor ou replay geral de eventos. Um servidor dedicado que execute o motor completo é uma etapa posterior, que também exige resolver execução sem renderização e carregamento de regiões sem jogador local.
+
+## Primeira camada de objetos — prévia 9
+
+A opção experimental implementa um registro pequeno de materiais de Hateno, sem simular o motor completo. O host publica os objetos do mapa; quem larga um material publica seu drop. O servidor ordena pedidos de coleta, reserva um vencedor e aguarda o recibo da quantidade no inventário local antes de confirmar a retirada. Snapshot/entrada tardia incluem tombstones. Troca de anfitrião não reinicia esse registro.
+
+Desconexão com concessão possivelmente aplicada fica incerta, sem nova concessão automática. Persistência/recuperação dessa pendência, física geral e outros tipos de item não foram implementados. [Fluxo e limites exatos](../native/README.md).

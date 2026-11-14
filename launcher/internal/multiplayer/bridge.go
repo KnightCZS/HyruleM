@@ -18,16 +18,17 @@ type GameControl interface {
 	Close()
 }
 type Bridge struct {
-	Client       *Client
-	control      GameControl
-	cancel       context.CancelFunc
-	done         chan struct{}
-	mu           sync.Mutex
-	camera       Camera
-	fov          float64
-	status       func(string)
-	spawnRequest chan struct{}
-	native       bool
+	Client        *Client
+	control       GameControl
+	cancel        context.CancelFunc
+	done          chan struct{}
+	mu            sync.Mutex
+	camera        Camera
+	fov           float64
+	status        func(string)
+	spawnRequest  chan struct{}
+	native        bool
+	nativeSession string
 }
 
 func NewBridge(parent context.Context, c *Client, game GameControl, fov float64, status func(string)) *Bridge {
@@ -175,11 +176,14 @@ func (b *Bridge) run(ctx context.Context) {
 	up := Vec3{Y: 1}
 	var native *nativePreview
 	var environment environmentSync
+	var ground groundSync
+	var groundIssue time.Time
 	var environmentIssue time.Time
 	defer func() {
 		if native != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
 			defer cancel()
+			b.closeGround(cleanup, &ground)
 			_ = b.clearNative(cleanup, native)
 			b.restoreEnvironment(cleanup, &environment)
 		}
@@ -199,6 +203,7 @@ func (b *Bridge) run(ctx context.Context) {
 		}
 		if e := readErr; e != nil || !pos.Valid() {
 			b.restoreEnvironment(ctx, &environment)
+			b.closeGround(ctx, &ground)
 			if native != nil {
 				_ = b.clearNative(ctx, native)
 			}
@@ -225,10 +230,14 @@ func (b *Bridge) run(ctx context.Context) {
 		if b.native && native == nil {
 			var err error
 			native, err = b.openNative(ctx)
+			b.nativeSession = ""
 			if err != nil {
 				b.fail("Modo nativo indisponível: " + err.Error())
 				return
 			}
+		}
+		if native != nil {
+			b.nativeSession = native.session
 		}
 		select {
 		case <-b.spawnRequest:
@@ -321,6 +330,10 @@ func (b *Bridge) run(ctx context.Context) {
 			if err := b.updateEnvironment(ctx, &environment, now); err != nil && now.Sub(environmentIssue) > 15*time.Second {
 				b.say("Presença ativa; ambiente aguardando o jogo: " + err.Error())
 				environmentIssue = now
+			}
+			if err := b.updateGround(ctx, &ground, now); err != nil && now.Sub(groundIssue) > 15*time.Second {
+				b.say("Presença ativa; materiais experimentais aguardando: " + err.Error())
+				groundIssue = now
 			}
 			if !wait(ctx, 16*time.Millisecond) {
 				return

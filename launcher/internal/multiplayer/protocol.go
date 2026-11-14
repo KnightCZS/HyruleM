@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 5
+const Protocol = 6
 const MaxLine = 65536
 const MaxPlayers = 2
 
@@ -92,20 +92,28 @@ type Player struct {
 	Pose Pose   `json:"pose"`
 }
 type Message struct {
-	Type        string        `json:"type"`
-	Protocol    int           `json:"protocol,omitempty"`
-	Name        string        `json:"name,omitempty"`
-	ID          string        `json:"id,omitempty"`
-	Slot        int           `json:"slot,omitempty"`
-	Spawn       *Vec3         `json:"spawn,omitempty"`
-	Pose        *Pose         `json:"pose,omitempty"`
-	Players     []Player      `json:"players,omitempty"`
-	Sequence    uint64        `json:"sequence,omitempty"`
-	Error       string        `json:"error,omitempty"`
-	Enemies     []EnemyHealth `json:"enemies,omitempty"`
-	HostID      string        `json:"host_id,omitempty"`
-	Epoch       uint64        `json:"epoch,omitempty"`
-	Environment *Environment  `json:"environment,omitempty"`
+	Type          string         `json:"type"`
+	Protocol      int            `json:"protocol,omitempty"`
+	Name          string         `json:"name,omitempty"`
+	ID            string         `json:"id,omitempty"`
+	Slot          int            `json:"slot,omitempty"`
+	Spawn         *Vec3          `json:"spawn,omitempty"`
+	Pose          *Pose          `json:"pose,omitempty"`
+	Players       []Player       `json:"players,omitempty"`
+	Sequence      uint64         `json:"sequence,omitempty"`
+	Error         string         `json:"error,omitempty"`
+	Enemies       []EnemyHealth  `json:"enemies,omitempty"`
+	HostID        string         `json:"host_id,omitempty"`
+	Epoch         uint64         `json:"epoch,omitempty"`
+	Environment   *Environment   `json:"environment,omitempty"`
+	GroundEnabled bool           `json:"ground_enabled,omitempty"`
+	GroundWorld   string         `json:"ground_world,omitempty"`
+	GroundZone    *Vec3          `json:"ground_zone,omitempty"`
+	GroundItems   []GroundItem   `json:"ground_items,omitempty"`
+	GroundClaims  []GroundClaim  `json:"ground_claims,omitempty"`
+	GroundSources []GroundSource `json:"ground_sources,omitempty"`
+	GroundClaim   *GroundClaim   `json:"ground_claim,omitempty"`
+	GroundReceipt *GroundReceipt `json:"ground_receipt,omitempty"`
 }
 
 func NormalizeName(s string) (string, error) {

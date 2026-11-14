@@ -1,3 +1,15 @@
+# Prévia 9: revisão, launcher e materiais
+
+A camada inicial de mundo usa evento explícito de aquisição, observação de atores por identidade e confirmação da quantidade pessoal. Não usa ausência de ator como prova de coleta nem copia inventários. A concessão genericamente interceptada apenas enfileira dados; as funções nativas de inventário são chamadas após os jobs, com recibos e bloqueio de repetição.
+
+Três novos sites próprios da 1.9.0 identificam entrada de aquisição, item-get e raiz do inventário: dezenove padrões únicos no total. O gerador precisa recompilar a biblioteca com o hook novo. ABI 6/protocolo 6. A base de recursos visuais da prévia 8 permanece.
+
+O experimento vem desligado: cinco materiais comuns em até 90 m de Hateno, 32 identidades por sessão. O servidor arbitra a coleta, aceita observações de mapa do host e drops do dono. Uma concessão incerta não libera nova concessão. O caminho nativo e seus efeitos na GPU/primeira coleta ainda requerem validação em jogo; isso não constitui sincronização geral de eventos.
+
+[Auditoria](../docs/AUDITORIA_0.5.0-preview.9.md) e [instalação/limites](README.md).
+
+## Histórico
+
 # Prévia 8: ambiente e aparência
 
 O retorno do jogador confirma visibilidade e movimento com a prévia 7. A etapa seguinte mantém essa integração e acrescenta as etapas 1–4 solicitadas; ainda não equivale a mundo/IA compartilhados.

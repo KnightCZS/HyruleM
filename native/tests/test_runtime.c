@@ -11,6 +11,7 @@ const char *g_game_version="1.9.0";
 static unsigned calls, creates, deletes, moves, plays;
 static uint64_t mock_actor=HEAP_BASE+0x3000, retained=HEAP_BASE+0x4000;
 static bool reject,fail_handle,deny_lease;
+static uint64_t ground_pouch_item;static unsigned inventory_grants;static bool inventory_full,inventory_ambiguous;
 static unsigned create_state=1;
 static uint64_t local_equipped[6],gear_handles[32],gear_actors[32];static unsigned gear_allocations,gear_handles_count;static bool reject_equipment;
 void *hle_alloc(uint64_t size) { assert(size==BYTES);return (void *)(uintptr_t)(storage?HLE_HEAP+0x1000+0x400*gear_allocations++:HLE_HEAP); }
@@ -19,7 +20,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     calls++;
     if (fn==g_site.hm_create) {
         creates++;uint64_t a=mock_actor;bool gear=c->x[3]!=HLE_HEAP+HANDLE;
-        if(gear) {if(reject_equipment){c->x[0]=0;return;}assert(gear_handles_count<32);a=HEAP_BASE+0x20000+0x1000*gear_handles_count;gear_handles[gear_handles_count]=c->x[3];gear_actors[gear_handles_count++]=a;ST64(a+0x560,HEAP_BASE+0x5000);ST64(a+0x4e0,a+0x900);}
+        if(gear) {if(reject_equipment){c->x[0]=0;return;}assert(gear_handles_count<32);a=HEAP_BASE+0x20000+0x1000*gear_handles_count;gear_handles[gear_handles_count]=c->x[3];gear_actors[gear_handles_count++]=a;uint64_t request=HEAP_BASE+0xfc000+gear_handles_count*0x20;ST64(c->x[3],request);ST64(request+0x10,a);ST64(a+0x560,HEAP_BASE+0x5000);ST64(a+0x4e0,a+0x900);ST64(a+0x10,a+0xa00);snprintf((char *)(uintptr_t)(a+0xa00),48,"%s",(char *)(uintptr_t)c->x[1]);}
         ST8(a+0x64,create_state);c->x[0]=!reject;
     }
     else if (fn==g_site.hm_handle_ready) c->x[0]=1;
@@ -35,13 +36,16 @@ void guest_call(Cpu *c,uint64_t fn) {
     }
     else if (fn==g_site.actor_index_release) {ST64(c->x[0],0);ST32(c->x[0]+8,UINT32_MAX);ST8(c->x[0]+12,0);}
     else if (fn==g_site.actor_link_release) ST64(c->x[0]+8,0);
-    else if (fn==g_site.hm_delete_actor) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);deletes++;}
+    else if (fn==g_site.hm_delete_actor) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);deletes++;ST8(c->x[0]+0x64,3);}
     else if (fn==g_site.hm_set_mtx) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);assert(c->x[2]<=1);memcpy((void *)(uintptr_t)(c->x[0]+0x398),(void *)(uintptr_t)c->x[1],48);moves++;}
     else if (fn==g_site.hm_play_as) {assert(c->x[0]==HEAP_BASE+0x5000);plays++;}
+    else if(fn==g_site.pouch_page_count)c->x[0]=1;
+    else if(fn==g_site.pouch_page_item)c->x[0]=ground_pouch_item;
+    else if(fn==g_site.hm_item_get){assert(c->x[2]==1&&c->x[3]==0);if(!inventory_full){ST32(ground_pouch_item+0x20,LD32(ground_pouch_item+0x20)+1);inventory_grants++;if(inventory_ambiguous)ST32(ground_pouch_item+0x20,UINT32_MAX);}}
     // Deliberately clobber every register: the hook must preserve the caller.
     memset(c->v,0x5a,sizeof c->v);c->x[3]=0xdeadbeef;c->nzcv=0xabcdef;c->fpsr=91;
 }
-void control_register(const ControlCmd *cmds,int n) {assert(n==9);}
+void control_register(const ControlCmd *cmds,int n) {assert(n==14);}
 void control_field_str(ControlReply *r,const char *k,const char *v) {}
 void control_field_int(ControlReply *r,const char *k,int64_t v) {}
 void control_field_num(ControlReply *r,const char *k,double v) {}
@@ -51,7 +55,7 @@ void control_fail(ControlReply *r,const char *fmt,...) {r->failed=true;}
 static void map_at(uint64_t a,size_t n) {assert(mmap((void *)(uintptr_t)a,n,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)==(void *)(uintptr_t)a);}
 int main(void) {
     setenv("HYRULEM_NATIVE_PREVIEW","1",1);
-    map_at(HLE_HEAP,0x10000);map_at(HEAP_BASE,0x100000);
+    map_at(HLE_HEAP,0x40000);map_at(HEAP_BASE,0x100000);
     uint64_t site=1;
     #define SITE(n) g_site.n=site++;
     GAME_SITES_OPTIONAL(SITE)
@@ -206,6 +210,41 @@ int main(void) {
     piece[2]="3";piece[3]="0";piece[4]="Weapon_Sword_002";receive_equipment(17,piece,&r);assert(!r.failed);reject_equipment=true;
     rt_hyrulem_tick(&cpu,0);unsigned after_failure=creates;rt_hyrulem_tick(&cpu,0);assert(published.active&&gear_visual[0].failed&&creates==after_failure&&published.equipment_active==2);reject_equipment=false;
     desired.visible=false;rt_hyrulem_tick(&cpu,0);assert(!actor);for(int i=0;i<6;i++)assert(!gear_visual[i].actor&&!gear_visual[i].spawning&&!LD8(gear_visual[i].storage?gear_visual[i].storage+INDEX+12:HLE_HEAP+INDEX+12));
+    // A real material is observed by stable map identity. Pickup hooks only
+    // queue a request; the post-job grant checks the exact inventory delta.
+    hyrulem_reset();r.failed=false;open_session(2,start,&r);remote(16,pose,&r);
+    float player_root[12]={1,0,0,3437.5f,0,1,0,235.9f,0,0,1,2101.5f};memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),player_root,sizeof player_root);
+    g_site.hm_pouch_mgr=HEAP_BASE+0x20;uint64_t pouch=HEAP_BASE+0xa0000;ST64(g_site.hm_pouch_mgr,pouch);ST32(pouch+0x44498,1);ST32(pouch+0x78,1);ST32(pouch+0x90,419);
+    ground_pouch_item=HEAP_BASE+0xf0000;ST32(ground_pouch_item+0x20,3);ST8(ground_pouch_item+0x25,1);ST64(ground_pouch_item+0x30,ground_pouch_item+0x80);strcpy((char *)(uintptr_t)(ground_pouch_item+0x80),"Item_Fruit_A");
+    rt_hyrulem_tick(&cpu,0x7000001000);rt_hyrulem_tick(&cpu,0x7000001000);
+    char *material_open[]={"hm_items_open","0123456789abcdef","0123456789abcdef01234567","3437.5","235.9","2101.5"};ground_open(6,material_open,&r);assert(!r.failed);
+    uint64_t apple=HEAP_BASE+0x70000,applemap=HEAP_BASE+0x78000;ST8(apple+0x64,1);ST64(apple+0x10,apple+0x900);strcpy((char *)(uintptr_t)(apple+0x900),"Item_Fruit_A");ST64(apple+0x7c8,applemap);ST32(applemap+0x58,123);
+    player_root[3]=3439.5f;memcpy((void *)(uintptr_t)(apple+0x398),player_root,sizeof player_root);for(int j=0;j<3;j++){float v=player_root[j*4+3];memcpy((void *)(uintptr_t)(applemap+0x5c+j*4),&v,4);}
+    ST64(head,apple+0x7b8);ST64(apple+0x7b8,head);ST32(creator+0x48,1);ground_scan_at=0;
+    ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(ground_seen_count==1&&ground_seen[0].hash==123);
+    char *material[]={"hm_item_state","0123456789abcdef","0123456789abcdef01234567","1","Item_Fruit_A","123","3439.5","235.9","2101.5","3439.5","235.9","2101.5","1","1","0","0"};ground_update(16,material,&r);assert(!r.failed);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    uint64_t accessor=HEAP_BASE+0xf1000,safe=HEAP_BASE+0xf1100;ST64(accessor+8,apple);ST64(safe+8,apple+0x900);Cpu pickup=before;pickup.x[0]=accessor;pickup.x[1]=safe;Cpu pickup_before=pickup;unsigned grant_before=inventory_grants,calls_before=calls;
+    assert(rt_hyrulem_item_pickup(&pickup));assert(!memcmp(&pickup,&pickup_before,sizeof pickup)&&calls==calls_before&&inventory_grants==grant_before);
+    assert(ground_events[0].request==1&&ground_events[0].id==1);assert(rt_hyrulem_item_pickup(&pickup)&&ground_next_request==1);
+    material[14]="1";material[15]="1";ground_update(16,material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    assert(inventory_grants==grant_before+1&&LD32(ground_pouch_item+0x20)==4&&ground_receipts[0].request==1&&ground_receipts[0].result==1);
+    ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_grants==grant_before+1); // lost receipt cannot grant twice
+    assert(!memcmp(&cpu,&before,sizeof cpu));
+    GroundState attempt={0};strcpy(attempt.source.name,"Item_Fruit_A");inventory_full=true;assert(ground_grant(&cpu,&attempt,0x7000001000,ground_replica[0].visual.storage)==-1&&inventory_grants==grant_before+1);inventory_full=false;
+    inventory_ambiguous=true;assert(ground_grant(&cpu,&attempt,0x7000001000,ground_replica[0].visual.storage)==0);inventory_ambiguous=false;ST32(ground_pouch_item+0x20,5);assert(!memcmp(&cpu,&before,sizeof cpu));
+    // Offline cleanup unpins a genuine map object without deleting it. Only
+    // our replica may be deleted. A non-whitelisted actor is never intercepted.
+    uint64_t untouched=HEAP_BASE+0x74000,untouched_map=HEAP_BASE+0x7a000;ST8(untouched+0x64,1);ST64(untouched+0x10,untouched+0x900);strcpy((char *)(uintptr_t)(untouched+0x900),"Item_Fruit_A");ST64(untouched+0x7c8,untouched_map);ST32(untouched_map+0x58,124);memcpy((void *)(uintptr_t)(untouched+0x398),player_root,sizeof player_root);for(int j=0;j<3;j++){float v=player_root[j*4+3];memcpy((void *)(uintptr_t)(untouched_map+0x5c+j*4),&v,4);}ST64(head,untouched+0x7b8);ST64(untouched+0x7b8,head);ground_scan_at=0;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    // A replica can join the creator list before its async handle is drained.
+    // Identify it from our handle, not from its position or a guessed name.
+    char *early_material[16];memcpy(early_material,material,sizeof early_material);early_material[3]="2";early_material[4]="Item_PlantGet_A";early_material[5]="0";early_material[12]="999";early_material[13]="0";early_material[14]="0";early_material[15]="0";ground_update(16,early_material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    uint64_t early=ground_pending_actor(ground_replica[1].visual.storage);assert(early&&ground_replica[1].visual.spawning&&!ground_replica[1].visual.actor);memcpy((void *)(uintptr_t)(early+0x398),player_root,sizeof player_root);
+    ST64(head,early+0x7b8);ST64(early+0x7b8,untouched+0x7b8);ST64(untouched+0x7b8,head);ST32(creator+0x48,2);ground_scan_at=0;ground_scan(&cpu,HEAP_BASE+0x1000,&ground_live);
+    for(int j=0;j<GROUND_MAX;j++)assert(ground_local[j].actor!=early);
+    ST64(accessor+8,early);ST64(safe+8,early+0xa00);calls_before=calls;assert(rt_hyrulem_item_pickup(&pickup)&&ground_events[1].id==2&&calls==calls_before);
+    ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    char *material_close[]={"hm_items_close","0123456789abcdef","0123456789abcdef01234567"};ground_close(3,material_close,&r);unsigned deleted=deletes;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(deletes==deleted+1&&LD8(untouched+0x64)==1&&!rt_hyrulem_item_pickup(&pickup));
+    puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");
     puts("map-enemy identity, deferred life application and no-heal checks passed");
     puts("native adapter lifetime, CPU preservation and queue checks passed");

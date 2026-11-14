@@ -1,5 +1,14 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.9 (experimental)
+
+- Launcher com páginas e conexão direta, segundo jogo expansível e porta de hospedagem independente.
+- Revisão: preferências do sandbox, restauração ambiental, prazo de equipamentos, repetição AS e interpolação inicial.
+- Experimento opcional de materiais de Hateno: fontes, drops, réplicas, reserva e recibos idempotentes, com limite de 32 identidades.
+- Hook de coleta adiada, ABI 6/protocolo 6, biblioteca do jogo precisa recompilar; diagnóstico .9.
+- Testes sintéticos e Windows; equipamentos/materiais ainda sem confirmação gráfica.
+- [Auditoria e limites](docs/AUDITORIA_0.5.0-preview.9.md).
+
 ## 0.5.0-preview.8 (experimental)
 
 - Ambiente do anfitrião com sucessão e restauração; seis peças de equipamento apenas visual.

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Native presence and nearby map-enemy health use protocol 5. Full Gen1 combat
+// Native presence and nearby map-enemy health use protocol 6. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
 	session       string

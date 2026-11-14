@@ -50,3 +50,28 @@ with tempfile.TemporaryDirectory(prefix='hyrulem-hook-') as temp:
     subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
     subprocess.run([str(p/'hook')],check=True)
 print('Post-job hook emission: argument, original load and CPU preservation passed')
+
+# A blocked award returns before its original stack write. An ordinary award
+# must retain the exact STP pre-index operation and every other CPU register.
+struct.pack_into('<I',image,0x180,0xa9bc7bfd)
+fragment=patches._hm_item_pickup(gen,base+0x180)
+source='''#include "cpu.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/mman.h>
+static _Bool blocked;
+_Bool rt_hyrulem_item_pickup(Cpu *c) { return blocked; }
+static void generated_hook(Cpu *c) { FRAGMENT }
+int main(void) {
+ assert(mmap((void *)0x7000000000ull,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)!=(void *)-1);
+ Cpu c;memset(&c,0xa5,sizeof c);c.sp=0x7000000f00ull;Cpu before=c;
+ blocked=1;generated_hook(&c);assert(!memcmp(&c,&before,sizeof c));
+ blocked=0;generated_hook(&c);Cpu expected=before;expected.sp-=0x40;
+ assert(!memcmp(&c,&expected,sizeof c)&&LD64(c.sp)==before.x[29]&&LD64(c.sp+8)==before.x[30]);return 0;
+}
+'''.replace('FRAGMENT',fragment)
+with tempfile.TemporaryDirectory(prefix='hyrulem-item-hook-') as temp:
+ p=Path(temp);(p/'hook.c').write_text(source)
+ subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
+ subprocess.run([str(p/'hook')],check=True)
+print('Material hook: queued return and original STP/CPU preservation passed')

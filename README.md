@@ -1,6 +1,6 @@
 # HyruleM
 
-Atualização experimental [0.5.0-preview.8](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.8): horário/clima do anfitrião, equipamento visual em seis slots e melhorias de animação/interpolação. Dois Links visíveis e em movimento foram confirmados pelo jogador na prévia 7; os novos visuais da 8 ainda precisam de teste em jogo. **ABI 5 / protocolo 5: atualize o ZIP inteiro nos dois clientes.** [Instalação, testes e limites](native/README.md) · [Host do mundo](docs/HOST_WORLD.md).
+Atualização experimental [0.5.0-preview.9](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.9): launcher reorganizado, correções da revisão e experimento opcional de materiais compartilhados em Hateno. **ABI 6 / protocolo 6: atualize o ZIP inteiro e aguarde recompilar a biblioteca do jogo.** A presença da prévia 7 foi confirmada pelo jogador; equipamentos e coleta novos ainda exigem validação gráfica. [Instalação e limites](native/README.md) · [Auditoria](docs/AUDITORIA_0.5.0-preview.9.md).
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 
