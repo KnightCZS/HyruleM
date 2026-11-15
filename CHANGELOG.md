@@ -1,6 +1,15 @@
 # Histórico do HyruleM
 
 
+## 0.5.0-preview.13
+
+- Hotfix da issue #8: `ControlStream` aceitava quadros longos em `hm_native_remote`, mas mantinha 256 caracteres para o novo `hm_native_sample`. A recusa ocorria no launcher antes do envio ao runtime.
+- Autoriza o comando combinado até 65.535 caracteres, mantendo rejeição de excesso, CR/LF/NUL e de comandos não contemplados.
+- Regressão com dois clientes multiplayer, dois sockets de controle reais e a classe de transporte usada pelo launcher, preservando 512 ossos/16 efeitos. Falhou na prévia 12 e passou após a correção. Teste dos dois comandos no limite exato e das entradas inválidas.
+- Sem mudança de ABI 9/protocolo 9, adaptador, hooks, gerador ou política de overlay. Uma biblioteca da prévia 12 já recompilada permanece reutilizável.
+- Não valida ainda visualmente os ajustes de cabelo/chapéu e o rastro do spin attack da prévia 12; remove o bloqueio de transporte que impedia essa avaliação.
+
+
 ## 0.5.0-preview.12
 
 - A confirmação do jogador estabelece roupas e animações de armas funcionando na prévia 11; o relatório confirma 121 ossos recebidos e aplicados no corpo dos dois clientes.

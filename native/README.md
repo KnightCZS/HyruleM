@@ -1,13 +1,15 @@
-# HyruleM 0.5.0-preview.12
+# HyruleM 0.5.0-preview.13
 
-O jogador confirmou roupas e animações de espada/escudo/arco funcionando na prévia 11. Esta atualização reduz esperas na apresentação remota, captura paletas próprias de cabelo/roupa e adiciona um caminho experimental para eventos visuais ELink. **O resultado gráfico da prévia 12 ainda precisa de teste com dois jogos/GPU.**
+Hotfix da [issue #8](https://github.com/KnightCZS/HyruleM/issues/8), “comando local inválido”. O launcher da prévia 12 aplicava o limite antigo de 256 caracteres ao comando combinado, recusando poses completas antes de elas chegarem ao runtime. `hm_native_sample` passa a ter o mesmo limite de 65.535 caracteres de `hm_native_remote`, preservando as verificações de tamanho e quebra de linha.
+
+A regressão usa o transporte TCP real do launcher com dois clientes, 512 ossos e 16 efeitos; falhou antes da correção e passou depois. Mantém o adaptador/recursos da prévia 12. **Não confirma ainda os resultados gráficos de cabelo/chapéu e do spin attack.**
 
 ## Atualizar e usar
 
 1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, incluindo `runtime-update`.
 2. Execute **Iniciar-Nativo.cmd**, que instala o runtime com backup.
-3. **Aguarde a recompilação da biblioteca privada:** os dois hooks novos de efeitos mudam a identidade do gerador. O gamelib continua ABI 4, mas a biblioteca das prévias 10/11 não contém os novos hooks. Não altere `.id` para contornar a verificação.
-4. Atualize os dois clientes e o servidor: **ABI 9 / protocolo 9**. O overlay também é regenerado localmente para os usuários visuais de efeitos; não contém arquivos de jogo no ZIP.
+3. **Se já recompilou a biblioteca na prévia 12, ela pode ser reutilizada.** Este hotfix não altera hooks, gerador, headers ou gamelib ABI 4. Vindo da prévia 11 ou anterior, aguarde a recompilação exigida pelos hooks da prévia 12. Não altere `.id`.
+4. Atualize os dois clientes e o servidor: **ABI 9 / protocolo 9**. O overlay da prévia 12 permanece compatível; é gerado localmente quando necessário. O ZIP não contém arquivos do jogo.
 5. Hospede e conecte pelo IP/porta escolhidos. Na primeira abertura desta versão, **Itens do mundo: ligados** é ativado no painel de hospedagem. Depois disso a escolha é preservada; pode desligá-la antes de hospedar. O servidor separado usa `--shared-items=true` por padrão, ou `--shared-items=false` para desligar.
 6. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.
 
@@ -67,7 +69,7 @@ Vida e inventários dos jogadores continuam pessoais. Uma pose de ataque remota 
 
 ## Diagnóstico e validação
 
-O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativos dos dois clientes e os inclui no próprio `diagnostico.txt`, sem congelar a janela. A coleta leve não lê memória privada de atores nem calcula hash das bibliotecas grandes. Há também telemetria `[hyrulem]` no log de cada processo enquanto a sessão está ativa. **Diagnosticar.cmd** gera `native-preview-diag.12`, incluindo:
+O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativos dos dois clientes e os inclui no próprio `diagnostico.txt`, sem congelar a janela. A coleta leve não lê memória privada de atores nem calcula hash das bibliotecas grandes. Há também telemetria `[hyrulem]` no log de cada processo enquanto a sessão está ativa. **Diagnosticar.cmd** gera `native-preview-diag.13`, incluindo:
 
 - `skeleton_captured`, `skeleton_received`, `body_pose_applied`, `skeleton_applied`, `armor_source`: captura, chegada pela rede, aplicação ao corpo, aplicação total e origem das roupas.
 - `pose_capture_status`, `pose_bones_skipped`: motivo da captura incompleta. A captura exige matrizes válidas e não publica um quadro corrompido.
@@ -81,4 +83,4 @@ O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativ
 
 Testes Go/TCP e race, testes C com memória sintética, emissão compilada dos hooks, 29 assinaturas únicas privadas e roundtrips do setter nativo foram executados. Builds/instalação Windows são verificados no CI. Isso não substitui jogar com dois clientes. `native_ready` permanece reservado à geração completa; não anuncia combate/IA/interação geral prontos.
 
-[Auditoria](../docs/AUDITORIA_0.5.0-preview.12.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.
+[Auditoria](../docs/AUDITORIA_0.5.0-preview.13.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.

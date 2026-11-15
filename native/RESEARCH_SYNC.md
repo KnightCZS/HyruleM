@@ -1,3 +1,9 @@
+# Hotfix 13: limite do transporte local — issue #8
+
+Os dois relatórios da prévia 12 indicam ABI 9 correto e 121 ossos capturados, mas nenhum recebido/aplicado no remoto. O título da issue relata “comando local inválido”. A reprodução com a classe real ControlStream demonstra a recusa de hm_native_sample acima de 256 caracteres; os testes anteriores de Bridge usavam GameControl simulado e não exercitavam essa validação. Um cliente também capturou 141 pedidos de efeitos, sem aplicação remota: isso não comprova o desenho desses efeitos.
+
+O hotfix autoriza a mesma carga limitada usada por hm_native_remote. O teste de dois clientes passa pela serialização TCP de controle e verifica ossos/efeitos no outro lado; testes adicionais conservam a recusa de excesso e CR/LF/NUL. Sem mudanças nativas: ABI 9, protocolo 9, gamelib ABI 4 e os mesmos inputs de geração/overlay da prévia 12.
+
 # Prévia 12: apresentação, paletas por peça e efeitos
 
 O novo relato confirma roupas e animações de armas funcionando na prévia 11, com 121 ossos no corpo de ambos os clientes. O atraso incluía buffer fixo de 100 ms, filtro de raiz adicional de 35 ms e duas consultas locais atendidas em quadros sequenciais. A prévia 12 usa reserva adaptativa, snapshots de 20 ms e consulta combinada.

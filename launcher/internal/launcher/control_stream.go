@@ -39,9 +39,9 @@ func (s *ControlStream) Command(ctx context.Context, cmd string) (ControlReply, 
 	if strings.HasPrefix(cmd, "hm_item_state ") {
 		limit = 511
 	}
-	if strings.HasPrefix(cmd, "hm_native_remote ") {
+	if strings.HasPrefix(cmd, "hm_native_remote ") || strings.HasPrefix(cmd, "hm_native_sample ") {
 		limit = 65535
-	} // Atomic pose + six visual pieces; runtime MAX_LINE is65536.
+	} // Both commands carry the same bounded pose/equipment/effect frame.
 	if s.Port < 1024 || s.Port > 65535 || cmd == "" || len(cmd) > limit || strings.ContainsAny(cmd, "\r\n\x00") {
 		return r, fmt.Errorf("comando local inválido")
 	}
