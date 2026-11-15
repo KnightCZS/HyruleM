@@ -15,7 +15,9 @@ typedef struct {
     bool force;
     unsigned slot;
 } Track;
-enum { GEAR_COUNT=6 };
+enum { GEAR_COUNT=6,POSE_MAX=512,POSE_B64_MAX=((8+POSE_MAX*52+2)/3)*4 };
+typedef struct {uint32_t name;float matrix[12];} PoseBone;
+typedef struct {unsigned count;PoseBone bones[POSE_MAX];} PoseFrame;
 typedef struct { char name[48];float matrix[12];uint64_t seq,received; } GearPose;
 typedef struct {
     char session[17];
@@ -25,6 +27,7 @@ typedef struct {
     bool visible;
     Track tracks[2];
     GearPose gear[GEAR_COUNT];
+    PoseFrame pose;
 } Desired;
 typedef struct {
     char state[32], error[96];
@@ -40,7 +43,7 @@ typedef struct {
     uint64_t activation_wait_ticks;
     uint64_t rejected_callbacks;
     char equipment_json[1536];
-    unsigned equipment_active;
+    unsigned equipment_active;unsigned skeleton_captured,skeleton_applied;bool armor_from_pouch;
 } Published;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static Desired desired;
@@ -60,6 +63,8 @@ static Track local_tracks[2], remote_tracks[2];
 static uint64_t capture_count;
 static float local_yaw;
 static GearPose local_gear[GEAR_COUNT];
+static PoseFrame local_pose;static unsigned pose_applied;
+static char local_armor[3][48];static uint64_t armor_read_at;static bool armor_from_pouch;
 static float local_position[3];
 static bool local_ready;
 typedef struct {uint64_t storage,actor,started;bool spawning,failed,active;char name[48],error[48];Track tracks[2];} GearVisual;
@@ -70,7 +75,7 @@ typedef struct {
     uint32_t hash;
     char name[64];
     float spawn[3], position[3];
-    int health;
+    int health;uint64_t damage;
 } EnemyHealth;
 static EnemyHealth world_seen[WORLD_MAX], health_pending[HEALTH_MAX];
 static int world_count, health_count;
@@ -126,7 +131,7 @@ static void publish(const char *state, const char *error, uint64_t seq, bool act
     pthread_mutex_lock(&mutex);
     snprintf(published.state,sizeof published.state,"%s",state);
     snprintf(published.error,sizeof published.error,"%s",error?error:"");
-    published.applied=seq; published.received=desired.seq; published.active=active;
+    published.armor_from_pouch=armor_from_pouch;published.skeleton_applied=pose_applied;published.applied=seq; published.received=desired.seq; published.active=active;
     published.ticks=tick_count; published.last_tick=now_ms();
     published.spawn_attempts=spawn_attempts;published.resource_fallback=resource_variant!=0;
     pthread_mutex_unlock(&mutex);
@@ -227,11 +232,12 @@ static uint64_t enemy_life(uint64_t a) {
     }
     return 0;
 }
+static bool map_damage_name(const char *);
 static bool enemy_name(uint64_t ptr,char out[64]) {
     if (!range(ptr,64)) return false;
     for (int i=0;i<64;i++) {
         unsigned char ch=LD8(ptr+i);out[i]=(char)ch;
-        if (!ch) return i>6 && !strncmp(out,"Enemy_",6);
+        if (!ch) return i>6 && map_damage_name(out);
         if (!((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch=='_')) return false;
     }
     return false;
@@ -242,12 +248,17 @@ static bool same_enemy(const EnemyHealth *a,const EnemyHealth *b) {
     return true;
 }
 static bool world_supported(void) { return supported() && g_site.hm_map_hash_init && g_site.pouch_lock && g_site.pouch_unlock; }
+static void ground_capture_destroy(Cpu *);
+#include "hyrulem_world.inc"
+
 static void world_scan(Cpu *c,uint64_t local,bool connected) {
     uint64_t now=now_ms();
     if (!connected || !world_supported() || now-last_world_scan<180) return;
     last_world_scan=now;
     EnemyHealth pending[HEALTH_MAX],seen[WORLD_MAX];int np=0,n=0;
     pthread_mutex_lock(&mutex);np=health_count;memcpy(pending,health_pending,sizeof *pending*np);pthread_mutex_unlock(&mutex);
+    EnemyHealth zeros[HEALTH_MAX];int nz;pthread_mutex_lock(&mutex);if(world_history_reset){world_history_count=0;world_history_reset=false;}nz=world_zero_count;memcpy(zeros,world_zero,sizeof *zeros*nz);pthread_mutex_unlock(&mutex);
+    for(int i=0;i<nz&&n<WORLD_MAX;i++){EnemyHealth e=zeros[i];EnemyHealth *h=world_note(&e);if(h)h->health=0;seen[n++]=e;}
     uint64_t creator=LD64(g_site.hm_creator);
     if(!range(creator,0xe8)||LD32(creator+0x4c)!=0x7b8)return;
     float origin[3]={read_float(local+0x3a4),read_float(local+0x3b4),read_float(local+0x3c4)};
@@ -271,12 +282,13 @@ static void world_scan(Cpu *c,uint64_t local,bool connected) {
         if(!isfinite(distance)||distance>140*140)continue;
         bool valid=true;for(int i=0;i<3;i++)if(!isfinite(e.spawn[i])||fabsf(e.spawn[i])>100000)valid=false;
         if(!valid)continue;
+        EnemyHealth *history=world_note(&e);
         for(int i=0;i<np;i++) if(same_enemy(&e,&pending[i])&&pending[i].health<e.health) {
             // Like the original mod's health convergence: never heal from an
             // old snapshot and never write another player's private life.
             e.health=pending[i].health;ST32(life,(uint32_t)e.health);break;
         }
-        seen[n++]=e;
+        if(history)history->health=e.health;bool duplicate=false;for(int j=0;j<n;j++)if(same_enemy(&seen[j],&e)){seen[j]=e;duplicate=true;break;}if(!duplicate)seen[n++]=e;
     }
     call(c,g_site.pouch_unlock,creator+0xa8,0,0,0,0,0,0);
     pthread_mutex_lock(&mutex);world_count=n;memcpy(world_seen,seen,sizeof *seen*n);pthread_mutex_unlock(&mutex);
@@ -322,13 +334,32 @@ static bool gear_name(const char *s,int slot) {
     const char *suffix=slot==3?"_Head":slot==4?"_Upper":"_Lower";size_t n=strlen(s),m=strlen(suffix);
     return !strncmp(s,"Armor_",6)&&n>m&&!strcmp(s+n-m,suffix);
 }
+#include "hyrulem_pose.inc"
+
+static void capture_armor(Cpu *c) {
+    uint64_t now=now_ms();if(armor_read_at&&now-armor_read_at<200)return;armor_read_at=now;
+    if(!range(g_site.hm_pouch_mgr,8)||!g_site.pouch_page_count||!g_site.pouch_page_item)return;
+    uint64_t mgr=LD64(g_site.hm_pouch_mgr);if(!range(mgr,0x4449c))return;
+    char names[3][48];for(int i=0;i<3;i++)snprintf(names[i],48,"Armor_Default_%s",i==0?"Head":i==1?"Upper":"Lower");
+    call(c,g_site.pouch_lock,mgr+0x28,0,0,0,0,0,0);int tabs=(int32_t)LD32(mgr+0x44498);bool valid=tabs>0&&tabs<=50&&LD32(mgr+0x78)+LD32(mgr+0x90)==420;
+    for(int tab=0;valid&&tab<tabs;tab++) {
+        int count=(int32_t)call(c,g_site.pouch_page_count,mgr,tab,0,0,0,0,0);if(count<0||count>20){valid=false;break;}
+        for(int slot=0;slot<count;slot++) {
+            uint64_t item=call(c,g_site.pouch_page_item,mgr,tab,slot,0,0,0,0);if(!range(item,0x38)||LD32(item+0x18)!=2||!LD8(item+0x24)||!LD8(item+0x25))continue;
+            uint64_t name=LD64(item+0x30);if(!range(name,48)||!memchr((void *)(uintptr_t)name,0,48))continue;
+            for(int i=0;i<3;i++)if(gear_name((const char *)(uintptr_t)name,i+3))snprintf(names[i],48,"%s",(const char *)(uintptr_t)name);
+        }
+    }
+    call(c,g_site.pouch_unlock,mgr+0x28,0,0,0,0,0,0);if(valid){memcpy(local_armor,names,sizeof names);armor_from_pouch=true;}
+}
 static void capture_gear(Cpu *c,uint64_t local) {
+    capture_armor(c);
     GearPose gear[GEAR_COUNT]={0};float xyz[3]={read_float(local+0x3a4),read_float(local+0x3b4),read_float(local+0x3c4)};
     if(!isfinite(xyz[0])||!isfinite(xyz[1])||!isfinite(xyz[2])||fabsf(xyz[0])>100000||fabsf(xyz[1])>50000||fabsf(xyz[2])>100000||(xyz[0]==0&&xyz[1]==0&&xyz[2]==0)) {pthread_mutex_lock(&mutex);local_ready=false;pthread_mutex_unlock(&mutex);return;}
     float yaw=atan2f(read_float(local+0x3a0),read_float(local+0x398)),s=sinf(yaw),co=cosf(yaw);
     for(int i=0;i<GEAR_COUNT;i++) {
         GearPose *g=&gear[i];g->matrix[0]=g->matrix[5]=g->matrix[10]=1;
-        if(i>=3)snprintf(g->name,sizeof g->name,"Armor_Default_%s",i==3?"Head":i==4?"Upper":"Lower");
+        if(i>=3){if(local_armor[i-3][0])snprintf(g->name,sizeof g->name,"%s",local_armor[i-3]);else snprintf(g->name,sizeof g->name,"Armor_Default_%s",i==3?"Head":i==4?"Upper":"Lower");continue;}
         if(!g_site.player_equipment)continue;
         uint64_t a=call(c,g_site.player_equipment,local,i,0,0,0,0,0);
         if(a==local||!range(a,0x600)||LD8(a+0x64)!=1)continue;
@@ -346,7 +377,8 @@ static void capture_gear(Cpu *c,uint64_t local) {
         for(int row=0;row<3;row++){float norm=0;for(int j=0;j<3;j++)norm+=g->matrix[row*4+j]*g->matrix[row*4+j];if(norm<.0001f)valid=false;}
         if(!valid){g->name[0]=0;memset(g->matrix,0,sizeof g->matrix);g->matrix[0]=g->matrix[5]=g->matrix[10]=1;}
     }
-    pthread_mutex_lock(&mutex);memcpy(local_gear,gear,sizeof gear);memcpy(local_position,xyz,sizeof xyz);local_ready=true;pthread_mutex_unlock(&mutex);
+    PoseFrame pose;pose_capture(local,xyz,yaw,&pose);
+    pthread_mutex_lock(&mutex);local_pose=pose;published.skeleton_captured=pose.count;memcpy(local_gear,gear,sizeof gear);memcpy(local_position,xyz,sizeof xyz);local_ready=true;pthread_mutex_unlock(&mutex);
 }
 static void gear_tick(Cpu *c,Desired *d,uint64_t vt,bool animate) {
     for(int i=0;i<GEAR_COUNT;i++) {
@@ -381,7 +413,7 @@ static void gear_tick(Cpu *c,Desired *d,uint64_t vt,bool animate) {
         if(!range(LD64(ref.ptr+0x4e0),0xa4)){release_at(c,st);if(now_ms()-g->started>15000){g->failed=true;snprintf(g->error,sizeof g->error,"model-not-loaded");remove_gear(c,g);}continue;}
         float s=sinf(d->yaw),co=cosf(d->yaw),m[12];for(int j=0;j<4;j++){m[j]=co*p->matrix[j]+s*p->matrix[8+j];m[4+j]=p->matrix[4+j];m[8+j]=-s*p->matrix[j]+co*p->matrix[8+j];}m[3]+=d->x;m[7]+=d->y;m[11]+=d->z;
         memcpy((void *)(uintptr_t)(st+MATRIX),m,sizeof m);call(c,g_site.hm_set_mtx,ref.ptr,st+MATRIX,0,0,0,0,0);call(c,g_site.hm_set_mtx,ref.ptr,st+MATRIX,1,0,0,0,0);
-        if(animate&&i>=3)play_tracks(c,st,ref.ptr,d,g->tracks,vt);release_at(c,st);g->active=true;g->started=now_ms();
+        if(animate&&i>=3&&!d->pose.count)play_tracks(c,st,ref.ptr,d,g->tracks,vt);if(i>=3)pose_applied+=pose_apply(c,ref.ptr,st,d);release_at(c,st);g->active=true;g->started=now_ms();
     }
     char json[1536];size_t used=0;unsigned active=0;json[used++]='[';
     for(int i=0;i<GEAR_COUNT;i++){GearVisual *g=&gear_visual[i];active+=g->active;int n=snprintf(json+used,sizeof json-used,"%s{\"slot\":%d,\"name\":\"%s\",\"active\":%s,\"error\":\"%s\"}",i?",":"",i,g->name,g->active?"true":"false",g->error);if(n<0||(size_t)n>=sizeof json-used-2)break;used+=(size_t)n;}
@@ -409,7 +441,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     if (!range(info,0x68)) return;
     uint64_t local=LD64(info+0x60);
     if (!range(local,0x600)||LD8(local+0x64)!=1) return;
-    capture_gear(c,local);
+    capture_gear(c,local);pose_applied=0;
     tick_count++;
     pthread_mutex_lock(&mutex);
     local_yaw=atan2f(read_float(local+0x3a0),read_float(local+0x398));
@@ -524,7 +556,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     for(int i=0;i<3;i++)published.observed[i]=read_float(a+0x3a4+i*16);
     pthread_mutex_unlock(&mutex);
     smooth_pose(&d,now_ms());
-    set_pose(c,a,&d,safe_string_vtable,resource_variant==0&&animation_ready); release_local(c);
+    set_pose(c,a,&d,safe_string_vtable,resource_variant==0&&animation_ready&&!d.pose.count);pose_applied=pose_apply(c,a,storage,&d); release_local(c);
     gear_tick(c,&d,safe_string_vtable,resource_variant==0&&animation_ready);
     applied=d.seq; publish(resource_variant?"fallback-active":animation_ready?"active":"active-no-animation","",applied,true);
 }
@@ -534,8 +566,8 @@ RT_ON_RESET(hyrulem_reset) {
     pthread_mutex_lock(&mutex);
     memset(&desired,0,sizeof desired); memset(&published,0,sizeof published);
     memset(local_tracks,0,sizeof local_tracks);memset(remote_tracks,0,sizeof remote_tracks);capture_count=0;local_yaw=0;
-    memset(local_gear,0,sizeof local_gear);memset(local_position,0,sizeof local_position);local_ready=false;
-    world_count=health_count=0;last_world_scan=0;
+    memset(&local_pose,0,sizeof local_pose);pose_applied=0;memset(local_armor,0,sizeof local_armor);armor_read_at=0;armor_from_pouch=false;memset(local_gear,0,sizeof local_gear);memset(local_position,0,sizeof local_position);local_ready=false;
+    world_count=health_count=world_history_count=world_zero_count=0;world_history_reset=false;last_world_scan=0;
     pthread_mutex_unlock(&mutex);
     storage=actor=spawning_at=applied=tick_count=activation_wait_ticks=activation_wait_at=0; session[0]=0;
     activation_waiting=false;
@@ -561,14 +593,15 @@ static bool number(const char *s, float *out, float limit) {
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",6); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",7); control_field_bool(r,"native_preview",supported());
+    control_field_bool(r,"skeletal_pose",supported()&&pose_supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());
-    control_field_bool(r,"shared_ground_materials",ground_supported());
+    control_field_bool(r,"shared_ground_materials",ground_supported());control_field_bool(r,"native_weapon_drops",ground_supported());
     control_field_bool(r,"actor_job_barrier",supported());
     control_field_bool(r,"animation_capture",supported()&&g_site.hm_as_play_entry);
     control_field_bool(r,"visual_fallback",supported());
-    control_field_bool(r,"shared_enemy_health",world_supported());
+    control_field_bool(r,"shared_enemy_health",world_supported());control_field_bool(r,"shared_map_damage",world_supported());
     // These are end-to-end Gen1 capabilities, not addresses found in a binary.
     // Keep them false until combat, pickups and AI are wired and play-tested.
     const char *names[]={"native_actors","animation","collision","personal_vitals","personal_inventory",
@@ -578,12 +611,12 @@ static void caps(int argc,char **argv,ControlReply *r) {
 static void open_session(int argc,char **argv,ControlReply *r) {
     if (argc!=2 || !token(argv[1]) || !supported()) { control_fail(r,"Native preview disabled, incompatible or invalid session"); return; }
     pthread_mutex_lock(&mutex);
-    if (strcmp(desired.session,argv[1])) { memset(&desired,0,sizeof desired); health_count=world_count=0; snprintf(desired.session,sizeof desired.session,"%s",argv[1]); }
+    if (strcmp(desired.session,argv[1])) { memset(&desired,0,sizeof desired); health_count=world_count=world_zero_count=0;world_history_reset=true; snprintf(desired.session,sizeof desired.session,"%s",argv[1]); }
     pthread_mutex_unlock(&mutex); control_field_bool(r,"queued",true);
 }
 static void remote(int argc,char **argv,ControlReply *r) {
     Desired next={0};
-    if ((argc!=16&&argc!=94) || !supported() || !token(argv[1]) || !integer(argv[2],&next.seq) ||
+    if ((argc!=16&&argc!=94&&argc!=95) || !supported() || !token(argv[1]) || !integer(argv[2],&next.seq) ||
         !number(argv[3],&next.x,100000) || !number(argv[4],&next.y,50000) ||
         !number(argv[5],&next.z,100000) || !number(argv[6],&next.yaw,10000)) {
         control_fail(r,"Invalid native remote pose"); return;
@@ -602,12 +635,13 @@ static void remote(int argc,char **argv,ControlReply *r) {
         if(strcmp(argv[14+i],"0")&&strcmp(argv[14+i],"1")){control_fail(r,"Invalid animation slot");return;}
         t->slot=!strcmp(argv[14+i],"1");
     }
-    if(argc==94)for(int i=0;i<GEAR_COUNT;i++) {
+    if(argc>=94)for(int i=0;i<GEAR_COUNT;i++) {
         int at=16+i*13;GearPose *g=&next.gear[i];
         if(strcmp(argv[at],"-")){if(!gear_name(argv[at],i)){control_fail(r,"Invalid visual equipment name");return;}snprintf(g->name,sizeof g->name,"%s",argv[at]);}
         for(int j=0;j<12;j++)if(!number(argv[at+1+j],&g->matrix[j],j%4==3?32:8)){control_fail(r,"Invalid visual equipment matrix");return;}
         g->seq=next.seq;g->received=now_ms();
     }
+    if(argc==95&&!pose_decode(argv[94],&next.pose)){control_fail(r,"Invalid skeletal pose");return;}
     pthread_mutex_lock(&mutex);
     bool ok=!strcmp(desired.session,argv[1]) && next.seq>desired.seq;
     if (ok) { snprintf(next.session,sizeof next.session,"%s",argv[1]); next.visible=true; next.received=now_ms();if(argc==16)memcpy(next.gear,desired.gear,sizeof next.gear); desired=next; }
@@ -656,11 +690,13 @@ static void status(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"activation_wait_ticks",p.activation_wait_ticks);
     control_field_str(r,"callback_phase","post-actor-jobs");
     control_field_int(r,"rejected_callbacks",p.rejected_callbacks);
+    control_field_str(r,"armor_source",p.armor_from_pouch?"personal-equipped-pouch":"awaiting-pouch");control_field_int(r,"skeleton_applied",p.skeleton_applied);control_field_int(r,"skeleton_captured",p.skeleton_captured);
     control_field_int(r,"equipment_active",p.equipment_active);control_field_str(r,"equipment_json",p.equipment_json[0]?p.equipment_json:"[]");
 }
 static void local_state(int argc,char **argv,ControlReply *r) {
-    Track tracks[2];GearPose gear[GEAR_COUNT];float xyz[3],yaw;uint64_t count;bool ready;
-    pthread_mutex_lock(&mutex);memcpy(tracks,local_tracks,sizeof tracks);memcpy(gear,local_gear,sizeof gear);memcpy(xyz,local_position,sizeof xyz);yaw=local_yaw;count=capture_count;ready=local_ready&&published.last_tick&&now_ms()-published.last_tick<1000;pthread_mutex_unlock(&mutex);
+    Track tracks[2];GearPose gear[GEAR_COUNT];PoseFrame pose;float xyz[3],yaw;uint64_t count;bool ready;
+    pthread_mutex_lock(&mutex);memcpy(tracks,local_tracks,sizeof tracks);memcpy(gear,local_gear,sizeof gear);pose=local_pose;memcpy(xyz,local_position,sizeof xyz);yaw=local_yaw;count=capture_count;ready=local_ready&&published.last_tick&&now_ms()-published.last_tick<1000;pthread_mutex_unlock(&mutex);
+    char skeleton[POSE_B64_MAX+1];skeleton[0]=0;if(pose.count)pose_encode(&pose,skeleton);control_field_str(r,"skeleton_b64",skeleton);control_field_int(r,"skeleton_bones",pose.count);
     control_field_bool(r,"ready",ready);control_field_num(r,"x",xyz[0]);control_field_num(r,"y",xyz[1]);control_field_num(r,"z",xyz[2]);
     control_field_num(r,"yaw",yaw);control_field_int(r,"capture_count",count);
     control_field_str(r,"upper",tracks[0].name);control_field_int(r,"upper_sequence",tracks[0].sequence);control_field_bool(r,"upper_force",tracks[0].force);
@@ -680,24 +716,26 @@ static void world_status(int argc,char **argv,ControlReply *r) {
     char json[24000];size_t used=0;json[used++]='[';
     for(int i=0;i<n;i++) {
         EnemyHealth *e=&copy[i];
-        int written=snprintf(json+used,sizeof json-used,"%s{\"hash\":%u,\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"position\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"health\":%d}",i?",":"",e->hash,e->name,e->spawn[0],e->spawn[1],e->spawn[2],e->position[0],e->position[1],e->position[2],e->health);
+        int written=snprintf(json+used,sizeof json-used,"%s{\"hash\":%u,\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"position\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"health\":%d,\"damage\":%llu}",i?",":"",e->hash,e->name,e->spawn[0],e->spawn[1],e->spawn[2],e->position[0],e->position[1],e->position[2],e->health,(unsigned long long)e->damage);
         if(written<0||(size_t)written>=sizeof json-used-2){control_fail(r,"Enemy snapshot overflow");return;}used+=(size_t)written;
     }
     json[used++]=']';json[used]=0;control_field_str(r,"enemies_json",json);control_field_int(r,"count",n);
 }
 static void receive_health(int argc,char **argv,ControlReply *r) {
     EnemyHealth e={0};uint64_t hash,hp;
-    if(argc!=8||!world_supported()||!token(argv[1])||!integer(argv[2],&hash)||hash>=UINT32_MAX||strlen(argv[3])>=sizeof e.name||strncmp(argv[3],"Enemy_",6)||!number(argv[4],&e.spawn[0],100000)||!number(argv[5],&e.spawn[1],50000)||!number(argv[6],&e.spawn[2],100000)) {control_fail(r,"Invalid enemy health");return;}
+    if(argc!=8||!world_supported()||!token(argv[1])||!integer(argv[2],&hash)||hash>=UINT32_MAX||strlen(argv[3])>=sizeof e.name||!map_damage_name(argv[3])||!number(argv[4],&e.spawn[0],100000)||!number(argv[5],&e.spawn[1],50000)||!number(argv[6],&e.spawn[2],100000)) {control_fail(r,"Invalid enemy health");return;}
     if(!strcmp(argv[7],"0"))hp=0;else if(!integer(argv[7],&hp)||hp>1000000){control_fail(r,"Invalid enemy life");return;}
     for(const char *p=argv[3];*p;p++)if(!((*p>='A'&&*p<='Z')||(*p>='a'&&*p<='z')||(*p>='0'&&*p<='9')||*p=='_')){control_fail(r,"Invalid enemy actor");return;}
     e.hash=(uint32_t)hash;e.health=(int)hp;strcpy(e.name,argv[3]);
     pthread_mutex_lock(&mutex);
     bool ok=!strcmp(desired.session,argv[1]);int at=0;while(at<health_count&&!same_enemy(&e,&health_pending[at]))at++;
     if(ok&&at<HEALTH_MAX){if(at==health_count)health_pending[health_count++]=e;else if(e.health<health_pending[at].health)health_pending[at].health=e.health;}else ok=false;
+    if(ok&&e.health==0)for(int i=0;i<world_zero_count;i++)if(same_enemy(&e,&world_zero[i])){world_zero[i]=world_zero[--world_zero_count];break;}
     pthread_mutex_unlock(&mutex);if(!ok){control_fail(r,"Wrong session or enemy queue full");return;}control_field_bool(r,"queued",true);
 }
 void control_hyrulem_init(void) {
     static const ControlCmd cmds[]={
+        {"hm_native_drop_local","<session> <world> <local>","Return an unenrolled native drop to local play",ground_native_local,0},
         {"hm_item_drop","<session> <world> <id> <request>","Queue a server-prepared one-apple drop",ground_drop_command,0},
         {"hm_items_open","<session> <world> <x> <y> <z>","Enable bounded experimental material sharing",ground_open,0},
         {"hm_items_close","<session> <world>","Stop sharing and clean only owned replicas",ground_close,0},

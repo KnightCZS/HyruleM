@@ -40,8 +40,8 @@ func (s *ControlStream) Command(ctx context.Context, cmd string) (ControlReply, 
 		limit = 511
 	}
 	if strings.HasPrefix(cmd, "hm_native_remote ") {
-		limit = 4095
-	} // Atomic pose + six visual pieces; runtime MAX_LINE is4096.
+		limit = 65535
+	} // Atomic pose + six visual pieces; runtime MAX_LINE is65536.
 	if s.Port < 1024 || s.Port > 65535 || cmd == "" || len(cmd) > limit || strings.ContainsAny(cmd, "\r\n\x00") {
 		return r, fmt.Errorf("comando local inválido")
 	}

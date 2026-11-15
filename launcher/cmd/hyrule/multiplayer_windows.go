@@ -60,13 +60,14 @@ type mpSlot struct {
 	cancel        context.CancelFunc
 }
 type mpSettings struct {
-	IP         string
-	BindIP     string
-	Port       int
-	HostPort   int
-	ShareItems bool
-	Names      [2]string
-	FOV        float64
+	IP            string
+	BindIP        string
+	Port          int
+	HostPort      int
+	ShareItems    bool
+	WorldDefaults int
+	Names         [2]string
+	FOV           float64
 }
 type multiplayerUI struct {
 	a            *app
@@ -117,6 +118,10 @@ func (a *app) openMultiplayer() {
 	u := &multiplayerUI{a: a, controls: map[int]uintptr{}, placements: map[int]rect{}, preparer: core.NewMultiplayerPreparer(), settings: mpSettings{IP: "127.0.0.1", Port: 5050, HostPort: 5050, BindIP: "0.0.0.0", Names: [2]string{"Jogador 1", "Jogador 2"}, FOV: 40}}
 	if b, e := os.ReadFile(filepath.Join(a.root, "multiplayer.json")); e == nil {
 		_ = json.Unmarshal(b, &u.settings)
+	}
+	if os.Getenv(core.NativePreviewEnv) == "1" && u.settings.WorldDefaults < 1 {
+		u.settings.ShareItems = true
+		u.settings.WorldDefaults = 1
 	}
 	if _, e := mp.Address(u.settings.IP, strconv.Itoa(u.settings.Port)); e != nil {
 		u.settings.IP = "127.0.0.1"
@@ -185,7 +190,7 @@ func (u *multiplayerUI) build() {
 	for _, v := range []struct {
 		id    int
 		label string
-	}{{mpDrop1, "Largar 1 maçã"}, {mpDrop2, "Largar maçã · J2"}, {mpItemsMode, "Materiais: desligados"}, {mpHost, "Hospedar sessão"}, {mpArrange, "Organizar janelas"}, {mpNetworks, "Atualizar IPs"}, {mpLogs, "Diagnóstico"}, {mpSpawn, "Reunir em Hateno"}, {mpSetFOV, "Aplicar FOV"}, {mpLocalTest, "+ Testar dois jogos neste PC"}} {
+	}{{mpDrop1, "Largar 1 maçã"}, {mpDrop2, "Largar maçã · J2"}, {mpItemsMode, "Itens do mundo: desligados"}, {mpHost, "Hospedar sessão"}, {mpArrange, "Organizar janelas"}, {mpNetworks, "Atualizar IPs"}, {mpLogs, "Diagnóstico"}, {mpSpawn, "Reunir em Hateno"}, {mpSetFOV, "Aplicar FOV"}, {mpLocalTest, "+ Testar dois jogos neste PC"}} {
 		u.add(v.id, "BUTTON", v.label, 0x10000|0xb, 0, 0, 10, 10)
 	}
 	u.add(mpIP, "EDIT", u.settings.IP, 0x00810080, 0, 0, 10, 10)
@@ -618,7 +623,7 @@ func multiplayerProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		case mpDrop1, mpDrop2:
 			i := id - mpDrop1
 			if b := u.slots[i].bridge; b == nil || !b.RequestAppleDrop() {
-				u.say(i, "Ative os materiais ao hospedar, conecte e aguarde o mundo de Hateno.")
+				u.say(i, "Ative os itens do mundo ao hospedar, conecte e aguarde o mundo de Hateno.")
 			}
 			u.updateDropButtons()
 		case mpItemsMode:
@@ -747,9 +752,9 @@ func (u *multiplayerUI) updateFont() {
 }
 
 func (u *multiplayerUI) updateItemsLabel() {
-	label := "Materiais: desligados"
+	label := "Itens do mundo: desligados"
 	if u.settings.ShareItems {
-		label = "Materiais: experimental"
+		label = "Itens do mundo: ligados"
 	}
 	u.set(mpItemsMode, label)
 	invalidate.Call(u.window, 0, 0)

@@ -19,14 +19,16 @@ type ServerConfig struct {
 	SharedItems bool
 }
 type serverPeer struct {
-	conn         net.Conn
-	player       Player
-	out          chan Message
-	done         chan struct{}
-	once         sync.Once
-	poseAt       time.Time
-	groundClaims map[uint64]GroundClaim
-	groundDrop   *GroundDropResult
+	conn           net.Conn
+	player         Player
+	out            chan Message
+	done           chan struct{}
+	once           sync.Once
+	poseAt         time.Time
+	groundClaims   map[uint64]GroundClaim
+	groundDrop     *GroundDropResult
+	groundRejected map[uint64]bool
+	damageLedger   map[string]uint64
 }
 
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
@@ -214,11 +216,18 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 			s.mu.Lock()
 			p.player.Name = newName
 			s.mu.Unlock()
-		case "enemy_health":
+		case "enemy_health", "map_damage":
 			s.mu.Lock()
 			var err error
 			if p.player.Pose.Ready && time.Since(p.poseAt) < 2*time.Second {
-				err = mergeEnemyHealth(s.enemies, m.Enemies, p.player.Pose)
+				if m.Type == "map_damage" {
+					if p.damageLedger == nil {
+						p.damageLedger = map[string]uint64{}
+					}
+					err = mergeMapDamage(s.enemies, p.damageLedger, m.WorldOrigin, m.Enemies, p.player.Pose)
+				} else {
+					err = mergeEnemyHealth(s.enemies, m.Enemies, p.player.Pose)
+				}
 			}
 			s.mu.Unlock()
 			if err != nil {
@@ -240,10 +249,12 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				s.environmentAt = time.Now()
 			}
 			s.mu.Unlock()
-		case "ground_observe", "ground_claim", "ground_receipt", "ground_drop_prepare", "ground_drop_finish":
+		case "ground_destroy", "ground_observe", "ground_claim", "ground_receipt", "ground_drop_prepare", "ground_drop_finish":
 			s.mu.Lock()
 			var err error
 			switch m.Type {
+			case "ground_destroy":
+				err = s.destroyGround(p, m.GroundDestroyed, time.Now())
 			case "ground_drop_prepare", "ground_drop_finish":
 				if m.GroundDrop == nil {
 					err = fmt.Errorf("drop ausente")
@@ -253,6 +264,9 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 					err = s.finishGroundDrop(p, *m.GroundDrop)
 				}
 			case "ground_observe":
+				// This is a complete native observation snapshot. Keep rejection
+				// acknowledgements for sources still awaiting local handoff only.
+				p.groundRejected = map[uint64]bool{}
 				err = s.observeGround(p, m.GroundSources, time.Now())
 			case "ground_claim":
 				if m.GroundClaim == nil {
@@ -318,6 +332,9 @@ func (s *Server) broadcast(ctx context.Context) {
 			if s.cfg.SharedItems {
 				s.mu.Lock()
 				packet.GroundItems, packet.GroundClaims = s.groundSnapshot(p)
+				for id := range p.groundRejected {
+					packet.GroundRejected = append(packet.GroundRejected, id)
+				}
 				if p.groundDrop != nil {
 					v := *p.groundDrop
 					packet.GroundDropResult = &v

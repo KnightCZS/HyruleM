@@ -11,7 +11,17 @@ import (
 const MaxGroundItems = 32
 const GroundRadius = 90.0
 
+func GroundWeapon(s string) bool {
+	if s == "Weapon_Sword_070" || s == "Weapon_Sword_502" {
+		return false
+	}
+	return equipmentName(s, 0) || equipmentName(s, 1) || equipmentName(s, 2)
+}
+
 func GroundActor(s string) bool {
+	if GroundWeapon(s) {
+		return true
+	}
 	switch s {
 	case "Item_Fruit_A", "Item_Fruit_B", "Item_Fruit_F", "Item_Mushroom_A", "Item_PlantGet_A":
 		return true
@@ -20,13 +30,17 @@ func GroundActor(s string) bool {
 }
 
 type GroundSource struct {
-	Local    uint64 `json:"local"`
-	Drop     bool   `json:"drop,omitempty"`
-	Origin   string `json:"origin,omitempty"`
-	Hash     uint32 `json:"hash"`
-	Actor    string `json:"actor"`
-	Spawn    Vec3   `json:"spawn"`
-	Position Vec3   `json:"position"`
+	Local         uint64 `json:"local"`
+	NativeDrop    bool   `json:"native_drop,omitempty"`
+	Value         int    `json:"value,omitempty"`
+	Modifier      uint32 `json:"modifier,omitempty"`
+	ModifierValue int    `json:"modifier_value,omitempty"`
+	Drop          bool   `json:"drop,omitempty"`
+	Origin        string `json:"origin,omitempty"`
+	Hash          uint32 `json:"hash"`
+	Actor         string `json:"actor"`
+	Spawn         Vec3   `json:"spawn"`
+	Position      Vec3   `json:"position"`
 }
 
 func validOrigin(s string) bool {
@@ -41,6 +55,16 @@ func validOrigin(s string) bool {
 	return true
 }
 func (g GroundSource) Valid() bool {
+	if GroundWeapon(g.Actor) {
+		if g.Value <= 0 || g.Value > 1000000 || g.ModifierValue < -100000 || g.ModifierValue > 100000 {
+			return false
+		}
+	} else if g.Value != 0 || g.Modifier != 0 || g.ModifierValue != 0 || g.NativeDrop {
+		return false
+	}
+	if g.NativeDrop && (!g.Drop || g.Local < 0x200000000) {
+		return false
+	}
 	return (g.Hash != 0 && !g.Drop || g.Hash == 0 && g.Drop && validOrigin(g.Origin)) && g.Local > 0 && g.Local <= math.MaxInt64 && GroundActor(g.Actor) && g.Spawn.Valid() && g.Position.Valid() && g.Hash != math.MaxUint32
 }
 func (g GroundSource) key(owner string) string {
@@ -107,6 +131,7 @@ type GroundView struct {
 	Items      []GroundItem
 	Claims     []GroundClaim
 	At         time.Time
+	Rejected   []uint64
 	DropResult *GroundDropResult
 }
 
@@ -116,6 +141,7 @@ func (c *Client) Ground() GroundView {
 	v := c.ground
 	v.Items = append([]GroundItem(nil), v.Items...)
 	v.Claims = append([]GroundClaim(nil), v.Claims...)
+	v.Rejected = append([]uint64(nil), v.Rejected...)
 	if v.DropResult != nil {
 		copy := *v.DropResult
 		v.DropResult = &copy
@@ -163,16 +189,24 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 		if g.Hash != 0 && p.player.ID != s.environmentHost {
 			continue
 		}
-		if g.Hash == 0 && g.Position.Sub(p.player.Pose.Position).Len() > 20 {
+		if g.Hash == 0 && g.Position.Sub(p.player.Pose.Position).Len() > 140 {
 			continue
 		}
 		key := g.key(p.player.ID)
 		id := s.groundKeys[key]
 		if id == 0 {
-			if g.Drop {
+			if g.Drop && !g.NativeDrop {
 				continue
 			}
 			if len(s.groundItems) >= MaxGroundItems {
+				if g.NativeDrop {
+					if p.groundRejected == nil {
+						p.groundRejected = map[uint64]bool{}
+					}
+					if len(p.groundRejected) < 32 {
+						p.groundRejected[g.Local] = true
+					}
+				}
 				continue
 			}
 			s.groundCounter++
@@ -185,6 +219,12 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 			continue
 		}
 		if item.State == "available" {
+			if item.Source.Drop && item.Owner != p.player.ID {
+				continue
+			}
+			if GroundWeapon(g.Actor) && (g.Modifier != item.Source.Modifier || g.ModifierValue != item.Source.ModifierValue || g.Value > item.Source.Value) {
+				continue
+			}
 			item.Source = g
 			item.Owner = p.player.ID
 			s.groundItems[id] = item
@@ -248,7 +288,7 @@ func (s *Server) claimGround(p *serverPeer, req GroundClaim, now time.Time) erro
 		return nil
 	}
 	req.Item = id
-	if item.Source.Actor != req.Source.Actor || item.Source.key(item.Owner) != req.Source.key(p.player.ID) || item.Source.Position.Sub(p.player.Pose.Position).Len() > 3.5 {
+	if item.Source.Actor != req.Source.Actor || item.Source.Value != req.Source.Value || item.Source.Modifier != req.Source.Modifier || item.Source.ModifierValue != req.Source.ModifierValue || item.Source.key(item.Owner) != req.Source.key(p.player.ID) || item.Source.Position.Sub(p.player.Pose.Position).Len() > 3.5 {
 		p.groundClaims[req.Request] = req
 		return nil
 	}
@@ -308,4 +348,27 @@ func (s *Server) groundSnapshot(p *serverPeer) ([]GroundItem, []GroundClaim) {
 	pending = append(pending, terminal...)
 	sort.Slice(pending, func(i, j int) bool { return pending[i].Request < pending[j].Request })
 	return items, pending
+}
+
+func (c *Client) DestroyGround(ids []uint64) error {
+	return c.send(Message{Type: "ground_destroy", GroundDestroyed: ids})
+}
+func (s *Server) destroyGround(p *serverPeer, ids []uint64, now time.Time) error {
+	if len(ids) > MaxGroundItems {
+		return fmt.Errorf("eventos de quebra excedem limite")
+	}
+	if !s.groundFresh(p, now) {
+		return nil
+	}
+	for _, id := range ids {
+		item, ok := s.groundItems[id]
+		if !ok || !GroundWeapon(item.Source.Actor) || item.Owner != p.player.ID || item.State != "available" {
+			continue
+		}
+		item.State = "cancelled"
+		item.Claimant = ""
+		item.Request = 0
+		s.groundItems[id] = item
+	}
+	return nil
 }

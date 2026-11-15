@@ -6,7 +6,7 @@ Quatro novos sites próprios da 1.9.0 identificam entrada de aquisição, item-g
 
 O experimento vem desligado: cinco materiais comuns em até 90 m de Hateno, 32 identidades por sessão. O servidor arbitra a coleta, aceita observações identificadas do mapa do host e um descarte explícito de maçã do dono, preparado antes de debitar e confirmado pela diferença de quantidade. Atores naturais sem hash não são classificados como drops; o menu normal de descarte fica fora desta etapa. Uma concessão incerta não libera nova concessão. O caminho nativo e seus efeitos na GPU/primeira coleta ainda requerem validação em jogo; isso não constitui sincronização geral de eventos.
 
-[Auditoria](../docs/AUDITORIA_0.5.0-preview.9.md) e [instalação/limites](README.md).
+[Auditoria](../docs/AUDITORIA_0.5.0-preview.10.md) e [instalação/limites](README.md).
 
 ## Histórico
 
@@ -63,3 +63,8 @@ Vida compartilhada é uma primeira camada. IA por proximidade, coleta exclusiva,
 O relatório acessível informa `preview_abi: 1`, `hm_native_status` sem contadores de atualização e comando `hm_world_status` desconhecido. O SHA-256 do executável informado difere do binário publicado na prévia 2. Os outros dois relatórios tiveram conexão de controle recusada. Esses dados demonstram uso do adaptador antigo; não demonstram que a correção ABI 2 tenha executado.
 
 A prévia 3 trata a instalação como parte do fluxo: atalho confere e instala no destino configurado, modo do EXE é selecionado pelo pacote, launcher exige identidade correspondente e a mensagem de falha sobrevive à limpeza da conexão. O instalador lê JSON UTF-8 explicitamente no Windows PowerShell. Não muda a implementação do ator nem anuncia confirmação de renderização.
+
+
+## Correção do issue #7 — prévia 10
+
+A redução do grafo Player a um clipe não conserva a pose final de ataques. A nova transmissão usa ossos finais por nome e matrizes relativas, com os mesmos quadros das armas. Getter/setter SDK conferidos na versão privada 1.9.0. Roupas vêm de entradas pessoais equipadas. Hooks originais de descarte/arremesso capturam ator/proprietário/condição e não debitam novamente o inventário. Dano é cumulativo por origem; somente vida zero é evidência de destruição. Esses mecanismos são implementados e testados sinteticamente, mas não equivalem a um Player remoto completo, eventos de ação, física geral ou queda de árvores comprovada. Veja a auditoria atual.

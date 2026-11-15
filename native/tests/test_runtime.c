@@ -8,11 +8,12 @@
 struct ControlReply { bool failed; };
 GameSites g_site;
 const char *g_game_version="1.9.0";
-static unsigned calls, creates, deletes, moves, plays;
+static unsigned calls, creates, deletes, moves, plays,bone_writes;static float last_bone_matrix[12];
 static uint64_t mock_actor=HEAP_BASE+0x3000, retained=HEAP_BASE+0x4000;
 static bool reject,fail_handle,deny_lease;
 static uint64_t ground_pouch_item;static unsigned inventory_grants,inventory_debits;static bool inventory_full,inventory_ambiguous,remove_ambiguous;
 static unsigned create_state=1;
+static bool weapon_test;static uint64_t weapon_vt,weapon_pouch;static unsigned weapon_entries;static uint32_t granted_modifier;static int granted_bonus;
 static uint64_t local_equipped[6],gear_handles[32],gear_actors[32];static unsigned gear_allocations,gear_handles_count;static bool reject_equipment;
 void *hle_alloc(uint64_t size) { assert(size==BYTES);return (void *)(uintptr_t)(storage?HLE_HEAP+0x1000+0x400*gear_allocations++:HLE_HEAP); }
 static uint64_t handle_actor(uint64_t handle) {if(handle==HLE_HEAP)return mock_actor;for(unsigned i=0;i<gear_handles_count;i++)if(gear_handles[i]==handle)return gear_actors[i];assert(false);return 0;}
@@ -21,6 +22,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     if (fn==g_site.hm_create) {
         creates++;uint64_t a=mock_actor;bool gear=c->x[3]!=HLE_HEAP+HANDLE;
         if(gear) {if(reject_equipment){c->x[0]=0;return;}assert(gear_handles_count<32);a=HEAP_BASE+0x20000+0x1000*gear_handles_count;gear_handles[gear_handles_count]=c->x[3];gear_actors[gear_handles_count++]=a;uint64_t request=HEAP_BASE+0xfc000+gear_handles_count*0x20;ST64(c->x[3],request);ST64(request+0x10,a);ST64(a+0x560,HEAP_BASE+0x5000);ST64(a+0x4e0,a+0x900);ST64(a+0x10,a+0xa00);snprintf((char *)(uintptr_t)(a+0xa00),48,"%s",(char *)(uintptr_t)c->x[1]);float initial[12]={1,0,0,0,0,1,0,0,0,0,1,0};for(int j=0;j<3;j++)initial[j*4+3]=read_float(c->x[3]+VECTOR+j*4);memcpy((void *)(uintptr_t)(a+0x398),initial,sizeof initial);}
+        if(weapon_test&&gear){ST64(a,weapon_vt);ST32(a+0xd4c,100);}
         ST8(a+0x64,create_state);c->x[0]=!reject;
     }
     else if (fn==g_site.hm_handle_ready) c->x[0]=1;
@@ -39,14 +41,16 @@ void guest_call(Cpu *c,uint64_t fn) {
     else if (fn==g_site.hm_delete_actor) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);deletes++;ST8(c->x[0]+0x64,3);}
     else if (fn==g_site.hm_set_mtx) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);assert(c->x[2]<=1);memcpy((void *)(uintptr_t)(c->x[0]+0x398),(void *)(uintptr_t)c->x[1],48);moves++;}
     else if (fn==g_site.hm_play_as) {assert(c->x[0]==HEAP_BASE+0x5000);plays++;}
-    else if(fn==g_site.pouch_page_count)c->x[0]=1;
-    else if(fn==g_site.pouch_page_item)c->x[0]=ground_pouch_item;
+    else if(fn==g_site.hm_bone_set){bone_writes++;memcpy(last_bone_matrix,(void *)(uintptr_t)c->x[1],sizeof last_bone_matrix);assert(c->x[2]<POSE_MAX);}
+    else if(fn==g_site.pouch_page_count)c->x[0]=weapon_test?weapon_entries:1;
+    else if(fn==g_site.pouch_page_item)c->x[0]=weapon_test?weapon_pouch+c->x[2]*0x100:ground_pouch_item;
     else if(fn==g_site.hm_item_remove){assert(c->x[2]==1&&c->x[3]==0);if(LD32(ground_pouch_item+0x20)>0){ST32(ground_pouch_item+0x20,LD32(ground_pouch_item+0x20)-1);inventory_debits++;if(remove_ambiguous){ST32(ground_pouch_item+0x20,UINT32_MAX);deny_lease=true;}}}
+    else if(fn==g_site.hm_item_get&&weapon_test){assert(c->x[2]==900&&c->x[3]);granted_modifier=LD32(c->x[3]);granted_bonus=(int32_t)LD32(c->x[3]+4);ST64(c->x[3],0);if(!inventory_full){uint64_t p=weapon_pouch+weapon_entries++*0x100;ST32(p+0x18,0);ST32(p+0x20,900);ST8(p+0x25,1);ST64(p+0x30,p+0x80);strcpy((char *)(uintptr_t)(p+0x80),"Weapon_Sword_001");inventory_grants++;}}
     else if(fn==g_site.hm_item_get){assert(c->x[2]==1&&c->x[3]==0);if(!inventory_full){ST32(ground_pouch_item+0x20,LD32(ground_pouch_item+0x20)+1);inventory_grants++;if(inventory_ambiguous)ST32(ground_pouch_item+0x20,UINT32_MAX);}}
     // Deliberately clobber every register: the hook must preserve the caller.
     memset(c->v,0x5a,sizeof c->v);c->x[3]=0xdeadbeef;c->nzcv=0xabcdef;c->fpsr=91;
 }
-void control_register(const ControlCmd *cmds,int n) {assert(n==15);}
+void control_register(const ControlCmd *cmds,int n) {assert(n==16);}
 void control_field_str(ControlReply *r,const char *k,const char *v) {}
 void control_field_int(ControlReply *r,const char *k,int64_t v) {}
 void control_field_num(ControlReply *r,const char *k,double v) {}
@@ -223,11 +227,11 @@ int main(void) {
     player_root[3]=3439.5f;memcpy((void *)(uintptr_t)(apple+0x398),player_root,sizeof player_root);for(int j=0;j<3;j++){float v=player_root[j*4+3];memcpy((void *)(uintptr_t)(applemap+0x5c+j*4),&v,4);}
     ST64(head,apple+0x7b8);ST64(apple+0x7b8,head);ST32(creator+0x48,1);ground_scan_at=0;
     ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(ground_seen_count==1&&ground_seen[0].hash==123);
-    char *material[]={"hm_item_state","0123456789abcdef","0123456789abcdef01234567","1","Item_Fruit_A","123","3439.5","235.9","2101.5","3439.5","235.9","2101.5","1","1","0","0","0","-"};ground_update(18,material,&r);assert(!r.failed);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    char *material[]={"hm_item_state","0123456789abcdef","0123456789abcdef01234567","1","Item_Fruit_A","123","3439.5","235.9","2101.5","3439.5","235.9","2101.5","1","1","0","0","0","-","0","0","0","0"};ground_update(22,material,&r);assert(!r.failed);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     uint64_t accessor=HEAP_BASE+0xf1000,safe=HEAP_BASE+0xf1100;ST64(accessor+8,apple);ST64(safe+8,apple+0x900);Cpu pickup=before;pickup.x[0]=accessor;pickup.x[1]=safe;Cpu pickup_before=pickup;unsigned grant_before=inventory_grants,calls_before=calls;
     assert(rt_hyrulem_item_pickup(&pickup));assert(!memcmp(&pickup,&pickup_before,sizeof pickup)&&calls==calls_before&&inventory_grants==grant_before);
     assert(ground_events[0].request==1&&ground_events[0].id==1);assert(rt_hyrulem_item_pickup(&pickup)&&ground_next_request==1);
-    material[14]="1";material[15]="1";ground_update(18,material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    material[14]="1";material[15]="1";ground_update(22,material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     assert(inventory_grants==grant_before+1&&LD32(ground_pouch_item+0x20)==4&&ground_receipts[0].request==1&&ground_receipts[0].result==1);
     ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_grants==grant_before+1); // lost receipt cannot grant twice
     assert(!memcmp(&cpu,&before,sizeof cpu));
@@ -238,7 +242,7 @@ int main(void) {
     uint64_t untouched=HEAP_BASE+0x74000,untouched_map=HEAP_BASE+0x7a000;ST8(untouched+0x64,1);ST64(untouched+0x10,untouched+0x900);strcpy((char *)(uintptr_t)(untouched+0x900),"Item_Fruit_A");ST64(untouched+0x7c8,untouched_map);ST32(untouched_map+0x58,124);memcpy((void *)(uintptr_t)(untouched+0x398),player_root,sizeof player_root);for(int j=0;j<3;j++){float v=player_root[j*4+3];memcpy((void *)(uintptr_t)(untouched_map+0x5c+j*4),&v,4);}ST64(head,untouched+0x7b8);ST64(untouched+0x7b8,head);ground_scan_at=0;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     // A replica can join the creator list before its async handle is drained.
     // Identify it from our handle, not from its position or a guessed name.
-    char *early_material[18];memcpy(early_material,material,sizeof early_material);early_material[3]="2";early_material[4]="Item_PlantGet_A";early_material[5]="125";early_material[12]="999";early_material[13]="0";early_material[14]="0";early_material[15]="0";ground_update(18,early_material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    char *early_material[22];memcpy(early_material,material,sizeof early_material);early_material[3]="2";early_material[4]="Item_PlantGet_A";early_material[5]="125";early_material[12]="999";early_material[13]="0";early_material[14]="0";early_material[15]="0";ground_update(22,early_material,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     uint64_t early=ground_pending_actor(ground_replica[1].visual.storage);assert(early&&ground_replica[1].visual.spawning&&!ground_replica[1].visual.actor);memcpy((void *)(uintptr_t)(early+0x398),player_root,sizeof player_root);
     ST64(head,early+0x7b8);ST64(early+0x7b8,untouched+0x7b8);ST64(untouched+0x7b8,head);ST32(creator+0x48,2);ground_scan_at=0;ground_scan(&cpu,HEAP_BASE+0x1000,&ground_live);
     for(int j=0;j<GROUND_MAX;j++)assert(ground_local[j].actor!=early);
@@ -246,14 +250,14 @@ int main(void) {
     ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     // Server preparation names the identity before an inventory debit. A drop
     // becomes publishable only after exactly one apple was removed.
-    char *drop_state[18];memcpy(drop_state,material,sizeof drop_state);drop_state[3]="3";drop_state[5]="0";drop_state[12]="1";drop_state[13]="1";drop_state[14]="4";drop_state[15]="0";drop_state[16]="1";drop_state[17]="0123456789abcdef";ground_update(18,drop_state,&r);assert(!r.failed);
+    char *drop_state[22];memcpy(drop_state,material,sizeof drop_state);drop_state[3]="3";drop_state[5]="0";drop_state[12]="1";drop_state[13]="1";drop_state[14]="4";drop_state[15]="0";drop_state[16]="1";drop_state[17]="0123456789abcdef";ground_update(22,drop_state,&r);assert(!r.failed);
     char *drop_command[]={"hm_item_drop","0123456789abcdef","0123456789abcdef01234567","3","1"};ground_drop_command(5,drop_command,&r);assert(!r.failed);unsigned debit_before=inventory_debits;uint32_t apples_before=LD32(ground_pouch_item+0x20);
     ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_debits==debit_before);
     ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(ground_drop_last_result==1&&ground_drop_last_request==1&&inventory_debits==debit_before+1&&LD32(ground_pouch_item+0x20)==apples_before-1);
     ground_drop_command(5,drop_command,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_debits==debit_before+1&&!memcmp(&cpu,&before,sizeof cpu));
     // An uncertain debit followed by denied cleanup is terminal: subsequent
     // ticks may clean up, but cannot touch the inventory a second time.
-    char *uncertain_state[18];memcpy(uncertain_state,drop_state,sizeof uncertain_state);uncertain_state[3]="4";uncertain_state[12]="2";ground_update(18,uncertain_state,&r);
+    char *uncertain_state[22];memcpy(uncertain_state,drop_state,sizeof uncertain_state);uncertain_state[3]="4";uncertain_state[12]="2";ground_update(22,uncertain_state,&r);
     char *uncertain_command[]={"hm_item_drop","0123456789abcdef","0123456789abcdef01234567","4","2"};ground_drop_command(5,uncertain_command,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     remove_ambiguous=true;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);remove_ambiguous=false;assert(ground_drop_last_result==2&&ground_drops[1].active&&ground_drops[1].terminal==2&&inventory_debits==debit_before+2);
     ST32(ground_pouch_item+0x20,apples_before-2);for(int j=0;j<3;j++)ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(inventory_debits==debit_before+2&&ground_drops[1].active);
@@ -262,6 +266,24 @@ int main(void) {
     uint64_t natural=HEAP_BASE+0x7b000;ST8(natural+0x64,1);ST64(natural+0x10,natural+0x900);strcpy((char *)(uintptr_t)(natural+0x900),"Item_Fruit_A");memcpy((void *)(uintptr_t)(natural+0x398),player_root,sizeof player_root);ST64(natural+0x7c8,0);ST64(head,natural+0x7b8);ST64(natural+0x7b8,head);ST32(creator+0x48,1);ground_scan_at=0;ground_scan(&cpu,HEAP_BASE+0x1000,&ground_live);for(int j=0;j<GROUND_MAX;j++)assert(ground_local[j].actor!=natural);
     ST64(accessor+8,natural);ST64(safe+8,natural+0x900);assert(!rt_hyrulem_item_pickup(&pickup));
     char *material_close[]={"hm_items_close","0123456789abcdef","0123456789abcdef01234567"};ground_close(3,material_close,&r);unsigned deleted=deletes;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(deletes==deleted+2&&LD8(untouched+0x64)==1&&!rt_hyrulem_item_pickup(&pickup));
+    // Two named bones in a synthetic SDK model. Capture must remove the
+    // source root, then replay using another root without choosing an AS leaf.
+    uint64_t owner=HEAP_BASE+0x1000,component=HEAP_BASE+0xa0000,units=component+0x100,unit=component+0x200,model=component+0x400,model_vt=component+0x700,sk=component+0x900,res=component+0xa00,dict=component+0xb00,palette=component+0xc00;
+    ST64(owner+0x4e0,component);ST32(component+0x38,1);ST64(component+0x40,units);ST64(units,unit);ST64(unit,model);ST64(model,model_vt);ST64(model+0x118,sk);ST64(sk,res);ST64(sk+0x20,palette);ST16(res+0x3c,2);ST64(res+0x10,dict);
+    ST64(model_vt+0x30,g_site.hm_bone_count);ST64(model_vt+0x40,g_site.hm_bone_name);ST64(model_vt+0x68,g_site.hm_bone_set);ST64(model_vt+0x70,g_site.hm_bone_get);
+    ST64(dict+0x20,component+0xd00);ST64(dict+0x30,component+0xd50);strcpy((char *)(uintptr_t)(component+0xd02),"Root");strcpy((char *)(uintptr_t)(component+0xd52),"Weapon_R");
+    float origin[3]={100,200,300};for(int i=0;i<2;i++){float matrix[16]={1,0,0,0,0,1,0,0,0,0,1,0,100+i,200,300,0};memcpy((void *)(uintptr_t)(palette+i*64),matrix,sizeof matrix);}
+    PoseFrame captured;pose_capture(owner,origin,1.57079632679f,&captured);assert(captured.count==2&&captured.bones[1].name==pose_hash("Weapon_R"));assert(fabsf(captured.bones[1].matrix[3])<.0001f&&fabsf(captured.bones[1].matrix[11]-1)<.0001f);
+    Desired skin={0};skin.pose=captured;skin.x=10;skin.y=20;skin.z=30;unsigned before_bones=bone_writes;assert(pose_apply(&cpu,owner,storage,&skin)==2&&bone_writes==before_bones+2);assert(fabsf(last_bone_matrix[3]-10)<.0001f&&fabsf(last_bone_matrix[7]-20)<.0001f&&fabsf(last_bone_matrix[11]-31)<.0001f);assert(!memcmp(&cpu,&before,sizeof cpu));
+    char encoded[POSE_B64_MAX+1];pose_encode(&captured,encoded);PoseFrame decoded;assert(pose_decode(encoded,&decoded)&&!memcmp(&captured,&decoded,4+captured.count*sizeof(PoseBone)));char save=encoded[4];encoded[4]='!';assert(!pose_decode(encoded,&decoded));encoded[4]=save;
+    captured.bones[1].name=captured.bones[0].name;pose_encode(&captured,encoded);assert(!pose_decode(encoded,&decoded));captured.bones[1].name=pose_hash("Weapon_R");pose_encode(&captured,encoded);
+    char *skeletal_frame[95];memcpy(skeletal_frame,atomic,sizeof atomic);skeletal_frame[2]="3";skeletal_frame[93]="0";skeletal_frame[94]=encoded;r.failed=false;remote(95,skeletal_frame,&r);assert(!r.failed&&desired.pose.count==2);Desired intact=desired;skeletal_frame[2]="4";skeletal_frame[94]="%%%=";remote(95,skeletal_frame,&r);assert(r.failed&&!memcmp(&intact,&desired,sizeof intact));
+    ST64(model_vt+0x70,0);pose_capture(owner,origin,0,&captured);assert(captured.count==0&&pose_apply(&cpu,owner,storage,&skin)==0);ST64(model_vt+0x70,g_site.hm_bone_get);
+    float invalid=NAN;memcpy((void *)(uintptr_t)palette,&invalid,4);pose_capture(owner,origin,0,&captured);assert(captured.count==0);
+    // Clothing comes from personal pouch entries, not the weapon actor getter.
+    strcpy((char *)(uintptr_t)(ground_pouch_item+0x100),"Armor_001_Upper");ST64(ground_pouch_item+0x30,ground_pouch_item+0x100);ST32(ground_pouch_item+0x18,2);ST8(ground_pouch_item+0x24,1);ST8(ground_pouch_item+0x25,1);armor_read_at=0;capture_armor(&cpu);assert(armor_from_pouch&&!strcmp(local_armor[1],"Armor_001_Upper")&&!strcmp(local_armor[0],"Armor_Default_Head"));
+    #include "test_generation7.inc"
+    puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");
     puts("map-enemy identity, deferred life application and no-heal checks passed");

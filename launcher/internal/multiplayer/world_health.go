@@ -2,6 +2,7 @@ package multiplayer
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -16,10 +17,11 @@ type EnemyHealth struct {
 	Spawn    Vec3   `json:"spawn"`
 	Position Vec3   `json:"position"`
 	Health   int    `json:"health"`
+	Damage   uint64 `json:"damage,omitempty"`
 }
 
 func (e EnemyHealth) Valid() bool {
-	if e.Hash == 0 || e.Hash == 0xffffffff || !strings.HasPrefix(e.Actor, "Enemy_") || len(e.Actor) > 63 || !e.Spawn.Valid() || !e.Position.Valid() || e.Health < 0 || e.Health > 1000000 {
+	if e.Hash == 0 || e.Hash == 0xffffffff || !mapDamageActor(e.Actor) || len(e.Actor) > 63 || !e.Spawn.Valid() || !e.Position.Valid() || e.Health < 0 || e.Health > 1000000 || e.Damage > math.MaxInt64 {
 		return false
 	}
 	for _, r := range e.Actor {
@@ -71,4 +73,74 @@ func (c *Client) SharedEnemyHealth() []EnemyHealth {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]EnemyHealth(nil), c.enemies...)
+}
+
+func mapDamageActor(name string) bool {
+	if strings.HasPrefix(name, "Enemy_") {
+		return true
+	}
+	return strings.HasPrefix(name, "Obj_Tree") && !strings.Contains(name, "_Stump") && !strings.Contains(name, "_Trunk") && !strings.Contains(name, "Root") && !strings.Contains(name, "Branch")
+}
+
+// Each native instance reports its cumulative locally observed loss. Server
+// writes are excluded in the runtime. Replays cannot count the loss twice,
+// while two players damaging the same entity contribute independently.
+func mergeMapDamage(registry map[string]EnemyHealth, ledger map[string]uint64, origin string, records []EnemyHealth, local Pose) error {
+	if !validOrigin(origin) || len(records) > MaxEnemyObservations || !local.Ready {
+		return fmt.Errorf("evento de mundo inválido")
+	}
+	seen := map[string]bool{}
+	for _, e := range records {
+		key := origin + ":" + e.key()
+		if !e.Valid() || seen[key] || e.Position.Sub(local.Position).Len() > 160 || e.Damage < ledger[key] {
+			return fmt.Errorf("contador de dano inválido")
+		}
+		seen[key] = true
+	}
+	additional := 0
+	for _, e := range records {
+		if _, ok := ledger[origin+":"+e.key()]; !ok {
+			additional++
+		}
+	}
+	if len(ledger)+additional > MaxSharedEnemies*8 {
+		return fmt.Errorf("limite de origens de mundo atingido")
+	}
+	for _, e := range records {
+		key := e.key()
+		event := origin + ":" + key
+		before, known := ledger[event]
+		old, exists := registry[key]
+		if !exists && len(registry) >= MaxSharedEnemies {
+			continue
+		}
+		if exists {
+			delta := e.Damage - before
+			health := old.Health
+			if delta >= uint64(health) {
+				health = 0
+			} else {
+				health -= int(delta)
+			}
+			if !known && e.Damage == 0 && e.Health < health {
+				health = e.Health
+			}
+			e.Health = health
+		}
+		ledger[event] = e.Damage
+		e.Damage = 0
+		registry[key] = e
+	}
+	return nil
+}
+func (c *Client) PublishMapDamage(origin string, records []EnemyHealth) error {
+	if !validOrigin(origin) || len(records) > MaxEnemyObservations {
+		return fmt.Errorf("origem de mundo inválida")
+	}
+	for _, e := range records {
+		if !e.Valid() {
+			return fmt.Errorf("entidade de mundo inválida")
+		}
+	}
+	return c.send(Message{Type: "map_damage", WorldOrigin: origin, Enemies: records})
 }

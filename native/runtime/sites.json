@@ -138,5 +138,47 @@
     "kind": "code",
     "pattern": "d10543ff a9127bfd a91357fc a9144ff4 910483fd 52800808 5280002a 39014fff",
     "at": 0
+  },
+  {
+    "name": "hm_bone_count",
+    "address": "0x7000f97d60",
+    "kind": "code",
+    "pattern": "f9408c08 f9400108 79407900 d65f03c0 a9be7bfd a9014ff4 910003fd f9408c08",
+    "at": 0
+  },
+  {
+    "name": "hm_bone_name",
+    "address": "0x7000f97dac",
+    "kind": "code",
+    "pattern": "f9408c09 f9400129 f9400929 b4000089 8b21d129 f9401129 91000929 9000616a/9f00001f",
+    "at": 0
+  },
+  {
+    "name": "hm_bone_get",
+    "address": "0x7000f961c4",
+    "kind": "code",
+    "pattern": "f9408c08 93407c49 f940110a 8b091949 7940110a 321d014a 7900110a 91008028",
+    "at": 0
+  },
+  {
+    "name": "hm_bone_set",
+    "address": "0x7000f9615c",
+    "kind": "code",
+    "pattern": "3945c008 6f00e403 3203e108 3905c008 f9408c08 3dc00822 ad400420 79401109",
+    "at": 0
+  },
+  {
+    "name": "hm_weapon_drop",
+    "address": "0x70007acaa0",
+    "kind": "code",
+    "pattern": "f942cc08 b4000088 79404d09 32000129 79004d09 1429cc70",
+    "at": 0
+  },
+  {
+    "name": "hm_weapon_throw",
+    "address": "0x70007acab8",
+    "kind": "code",
+    "pattern": "f942cc08 b4000088 79404d09 32000129 79004d09 1429cc95",
+    "at": 0
   }
 ]

@@ -1,6 +1,6 @@
-// Package multiplayer implements HyruleM's two-player visual prototype. The
-// protocol carries presence and opt-in nearby map-enemy health convergence.
-// Inventory, player health and enemy AI are never copied by this protocol.
+// Package multiplayer carries two-player presence, environment, map damage
+// and bounded transactional ground items. Personal inventories and player life
+// are never mirrored; a successful reservation grants only its selected item.
 package multiplayer
 
 import (
@@ -16,8 +16,8 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 6
-const MaxLine = 65536
+const Protocol = 7
+const MaxLine = 256 * 1024
 const MaxPlayers = 2
 
 type Vec3 struct{ X, Y, Z float64 }
@@ -50,6 +50,7 @@ type Pose struct {
 	Ready     bool           `json:"ready"`
 	Upper     AnimationTrack `json:"upper,omitempty"`
 	Lower     AnimationTrack `json:"lower,omitempty"`
+	Skeleton  string         `json:"skeleton,omitempty"`
 	Equipment []Equipment    `json:"equipment,omitempty"`
 }
 type AnimationTrack struct {
@@ -72,6 +73,9 @@ func (a AnimationTrack) Valid() bool {
 }
 
 func (p Pose) Valid() bool {
+	if _, err := decodeSkeleton(p.Skeleton); err != nil {
+		return false
+	}
 	if len(p.Equipment) > 6 {
 		return false
 	}
@@ -92,6 +96,9 @@ type Player struct {
 	Pose Pose   `json:"pose"`
 }
 type Message struct {
+	GroundDestroyed  []uint64          `json:"ground_destroyed,omitempty"`
+	GroundRejected   []uint64          `json:"ground_rejected,omitempty"`
+	WorldOrigin      string            `json:"world_origin,omitempty"`
 	Type             string            `json:"type"`
 	Protocol         int               `json:"protocol,omitempty"`
 	Name             string            `json:"name,omitempty"`

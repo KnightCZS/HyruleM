@@ -55,6 +55,10 @@ func (e Equipment) Valid() bool {
 }
 
 func interpolateEquipment(a, b []Equipment, t float64) []Equipment {
+	return interpolateEquipmentFrame(a, b, t, false)
+}
+
+func interpolateEquipmentFrame(a, b []Equipment, t float64, skeletal bool) []Equipment {
 	out := append([]Equipment(nil), b...)
 	for i, e := range out {
 		for _, old := range a {
@@ -76,7 +80,7 @@ func interpolateEquipment(a, b []Equipment, t float64) []Equipment {
 			y := Vec3{e.Matrix[1], e.Matrix[5], e.Matrix[9]}
 			y = y.Sub(x.Mul(x.Dot(y))).Unit()
 			z := x.Cross(y)
-			if x.Len() > .9 && y.Len() > .9 {
+			if !skeletal && x.Len() > .9 && y.Len() > .9 {
 				e.Matrix[0], e.Matrix[4], e.Matrix[8] = x.X, x.Y, x.Z
 				e.Matrix[1], e.Matrix[5], e.Matrix[9] = y.X, y.Y, y.Z
 				e.Matrix[2], e.Matrix[6], e.Matrix[10] = z.X, z.Y, z.Z

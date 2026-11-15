@@ -1,5 +1,13 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.10
+
+- Issue #7: pose final dos ossos e arma no mesmo intervalo; roupa lida do inventário equipado.
+- Hooks de descarte/arremesso de armas comuns, durabilidade/modificadores e coleta exclusiva; recuperação local quando capacidade esgota.
+- Dano cumulativo dos dois clientes e captura de vida zero; queda de árvore/IA ainda sem confirmação.
+- Itens de Hateno ligados na migração inicial, diagnóstico .10, ABI 7/protocolo 7. Gameplay desta versão pendente; [limites](native/README.md).
+
+
 ## 0.5.0-preview.9 (experimental)
 
 - Launcher com páginas e conexão direta, segundo jogo expansível e porta de hospedagem independente.

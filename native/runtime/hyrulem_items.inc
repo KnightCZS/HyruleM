@@ -1,7 +1,7 @@
 // Original, bounded ground-material experiment. No game assets or game code.
 // Command handlers enqueue data. Actor and inventory calls run only after jobs.
 enum { GROUND_MAX=32, GROUND_EVENTS=32 };
-typedef struct { uint64_t local;uint32_t hash;bool drop;char origin[17],name[48];float spawn[3],pos[3]; } GroundSource;
+typedef struct { uint64_t local;uint32_t hash;bool drop,native_drop;int value,bonus;uint32_t modifier;char origin[17],name[48];float spawn[3],pos[3]; } GroundSource;
 typedef struct { uint64_t id,request;GroundSource source;int state;bool own; } GroundState;
 typedef struct { char session[17],world[25];float zone[3];uint64_t heartbeat; } GroundMode;
 typedef struct { uint64_t request,id;GroundSource source;bool done; } GroundEvent;
@@ -38,13 +38,17 @@ static bool ground_source_equal(const GroundSource *a,const GroundSource *b);
 static bool ground_world_token(const char *);
 
 
+static bool ground_weapon(const char *name);
+static bool weapon_data(uint64_t,GroundSource *);
+static uint64_t ground_storage(void);
 static bool ground_actor(const char *name) {
+    if(ground_weapon(name))return true;
     const char *names[]={"Item_Fruit_A","Item_Fruit_B","Item_Fruit_F","Item_Mushroom_A","Item_PlantGet_A"};
     for(unsigned i=0;i<sizeof names/sizeof *names;i++)if(!strcmp(name,names[i]))return true;
     return false;
 }
 static bool ground_supported(void) {
-    return world_supported()&&g_site.hm_item_pickup&&g_site.hm_item_remove&&g_site.hm_item_get&&g_site.hm_pouch_mgr&&g_site.pouch_page_count&&g_site.pouch_page_item;
+    return world_supported()&&g_site.hm_weapon_drop&&g_site.hm_weapon_throw&&g_site.hm_item_pickup&&g_site.hm_item_remove&&g_site.hm_item_get&&g_site.hm_pouch_mgr&&g_site.pouch_page_count&&g_site.pouch_page_item;
 }
 static bool ground_index_live(uint64_t st,uint64_t actor) {
     if(!st||!LD8(st+INDEX+12))return false;uint64_t block=LD64(st+INDEX);uint32_t generation=LD32(st+INDEX+8);
@@ -62,6 +66,7 @@ static bool ground_observe(uint64_t a,GroundSource *out) {
     uint64_t map=LD64(a+0x7c8);out->hash=0;
     for(int i=0;i<3;i++)out->spawn[i]=out->pos[i]=read_float(a+0x3a4+i*16);
     if(range(map,0x70)) {out->hash=LD32(map+0x58);for(int i=0;i<3;i++)out->spawn[i]=read_float(map+0x5c+i*4);}
+    if(ground_weapon(out->name)&&!weapon_data(a,out))return false;
     if(out->hash==UINT32_MAX)return false;
     for(int i=0;i<3;i++)if(!isfinite(out->spawn[i])||fabsf(out->spawn[i])>100000||!isfinite(out->pos[i])||fabsf(out->pos[i])>100000)return false;
     return true;
@@ -71,6 +76,8 @@ static bool ground_same(const GroundSource *a,const GroundSource *b) {
     for(int i=0;i<3;i++)if(fabsf(a->spawn[i]-b->spawn[i])>.003f)return false;return true;
 }
 static bool ground_source_equal(const GroundSource *a,const GroundSource *b){return ground_same(a,b)||(a->drop&&b->drop&&a->local==b->local&&!strcmp(a->origin,b->origin));}
+#include "hyrulem_weapons.inc"
+
 // A pickup callback is inside a game job: copy metadata only, never call guest
 // code, mutate inventory, or wait for the server from here. Skipping the award
 // leaves the server reservation as the only path that can grant a shared item.
@@ -90,6 +97,7 @@ bool rt_hyrulem_item_pickup(Cpu *c) {
             pending=(GroundHook){a,d->id,d->storage,d->source,true,d->confirmed?0:1};known=&pending;break;
         }
     }
+    bool vanilla=false;GroundHook native={0};if(ground_native_hook(a,&native,&vanilla)){if(vanilla){pthread_mutex_unlock(&ground_mutex);return false;}pending=native;known=&pending;}
     bool fresh=ground_session_ready&&ground_mode.heartbeat&&now_ms()-ground_mode.heartbeat<2500&&!strcmp(ground_mode.world,ground_live.world)&&!strcmp(ground_mode.session,ground_live.session);
     if(!fresh||!ground_in_zone(source.pos,&ground_mode,90.f)) {bool block=known&&known->replica;pthread_mutex_unlock(&ground_mutex);return block;}
     if(!known&&!source.hash){pthread_mutex_unlock(&ground_mutex);return false;}
@@ -98,7 +106,7 @@ bool rt_hyrulem_item_pickup(Cpu *c) {
     if(known&&known->state>=1){pthread_mutex_unlock(&ground_mutex);return true;}
     for(int i=0;i<GROUND_EVENTS;i++)if(!ground_events[i].done&&ground_events[i].request&&((id&&ground_events[i].id==id)||ground_source_equal(&ground_events[i].source,&source))){pthread_mutex_unlock(&ground_mutex);return true;}
     int slot=-1;for(int i=0;i<GROUND_EVENTS;i++)if(!ground_events[i].request||ground_events[i].done){slot=i;break;}
-    if(slot<0){pthread_mutex_unlock(&ground_mutex);return id!=0;} // bounded; never bypass authority when busy
+    if(slot<0){pthread_mutex_unlock(&ground_mutex);return known!=NULL||id!=0;} // never bypass authority for a published original
     uint64_t request=++ground_next_request;if(!source.local)source.local=UINT64_C(0x100000000)+request;
     ground_events[slot]=(GroundEvent){request,id,source,false};ground_intercepts++;
     pthread_mutex_unlock(&ground_mutex);return true;
@@ -109,6 +117,7 @@ static void ground_reset(void) {
     memset(ground_events,0,sizeof ground_events);memset(ground_receipts,0,sizeof ground_receipts);memset(ground_hooks,0,sizeof ground_hooks);ground_hook_count=ground_seen_count=0;
     memset(ground_local,0,sizeof ground_local);memset(ground_replica,0,sizeof ground_replica);memset(ground_pending,0,sizeof ground_pending);
     memset(ground_drops,0,sizeof ground_drops);memset(ground_drop_hooks,0,sizeof ground_drop_hooks);memset(&ground_drop_queued,0,sizeof ground_drop_queued);memset(&ground_drop_last_source,0,sizeof ground_drop_last_source);
+    memset(ground_destroyed,0,sizeof ground_destroyed);ground_destroyed_count=0;memset(native_drops,0,sizeof native_drops);native_drop_sequence=native_drop_vt=0;
     ground_drop_sequence=ground_drop_last_request=ground_drop_last_id=0;ground_drop_last_result=0;ground_drop_busy=false;ground_origin[0]=0;
     ground_next_local=ground_next_request=ground_scan_at=ground_intercepts=0;ground_session_ready=false;
     pthread_mutex_unlock(&ground_mutex);
@@ -117,9 +126,9 @@ static uint64_t ground_storage(void) {
     uint64_t st=(uint64_t)(uintptr_t)hle_alloc(BYTES);if(!range(st,BYTES))return 0;
     memset((void *)(uintptr_t)st,0,BYTES);ST32(st+INDEX+8,UINT32_MAX);strcpy((char *)(uintptr_t)(st+KEY),"@P");return st;
 }
-static void ground_pause(void){for(int i=0;i<GROUND_DROPS;i++)if(ground_drops[i].active)ground_drops[i].visual.started=now_ms();for(int i=0;i<GROUND_MAX;i++)if(ground_replica[i].visual.actor||ground_replica[i].visual.spawning)ground_replica[i].visual.started=now_ms();}
+static void ground_pause(void){for(int i=0;i<NATIVE_DROPS;i++)if(native_drops[i].active&&native_drops[i].local_only)native_drops[i].fallback.started=now_ms();for(int i=0;i<GROUND_DROPS;i++)if(ground_drops[i].active)ground_drops[i].visual.started=now_ms();for(int i=0;i<GROUND_MAX;i++)if(ground_replica[i].visual.actor||ground_replica[i].visual.spawning)ground_replica[i].visual.started=now_ms();}
 static bool ground_cleanup(Cpu *c) {
-    bool done=ground_drop_cleanup(c);
+    bool done=ground_drop_cleanup(c);if(!ground_native_cleanup(c))done=false;
     for(int i=0;i<GROUND_MAX;i++)if(!remove_gear(c,&ground_replica[i].visual))done=false;
     if(!done)return false;
     for(int i=0;i<GROUND_MAX;i++) {
@@ -141,7 +150,7 @@ static void ground_scan(Cpu *c,uint64_t local,const GroundMode *mode) {
         if(!range(node,16)||node<0x7b8)break;uint64_t a=node-0x7b8;node=LD64(node);if(a==local)continue;
         bool replica=false;for(int i=0;i<GROUND_MAX;i++)if(ground_replica[i].visual.actor==a||(ground_replica[i].visual.spawning&&ground_pending_actor(ground_replica[i].visual.storage)==a))replica=true;if(replica)continue;
         GroundSource source={0};if(!ground_observe(a,&source)||!ground_in_zone(source.pos,mode,90))continue;
-        if(!source.hash&&!ground_drop_source(a,mode,&source))continue;
+        bool native_source=ground_native_source(a,&source);if(!native_source&&!source.hash&&!ground_drop_source(a,mode,&source))continue;
         GroundLocal *at=NULL;for(int i=0;i<GROUND_MAX;i++)if(ground_local[i].actor==a){if(ground_index_live(ground_local[i].storage,a)){at=&ground_local[i];break;}call(c,g_site.actor_index_release,ground_local[i].storage+INDEX,0,0,0,0,0,0);ground_local[i].actor=0;}
         if(!at) {
             for(int i=0;i<GROUND_MAX;i++)if(!ground_local[i].actor&&ground_local[i].storage){at=&ground_local[i];break;}
@@ -241,6 +250,7 @@ static void ground_drop_command(int argc,char **argv,ControlReply *r){
 }
 
 static int ground_grant(Cpu *c,const GroundState *s,uint64_t vt,uint64_t st) {
+    if(ground_weapon(s->source.name))return ground_weapon_grant(c,s,vt,st);
     uint64_t mgr=LD64(g_site.hm_pouch_mgr);if(!range(mgr,0x4449c)||!vt||!st)return -1;
     call(c,g_site.pouch_lock,mgr+0x28,0,0,0,0,0,0);
     int before=ground_count(c,mgr,s->source.name);int result=-1;
@@ -272,7 +282,7 @@ static void ground_tick(Cpu *c,uint64_t local,uint64_t vt) {
         for(int i=0;i<GROUND_MAX;i++){ground_replica[i].request=0;ground_replica[i].result=0;ground_replica[i].granted=false;ground_replica[i].visual.failed=false;ground_replica[i].visual.name[0]=0;}
         pthread_mutex_lock(&ground_mutex);memset(ground_events,0,sizeof ground_events);pthread_mutex_unlock(&ground_mutex);
     }
-    ground_drop_tick(c,local,vt,&mode,states);
+    ground_native_tick(c,vt,states);ground_drop_tick(c,local,vt,&mode,states);
     float pos[3];for(int i=0;i<3;i++)pos[i]=read_float(local+0x3a4+i*16);if(!ground_in_zone(pos,&mode,95))return;
     ground_scan(c,local,&mode);
     GroundHook hooks[GROUND_MAX*2];int nh=0;GroundSource seen[GROUND_MAX];int ns=0;
@@ -312,6 +322,7 @@ static void ground_tick(Cpu *c,uint64_t local,uint64_t vt) {
         }
         ActorRef ref=resolve_at(c,g->storage,g->actor);
         if(ref.ptr&&ref.state==1) {
+            if(ground_weapon(s->source.name)&&!weapon_initialize(ref.ptr,&s->source)){release_at(c,g->storage);g->failed=true;continue;}
             float matrix[12]={1,0,0,s->source.pos[0],0,1,0,s->source.pos[1],0,0,1,s->source.pos[2]};memcpy((void *)(uintptr_t)(g->storage+MATRIX),matrix,sizeof matrix);
             call(c,g_site.hm_set_mtx,ref.ptr,g->storage+MATRIX,0,0,0,0,0);call(c,g_site.hm_set_mtx,ref.ptr,g->storage+MATRIX,1,0,0,0,0);
             if(nh<GROUND_MAX*2)hooks[nh++]=(GroundHook){g->actor,s->id,g->storage,s->source,true,0};g->started=now_ms();
@@ -339,23 +350,28 @@ static void ground_close(int argc,char **argv,ControlReply *r) {
 }
 static void ground_update(int argc,char **argv,ControlReply *reply) {
     GroundState s={0};uint64_t hash,local,request;
-    if(argc!=18||!token(argv[1])||!ground_world_token(argv[2])||!integer(argv[3],&s.id)||s.id>GROUND_MAX||!ground_actor(argv[4])||(!integer(argv[5],&hash)&&strcmp(argv[5],"0"))||hash>=UINT32_MAX||(!integer(argv[12],&local))||(!integer(argv[15],&request)&&strcmp(argv[15],"0"))||strlen(argv[13])!=1||argv[13][0]<'0'||argv[13][0]>'1'||strlen(argv[14])!=1||argv[14][0]<'0'||argv[14][0]>'5'||strlen(argv[16])!=1||argv[16][0]<'0'||argv[16][0]>'1'||(strcmp(argv[17],"-")&&!token(argv[17]))){control_fail(reply,"Invalid ground-material state");return;}
+    if(argc!=22||!token(argv[1])||!ground_world_token(argv[2])||!integer(argv[3],&s.id)||s.id>GROUND_MAX||!ground_actor(argv[4])||(!integer(argv[5],&hash)&&strcmp(argv[5],"0"))||hash>=UINT32_MAX||(!integer(argv[12],&local))||(!integer(argv[15],&request)&&strcmp(argv[15],"0"))||strlen(argv[13])!=1||argv[13][0]<'0'||argv[13][0]>'1'||strlen(argv[14])!=1||argv[14][0]<'0'||argv[14][0]>'5'||strlen(argv[16])!=1||argv[16][0]<'0'||argv[16][0]>'1'||(strcmp(argv[17],"-")&&!token(argv[17]))){control_fail(reply,"Invalid ground-material state");return;}
     for(int i=0;i<6;i++)if(!number(argv[6+i],i<3?&s.source.spawn[i]:&s.source.pos[i-3],100000)){control_fail(reply,"Invalid ground-material position");return;}
     s.source.drop=argv[16][0]=='1';if(s.source.drop){if(hash||!token(argv[17])){control_fail(reply,"Invalid drop identity");return;}snprintf(s.source.origin,sizeof s.source.origin,"%s",argv[17]);}else if(!hash){control_fail(reply,"Mapless natural material is outside this experiment");return;}
+    uint64_t value,modifier;float bonus;
+    if((!integer(argv[18],&value)&&strcmp(argv[18],"0"))||value>1000000||(!integer(argv[19],&modifier)&&strcmp(argv[19],"0"))||modifier>UINT32_MAX||!number(argv[20],&bonus,100000)||bonus!=truncf(bonus)||strlen(argv[21])!=1||(argv[21][0]!='0'&&argv[21][0]!='1')){control_fail(reply,"Invalid item metadata");return;}
+    s.source.value=(int)value;s.source.modifier=(uint32_t)modifier;s.source.bonus=(int)bonus;s.source.native_drop=argv[21][0]=='1';
+    if((ground_weapon(argv[4])&&!value)||(!ground_weapon(argv[4])&&(value||modifier||bonus||s.source.native_drop))||(s.source.native_drop&&(!s.source.drop||local<UINT64_C(0x200000000)))){control_fail(reply,"Invalid weapon identity");return;}
     s.source.hash=(uint32_t)hash;s.source.local=local;snprintf(s.source.name,sizeof s.source.name,"%s",argv[4]);s.own=argv[13][0]=='1';s.state=argv[14][0]-'0';s.request=request;
-    pthread_mutex_lock(&ground_mutex);bool ok=!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]);GroundState *old=&ground_state[s.id-1];if(ok&&old->id&&strcmp(old->source.name,s.source.name))ok=false;if(ok)*old=s;pthread_mutex_unlock(&ground_mutex);if(!ok){control_fail(reply,"Wrong material identity/session");return;}control_field_bool(reply,"queued",true);
+    pthread_mutex_lock(&ground_mutex);bool ok=!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]);GroundState *old=&ground_state[s.id-1];if(ok&&old->id&&strcmp(old->source.name,s.source.name))ok=false;if(ok){*old=s;if(s.state==5||s.state==2)for(unsigned i=0;i<ground_destroyed_count;i++)if(ground_destroyed[i]==s.id){ground_destroyed[i]=ground_destroyed[--ground_destroyed_count];break;}}pthread_mutex_unlock(&ground_mutex);if(!ok){control_fail(reply,"Wrong material identity/session");return;}control_field_bool(reply,"queued",true);
 }
 static void ground_deny(int argc,char **argv,ControlReply *r) {
     uint64_t request;if(argc!=4||!token(argv[1])||!ground_world_token(argv[2])||!integer(argv[3],&request)){control_fail(r,"Invalid material request");return;}
     pthread_mutex_lock(&ground_mutex);if(!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]))for(int i=0;i<GROUND_EVENTS;i++)if(ground_events[i].request==request)ground_events[i].done=true;pthread_mutex_unlock(&ground_mutex);control_field_bool(r,"queued",true);
 }
 static int ground_source_json(char *out,size_t n,const GroundSource *s) {
-    return snprintf(out,n,"{\"local\":%llu,\"hash\":%u,\"drop\":%s,\"origin\":\"%s\",\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"position\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f}}",(unsigned long long)s->local,s->hash,s->drop?"true":"false",s->origin,s->name,s->spawn[0],s->spawn[1],s->spawn[2],s->pos[0],s->pos[1],s->pos[2]);
+    return snprintf(out,n,"{\"local\":%llu,\"hash\":%u,\"value\":%d,\"modifier\":%u,\"modifier_value\":%d,\"native_drop\":%s,\"drop\":%s,\"origin\":\"%s\",\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"position\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f}}",(unsigned long long)s->local,s->hash,s->value,s->modifier,s->bonus,s->native_drop?"true":"false",s->drop?"true":"false",s->origin,s->name,s->spawn[0],s->spawn[1],s->spawn[2],s->pos[0],s->pos[1],s->pos[2]);
 }
 static void ground_status(int argc,char **argv,ControlReply *r) {
     GroundSource seen[GROUND_MAX];GroundEvent events[GROUND_EVENTS];int n;uint64_t count;GroundSource drop_source;uint64_t drop_request,drop_id,drop_sequence;int drop_result;char origin[17];GroundReceipt receipts[GROUND_MAX];
-    pthread_mutex_lock(&ground_mutex);n=ground_seen_count;memcpy(seen,ground_seen,sizeof seen);memcpy(events,ground_events,sizeof events);count=ground_intercepts;memcpy(receipts,ground_receipts,sizeof receipts);drop_request=ground_drop_last_request;drop_id=ground_drop_last_id;drop_result=ground_drop_last_result;drop_source=ground_drop_last_source;drop_sequence=ground_drop_sequence;snprintf(origin,sizeof origin,"%s",ground_origin);pthread_mutex_unlock(&ground_mutex);
-    char json[20000];size_t used=1;json[0]='[';
+    pthread_mutex_lock(&ground_mutex);n=0;for(int i=0;i<ground_seen_count;i++){GroundSource *s=&ground_seen[i];bool keep=!s->native_drop;if(s->native_drop)for(int j=0;j<NATIVE_DROPS;j++)if(native_drops[j].active&&!native_drops[j].local_only&&native_drops[j].source.local==s->local){keep=true;native_drops[j].exported=true;break;}if(keep)seen[n++]=*s;}
+    for(int j=0;j<NATIVE_DROPS&&n<GROUND_MAX;j++){NativeDrop *d=&native_drops[j];if(!d->active||d->local_only||d->id)continue;bool found=false;for(int i=0;i<n;i++)if(seen[i].native_drop&&seen[i].local==d->source.local)found=true;if(!found){seen[n++]=d->source;d->exported=true;}}memcpy(events,ground_events,sizeof events);count=ground_intercepts;memcpy(receipts,ground_receipts,sizeof receipts);drop_request=ground_drop_last_request;drop_id=ground_drop_last_id;drop_result=ground_drop_last_result;drop_source=ground_drop_last_source;drop_sequence=ground_drop_sequence;snprintf(origin,sizeof origin,"%s",ground_origin);pthread_mutex_unlock(&ground_mutex);
+    char json[20000];pthread_mutex_lock(&ground_mutex);size_t destroy_used=0;json[destroy_used++]='[';for(unsigned i=0;i<ground_destroyed_count;i++){int k=snprintf(json+destroy_used,sizeof json-destroy_used,"%s%llu",i?",":"",(unsigned long long)ground_destroyed[i]);destroy_used+=(size_t)k;}json[destroy_used++]=']';json[destroy_used]=0;pthread_mutex_unlock(&ground_mutex);control_field_str(r,"destroyed_json",json);size_t used=1;json[0]='[';
     for(int i=0;i<n;i++){if(i)json[used++]=',';int k=ground_source_json(json+used,sizeof json-used,&seen[i]);if(k<0||(size_t)k>=sizeof json-used-2){control_fail(r,"Materials overflow");return;}used+=(size_t)k;}json[used++]=']';json[used]=0;control_field_str(r,"items_json",json);
     used=1;json[0]='[';bool comma=false;
     for(int i=0;i<GROUND_EVENTS;i++)if(events[i].request&&!events[i].done){int k=snprintf(json+used,sizeof json-used,"%s{\"request\":%llu,\"item\":%llu,\"source\":",comma?",":"",(unsigned long long)events[i].request,(unsigned long long)events[i].id);if(k<0||(size_t)k>=sizeof json-used-2){control_fail(r,"Events overflow");return;}used+=(size_t)k;k=ground_source_json(json+used,sizeof json-used,&events[i].source);if(k<0||(size_t)k>=sizeof json-used-3){control_fail(r,"Events overflow");return;}used+=(size_t)k;json[used++]='}';comma=true;}
@@ -364,7 +380,9 @@ static void ground_status(int argc,char **argv,ControlReply *r) {
     for(int i=0;i<GROUND_MAX;i++)if(receipts[i].request&&receipts[i].result){int k=snprintf(json+used,sizeof json-used,"%s{\"item\":%d,\"request\":%llu,\"applied\":%s}",comma?",":"",i+1,(unsigned long long)receipts[i].request,receipts[i].result==1?"true":"false");if(k<0||(size_t)k>=sizeof json-used-2){control_fail(r,"Receipts overflow");return;}used+=(size_t)k;comma=true;}
     json[used++]=']';json[used]=0;control_field_str(r,"receipts_json",json);control_field_int(r,"pickup_intercepts",count);control_field_bool(r,"experimental",true);
     int pending=0,failed=0,handles=0;for(int i=0;i<GROUND_MAX;i++){if(receipts[i].request&&!receipts[i].result)pending++;failed+=receipts[i].failed;handles+=receipts[i].handle;}
+    pthread_mutex_lock(&ground_mutex);unsigned native_pending=0,native_fallback=0,native_failed=0;for(int i=0;i<NATIVE_DROPS;i++)if(native_drops[i].active){native_pending++;if(native_drops[i].recovery_failed)native_failed++;if(native_drops[i].local_only&&native_drops[i].pickup_pending)native_fallback++;}uint64_t native_count=native_drop_sequence;pthread_mutex_unlock(&ground_mutex);control_field_int(r,"native_drop_recovery_failures",native_failed);control_field_int(r,"native_drop_count",native_count);control_field_int(r,"native_drops_active",native_pending);control_field_int(r,"native_drop_local_recovery",native_fallback);
     control_field_int(r,"drop_request",drop_request);control_field_int(r,"drop_item",drop_id);control_field_int(r,"drop_result",drop_result);control_field_int(r,"drop_sequence",drop_sequence);control_field_str(r,"drop_origin",origin);
     if(drop_source.local){ground_source_json(json,sizeof json,&drop_source);control_field_str(r,"drop_source_json",json);}else control_field_str(r,"drop_source_json","{}");
     control_field_int(r,"pending_inventory_checks",pending);control_field_int(r,"replica_failures",failed);control_field_int(r,"replica_handles",handles);control_field_int(r,"source_materials",n);
+    pthread_mutex_lock(&ground_mutex);bool active=ground_mode.heartbeat&&now_ms()-ground_mode.heartbeat<2500;uint64_t age=ground_mode.heartbeat?now_ms()-ground_mode.heartbeat:UINT64_MAX;pthread_mutex_unlock(&ground_mutex);control_field_bool(r,"world_items_active",active);control_field_int(r,"heartbeat_age_ms",age==UINT64_MAX?-1:(int64_t)age);
 }

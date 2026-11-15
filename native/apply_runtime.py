@@ -103,11 +103,23 @@ def apply(root):
         "    assert _word(gen, a) == 0xa9bc7bfd, hex(_word(gen, a))\n"
         "    return '{ extern _Bool rt_hyrulem_item_pickup(Cpu *); if (rt_hyrulem_item_pickup(c)) return; c->sp -= 0x40; ST64(c->sp, c->x[29]); ST64(c->sp + 8, c->x[30]); }'\n\n"
         "PATCHES['hm_item_pickup'] = _hm_item_pickup\n\n\n")
+    addition+=("def _hm_capture_zero(gen, a):\n"
+        "    assert _word(gen, a) == 0xa9bb7bfd, hex(_word(gen, a))\n"
+        "    return '{ extern void rt_hyrulem_capture_zero(Cpu *); rt_hyrulem_capture_zero(c); c->sp -= 0x50; ST64(c->sp, c->x[29]); ST64(c->sp + 8, c->x[30]); }'\n\n"
+        "PATCHES['hm_delete_actor'] = _hm_capture_zero\n\n")
+    addition+=("def _hm_weapon_drop(gen, a):\n"
+        "    assert _word(gen, a) == 0xf942cc08, hex(_word(gen, a))\n"
+        "    return '{ extern void rt_hyrulem_capture_drop(Cpu *); rt_hyrulem_capture_drop(c); c->x[8] = LD64(c->x[0] + 0x598); }'\n\n"
+        "PATCHES['hm_weapon_drop'] = _hm_weapon_drop\nPATCHES['hm_weapon_throw'] = _hm_weapon_drop\n\n")
     text=text.replace("def table(sites):",addition+"def table(sites):")
     patch.write_text(text)
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
     shutil.copyfile(HERE / "runtime/hyrulem_items.inc", root / "runtime/hyrulem_items.inc")
-    stamp = {"upstream": UPSTREAM, "preview_abi": 6, "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
+    shutil.copyfile(HERE / "runtime/hyrulem_pose.inc", root / "runtime/hyrulem_pose.inc")
+    replace_once(root / "runtime/control.c", "MAX_LINE = 4096,", "MAX_LINE = 65536,")
+    shutil.copyfile(HERE / "runtime/hyrulem_world.inc", root / "runtime/hyrulem_world.inc")
+    shutil.copyfile(HERE / "runtime/hyrulem_weapons.inc", root / "runtime/hyrulem_weapons.inc")
+    stamp = {"upstream": UPSTREAM, "preview_abi": 7, "weapons_sha256": hashlib.sha256((HERE / "runtime/hyrulem_weapons.inc").read_bytes()).hexdigest(), "world_sha256": hashlib.sha256((HERE / "runtime/hyrulem_world.inc").read_bytes()).hexdigest(), "pose_sha256": hashlib.sha256((HERE / "runtime/hyrulem_pose.inc").read_bytes()).hexdigest(), "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
     (root / "hyrulem-build.json").write_text(json.dumps(stamp, indent=2) + "\n")
 
 

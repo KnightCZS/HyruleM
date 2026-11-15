@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Native presence and nearby map-enemy health use protocol 6. Full Gen1 combat
+// Native presence and nearby map-enemy health use protocol 7. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
 	session       string
@@ -103,7 +103,7 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 		lower = "-"
 	}
 	command := fmt.Sprintf("hm_native_remote %s %d %.4f %.4f %.4f %.6f %s %s %d %d %s %d %d %d %d", session, seq, pose.Position.X, pose.Position.Y, pose.Position.Z, pose.Yaw, animation, upper, pose.Upper.Sequence, boolInt(pose.Upper.Force), lower, pose.Lower.Sequence, boolInt(pose.Lower.Force), pose.Upper.Slot, pose.Lower.Slot)
-	if len(pose.Equipment) > 0 {
+	if len(pose.Equipment) > 0 || pose.Skeleton != "" {
 		var pieces [6]Equipment
 		for i := range pieces {
 			pieces[i].Slot = i
@@ -125,7 +125,10 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 			}
 		}
 	}
-	if len(command) > 4095 {
+	if pose.Skeleton != "" {
+		command += " " + pose.Skeleton
+	}
+	if len(command) > 65535 {
 		return "", fmt.Errorf("estado visual excede limite local")
 	}
 	return command, nil
@@ -150,10 +153,12 @@ func (b *Bridge) capturePose(ctx context.Context, p *Pose) error {
 		Ready         bool   `json:"ready"`
 		X, Y, Z       float64
 		Equipment     string `json:"equipment_json"`
+		Skeleton      string `json:"skeleton_b64"`
 	}
 	if err := b.command(ctx, "hm_local_state", &s); err != nil {
 		return err
 	}
+	p.Skeleton = s.Skeleton
 	p.Yaw = s.Yaw
 	p.Position = Vec3{s.X, s.Y, s.Z}
 	p.Ready = s.Ready
@@ -273,7 +278,7 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 	if err := json.Unmarshal([]byte(raw.Enemies), &local); err != nil {
 		return fmt.Errorf("snapshot nativo de monstros inválido: %w", err)
 	}
-	if err := b.Client.PublishEnemyHealth(local); err != nil {
+	if err := b.Client.PublishMapDamage(n.session, local); err != nil {
 		return err
 	}
 	byKey := map[string]EnemyHealth{}
@@ -291,7 +296,7 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 	writes := 0
 	for _, e := range local {
 		shared, ok := byKey[e.key()]
-		if !ok || shared.Health >= e.Health {
+		if !ok || shared.Health > e.Health || shared.Health == e.Health && e.Health != 0 {
 			continue
 		}
 		// The native queue retains the lowest health for this session. Repeating

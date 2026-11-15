@@ -75,3 +75,35 @@ with tempfile.TemporaryDirectory(prefix='hyrulem-item-hook-') as temp:
  subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
  subprocess.run([str(p/'hook')],check=True)
 print('Material hook: queued return and original STP/CPU preservation passed')
+
+# Native weapon capture/deletion callbacks only inspect the incoming CPU.
+# The generated fragments must still execute exactly the overwritten load/STP.
+for name,offset,word,callback in [
+ ('delete',0x200,0xa9bb7bfd,'rt_hyrulem_capture_zero'),
+ ('drop',0x240,0xf942cc08,'rt_hyrulem_capture_drop'),
+ ('throw',0x280,0xf942cc08,'rt_hyrulem_capture_drop'),
+]:
+ struct.pack_into('<I',image,offset,word)
+ fragment=(patches._hm_capture_zero if name=='delete' else patches._hm_weapon_drop)(gen,base+offset)
+ expected=('expected.sp-=0x50; assert(LD64(c.sp)==before.x[29]&&LD64(c.sp+8)==before.x[30]);'
+           if name=='delete' else 'expected.x[8]=0x12345678ull;')
+ source='''#include "cpu.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/mman.h>
+static unsigned captures;
+void CALLBACK(Cpu *c) {assert(c->x[0]==0x7000000400ull);captures++;}
+static void generated_hook(Cpu *c) { FRAGMENT }
+int main(void) {
+ assert(mmap((void *)0x7000000000ull,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)!=(void *)-1);
+ Cpu c;memset(&c,0xa5,sizeof c);c.sp=0x7000000f00ull;c.x[0]=0x7000000400ull;
+ ST64(c.x[0]+0x598,0x12345678ull);Cpu before=c,expected=c;generated_hook(&c);
+ EXPECTED
+ assert(captures==1&&!memcmp(&c,&expected,sizeof c));return 0;
+}
+'''.replace('CALLBACK',callback).replace('FRAGMENT',fragment).replace('EXPECTED',expected)
+ with tempfile.TemporaryDirectory(prefix='hyrulem-'+name+'-hook-') as temp:
+  p=Path(temp);(p/'hook.c').write_text(source)
+  subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
+  subprocess.run([str(p/'hook')],check=True)
+print('Deletion/drop/throw hooks: original load/STP and full CPU preservation passed')

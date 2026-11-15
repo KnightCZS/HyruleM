@@ -18,6 +18,9 @@ type PreviewDiagnostic struct {
 	RemoteActive     bool   `json:"remote_active"`
 	ResourceFallback bool   `json:"resource_fallback"`
 	FirstError       string `json:"first_error,omitempty"`
+	SkeletonCaptured int    `json:"skeleton_captured"`
+	SkeletonApplied  int    `json:"skeleton_applied"`
+	ArmorSource      string `json:"armor_source,omitempty"`
 }
 
 func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
@@ -61,6 +64,9 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 	}
 	p.Compatible = true
 	var s struct {
+		SkeletonCaptured int    `json:"skeleton_captured"`
+		SkeletonApplied  int    `json:"skeleton_applied"`
+		ArmorSource      string `json:"armor_source"`
 		State            string `json:"state"`
 		Error            string `json:"error"`
 		Ticks            uint64 `json:"game_ticks"`
@@ -80,6 +86,7 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		return p
 	}
 	p.GameTicks, p.RemoteActive = s.Ticks, s.Active
+	p.SkeletonCaptured, p.SkeletonApplied, p.ArmorSource = s.SkeletonCaptured, s.SkeletonApplied, s.ArmorSource
 	p.ResourceFallback, p.FirstError = s.ResourceFallback, s.FirstError
 	switch {
 	case s.Error != "" || s.State == "error":
@@ -90,6 +97,8 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		p.Status, p.Message = "callback_stalled", "O callback não está atualizando. Reconstrua a biblioteca com o gerador novo e teste sem pausa."
 	case s.Active && s.Model && s.ResourceFallback:
 		p.Status, p.Message = "visual_fallback", "Contingência visual ativa, sem animação. Falha da variante principal: "+s.FirstError
+	case s.Active && s.Model && s.SkeletonApplied > 0:
+		p.Status, p.Message = "active", "Ator ativo com pose esquelética recebida. O desenho final e as interações ainda exigem teste no jogo."
 	case s.Active && s.Model && s.VisualOnly:
 		p.Status, p.Message = "animation_unavailable", "Modelo ativo com movimento; a animação não está pronta."
 	case s.Active && s.Model && s.Animation:

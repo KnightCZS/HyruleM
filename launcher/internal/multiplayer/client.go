@@ -169,7 +169,7 @@ func (c *Client) read(r *bufio.Reader) {
 				return
 			}
 			if m.GroundEnabled {
-				if len(m.GroundWorld) != 24 || m.GroundZone == nil || !m.GroundZone.Valid() || len(m.GroundItems) > MaxGroundItems || len(m.GroundClaims) > 128 {
+				if len(m.GroundWorld) != 24 || m.GroundZone == nil || !m.GroundZone.Valid() || len(m.GroundItems) > MaxGroundItems || len(m.GroundClaims) > 128 || len(m.GroundRejected) > MaxGroundItems {
 					c.mu.Unlock()
 					c.fail("mundo de materiais inválido")
 					return
@@ -178,6 +178,13 @@ func (c *Client) read(r *bufio.Reader) {
 					c.mu.Unlock()
 					c.fail("identidade do mundo inválida")
 					return
+				}
+				for _, id := range m.GroundRejected {
+					if id < 0x200000000 || id > math.MaxInt64 {
+						c.mu.Unlock()
+						c.fail("descarte recusado inválido")
+						return
+					}
 				}
 				seen := map[uint64]bool{}
 				for _, i := range m.GroundItems {
@@ -188,7 +195,7 @@ func (c *Client) read(r *bufio.Reader) {
 					}
 					seen[i.ID] = true
 				}
-				c.ground = GroundView{Enabled: true, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult}
+				c.ground = GroundView{Enabled: true, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult, Rejected: append([]uint64(nil), m.GroundRejected...)}
 			} else {
 				c.ground = GroundView{}
 			}
@@ -270,7 +277,15 @@ func (c *Client) Remote(now time.Time) []Player {
 					p.Pose.Upper = old.Pose.Upper
 					p.Pose.Lower = old.Pose.Lower
 				}
-				p.Pose.Equipment = interpolateEquipment(old.Pose.Equipment, p.Pose.Equipment, alpha)
+				if old.Pose.Skeleton != "" && p.Pose.Skeleton != "" {
+					skeletal, snap := interpolateSkeleton(old.Pose.Skeleton, p.Pose.Skeleton, alpha)
+					if !snap {
+						p.Pose.Equipment = interpolateEquipmentFrame(old.Pose.Equipment, p.Pose.Equipment, alpha, true)
+					}
+					p.Pose.Skeleton = skeletal
+				} else {
+					p.Pose.Equipment = interpolateEquipment(old.Pose.Equipment, p.Pose.Equipment, alpha)
+				}
 				break
 			}
 		}

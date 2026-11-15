@@ -32,14 +32,14 @@ func TestControlStreamAllowsBoundedAtomicVisualFrameOnly(t *testing.T) {
 	}()
 	s := &ControlStream{Port: l.Addr().(*net.TCPAddr).Port, Timeout: time.Second}
 	defer s.Close()
-	cmd := "hm_native_remote " + strings.Repeat("x", 2000)
+	cmd := "hm_native_remote " + strings.Repeat("x", 50000)
 	if _, e := s.Command(context.Background(), cmd); e != nil {
 		t.Fatal(e)
 	}
 	if got := <-done; got != cmd {
 		t.Fatal("atomic state truncated")
 	}
-	for _, bad := range []string{"other " + strings.Repeat("x", 300), "hm_native_remote " + strings.Repeat("x", 4096), "hm_native_remote x\nquit"} {
+	for _, bad := range []string{"other " + strings.Repeat("x", 300), "hm_native_remote " + strings.Repeat("x", 65536), "hm_native_remote x\nquit"} {
 		if _, e := s.Command(context.Background(), bad); e == nil {
 			t.Fatal("invalid local command accepted")
 		}

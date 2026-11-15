@@ -59,6 +59,7 @@ func groundCommand(session, world, self string, item GroundItem) (string, error)
 	}
 	g := item.Source
 	cmd := fmt.Sprintf("hm_item_state %s %s %d %s %d %.3f %.3f %.3f %.3f %.3f %.3f %d %d %d %d %d %s", session, world, item.ID, g.Actor, g.Hash, g.Spawn.X, g.Spawn.Y, g.Spawn.Z, g.Position.X, g.Position.Y, g.Position.Z, g.Local, boolInt(item.Owner == self), state, request, boolInt(g.Drop), originArg(g.Origin))
+	cmd += fmt.Sprintf(" %d %d %d %d", g.Value, g.Modifier, g.ModifierValue, boolInt(g.NativeDrop))
 	if len(cmd) > 511 {
 		return "", fmt.Errorf("estado de material excede limite")
 	}
@@ -93,6 +94,7 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 	}
 	var status struct {
 		Items        string `json:"items_json"`
+		Destroyed    string `json:"destroyed_json"`
 		Events       string `json:"events_json"`
 		Receipts     string `json:"receipts_json"`
 		DropSequence uint64 `json:"drop_sequence"`
@@ -127,6 +129,17 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 	if err := b.prepareDropFromUI(n, status.DropOrigin, status.DropSequence); err != nil {
 		return err
 	}
+	if status.Destroyed != "" {
+		var ids []uint64
+		if err := json.Unmarshal([]byte(status.Destroyed), &ids); err != nil {
+			return err
+		}
+		if len(ids) > 0 {
+			if err := b.Client.DestroyGround(ids); err != nil {
+				return err
+			}
+		}
+	}
 	if err := b.Client.PublishGround(observations); err != nil {
 		return err
 	}
@@ -151,6 +164,15 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		}
 	}
 	budget := 8
+	for _, id := range v.Rejected {
+		if !n.closed[id] && budget > 0 {
+			if err := b.command(ctx, fmt.Sprintf("hm_native_drop_local %s %s %d", session, v.World, id), nil); err != nil {
+				return err
+			}
+			n.closed[id] = true
+			budget--
+		}
+	}
 	for _, claim := range v.Claims {
 		if claim.Status != "taken" && claim.Status != "denied" && claim.Status != "failed" {
 			continue
