@@ -131,7 +131,7 @@ func ProbeSessionAt(ctx context.Context, cfg core.Config, appRoot string, slot, 
 	return probeAt(ctx, cfg, appRoot, slot, port, false)
 }
 func probeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port int, detailed bool) (Report, error) {
-	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.11", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
+	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.12", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
 	if cfg.DataDir == "" || slot < 0 || slot > 2 {
 		return r, fmt.Errorf("configuração/pasta de dados ou instância inválida")
 	}

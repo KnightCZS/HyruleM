@@ -1,3 +1,15 @@
+# Prévia 12: apresentação, paletas por peça e efeitos
+
+O novo relato confirma roupas e animações de armas funcionando na prévia 11, com 121 ossos no corpo de ambos os clientes. O atraso incluía buffer fixo de 100 ms, filtro de raiz adicional de 35 ms e duas consultas locais atendidas em quadros sequenciais. A prévia 12 usa reserva adaptativa, snapshots de 20 ms e consulta combinada.
+
+Cabelo/roupa recebem paletas por origem HMP2: a leitura anterior visitava apenas o corpo; ossos de mesmo nome não identificam necessariamente a mesma transformação entre modelos. Armaduras ativas ligadas ao jogador local têm suas transformações finais capturadas; não é outra simulação Havok.
+
+Os pedidos nativos ELink por chave podem ser observados após a criação do EventHandle. Sua geração está em Event+0x20, diferente dos AssetExecutorHandle (0x10); confundir os dois impediria encerramento ou tocaria outro objeto. O adaptador mantém as verificações de geração, só captura usuários visuais locais e reproduz com usuários ELink genéricos; os controladores Player XLink, som, dano e IA não são encaminhados. Testes sintéticos, execução de trechos nativos com dependências sintéticas e compilação não validam o desenho final das partículas.
+
+29 assinaturas próprias, ABI 9/protocolo 9, gamelib ABI 4. Os hooks novos exigem regeneração. Gameplay/rendering da prévia 12 permanece não verificado; nem todo rastro de arma necessariamente usa pedidos ELink por nome.
+
+## Histórico
+
 # Prévia 9: revisão, launcher e materiais
 
 A camada inicial de mundo usa evento explícito de aquisição, observação de atores por identidade e confirmação da quantidade pessoal. Não usa ausência de ator como prova de coleta nem copia inventários. A concessão genericamente interceptada apenas enfileira dados; as funções nativas de inventário são chamadas após os jobs, com recibos e bloqueio de repetição.

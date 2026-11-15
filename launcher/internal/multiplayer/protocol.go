@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 8
+const Protocol = 9
 const MaxLine = 256 * 1024
 const MaxPlayers = 2
 
@@ -43,6 +43,7 @@ func (a Vec3) Valid() bool {
 }
 
 type Pose struct {
+	Effects   []VisualEffect `json:"effects,omitempty"`
 	Position  Vec3           `json:"position"`
 	Velocity  Vec3           `json:"velocity"`
 	Yaw       float64        `json:"yaw"`
@@ -76,7 +77,7 @@ func (p Pose) Valid() bool {
 	if _, err := decodeSkeleton(p.Skeleton); err != nil {
 		return false
 	}
-	if len(p.Equipment) > 6 {
+	if !validEffects(p.Effects) || len(p.Equipment) > 6 {
 		return false
 	}
 	seen := [6]bool{}

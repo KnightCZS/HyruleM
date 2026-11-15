@@ -180,5 +180,26 @@
     "kind": "code",
     "pattern": "f942cc08 b4000088 79404d09 32000129 79004d09 1429cc95",
     "at": 0
+  },
+  {
+    "name": "hm_fx_emit",
+    "address": "0x7000f50e80",
+    "kind": "code",
+    "pattern": "d10143ff a9027bfd f9001bf5 a9044ff4 910083fd aa0003f4 f9401800 aa0203f3",
+    "at": 0
+  },
+  {
+    "name": "hm_fx_capture",
+    "address": "0x7000f50f1c",
+    "kind": "code",
+    "pattern": "910023e1 aa1403e0 aa1303e2 94000000/fc000000 14000000/fc000000",
+    "at": 4
+  },
+  {
+    "name": "hm_fx_stop",
+    "address": "0x7000f47b54",
+    "kind": "code",
+    "pattern": "a9bd7bfd f9000bf5 a9024ff4 910003fd b9400808 321c0108 b9000808 f9401408",
+    "at": 0
   }
 ]

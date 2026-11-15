@@ -13,13 +13,16 @@ static uint64_t mock_actor=HEAP_BASE+0x3000, retained=HEAP_BASE+0x4000;
 static bool reject,fail_handle,deny_lease;
 static uint64_t ground_pouch_item;static unsigned inventory_grants,inventory_debits;static bool inventory_full,inventory_ambiguous,remove_ambiguous;
 static unsigned create_state=1;
+static unsigned effect_emits,effect_stops;static uint64_t effect_user_expected;
 static bool empty_inventory;static bool weapon_test;static uint64_t weapon_vt,weapon_pouch;static unsigned weapon_entries;static uint32_t granted_modifier;static int granted_bonus;
 static uint64_t local_equipped[6],gear_handles[32],gear_actors[32];static unsigned gear_allocations,gear_handles_count;static bool reject_equipment;
-void *hle_alloc(uint64_t size) { assert(size==BYTES);return (void *)(uintptr_t)(storage?HLE_HEAP+0x1000+0x400*gear_allocations++:HLE_HEAP); }
+void *hle_alloc(uint64_t size) { if(size==FX_MAX*16)return (void *)(uintptr_t)(HLE_HEAP+0x30000);assert(size==BYTES);return (void *)(uintptr_t)(storage?HLE_HEAP+0x1000+0x400*gear_allocations++:HLE_HEAP); }
 static uint64_t handle_actor(uint64_t handle) {if(handle==HLE_HEAP)return mock_actor;for(unsigned i=0;i<gear_handles_count;i++)if(gear_handles[i]==handle)return gear_actors[i];assert(false);return 0;}
 void guest_call(Cpu *c,uint64_t fn) {
     calls++;
-    if (fn==g_site.hm_create) {
+    if(fn==g_site.hm_fx_emit){assert(c->x[0]==effect_user_expected&&!strcmp((char *)(uintptr_t)c->x[1],"AttackSpin"));uint64_t context=HEAP_BASE+0xe0000+effect_emits*0x100;effect_emits++;ST64(c->x[2],context);ST32(c->x[2]+8,55);ST32(context+0x20,55);}
+    else if(fn==g_site.hm_fx_stop){effect_stops++;ST32(c->x[0]+8,LD32(c->x[0]+8)|0x10);}
+    else if (fn==g_site.hm_create) {
         creates++;uint64_t a=mock_actor;bool gear=c->x[3]!=HLE_HEAP+HANDLE;
         if(gear) {if(reject_equipment){c->x[0]=0;return;}assert(gear_handles_count<32);a=HEAP_BASE+0x20000+0x1000*gear_handles_count;gear_handles[gear_handles_count]=c->x[3];gear_actors[gear_handles_count++]=a;uint64_t request=HEAP_BASE+0xfc000+gear_handles_count*0x20;ST64(c->x[3],request);ST64(request+0x10,a);ST64(a+0x560,HEAP_BASE+0x5000);ST64(a+0x4e0,a+0x900);ST64(a+0x10,a+0xa00);snprintf((char *)(uintptr_t)(a+0xa00),48,"%s",(char *)(uintptr_t)c->x[1]);float initial[12]={1,0,0,0,0,1,0,0,0,0,1,0};for(int j=0;j<3;j++)initial[j*4+3]=read_float(c->x[3]+VECTOR+j*4);memcpy((void *)(uintptr_t)(a+0x398),initial,sizeof initial);}
         if(weapon_test&&gear){ST64(a,weapon_vt);ST32(a+0xd4c,100);}
@@ -50,11 +53,12 @@ void guest_call(Cpu *c,uint64_t fn) {
     // Deliberately clobber every register: the hook must preserve the caller.
     memset(c->v,0x5a,sizeof c->v);c->x[3]=0xdeadbeef;c->nzcv=0xabcdef;c->fpsr=91;
 }
-void control_register(const ControlCmd *cmds,int n) {assert(n==16);}
+void control_register(const ControlCmd *cmds,int n) {assert(n==17);}
 void control_field_str(ControlReply *r,const char *k,const char *v) {}
 void control_field_int(ControlReply *r,const char *k,int64_t v) {}
 void control_field_num(ControlReply *r,const char *k,double v) {}
 void control_field_bool(ControlReply *r,const char *k,bool v) {}
+bool control_reply_failed(const ControlReply *r){return r->failed;}
 void control_fail(ControlReply *r,const char *fmt,...) {r->failed=true;}
 
 static void map_at(uint64_t a,size_t n) {assert(mmap((void *)(uintptr_t)a,n,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)==(void *)(uintptr_t)a);}
@@ -277,11 +281,11 @@ int main(void) {
     ST64(dict+0x20,component+0xd00);ST64(dict+0x30,component+0xd50);strcpy((char *)(uintptr_t)(component+0xd02),"Root");strcpy((char *)(uintptr_t)(component+0xd52),"Weapon_R");
     float origin[3]={100,200,300};for(int i=0;i<2;i++){float matrix[16]={1,0,0,0,0,1,0,0,0,0,1,0,100+i,200,300,0};memcpy((void *)(uintptr_t)(palette+i*64),matrix,sizeof matrix);}
     PoseFrame captured;pose_capture(owner,origin,1.57079632679f,&captured);assert(captured.count==2&&captured.bones[1].name==pose_hash("Weapon_R"));assert(fabsf(captured.bones[1].matrix[3])<.0001f&&fabsf(captured.bones[1].matrix[11]-1)<.0001f);
-    Desired skin={0};skin.pose=captured;skin.x=10;skin.y=20;skin.z=30;unsigned before_bones=bone_writes;assert(pose_apply(&cpu,owner,storage,&skin)==2&&bone_writes==before_bones+2);assert(fabsf(last_bone_matrix[3]-10)<.0001f&&fabsf(last_bone_matrix[7]-20)<.0001f&&fabsf(last_bone_matrix[11]-31)<.0001f);assert(!memcmp(&cpu,&before,sizeof cpu));
+    Desired skin={0};skin.pose=captured;skin.x=10;skin.y=20;skin.z=30;unsigned before_bones=bone_writes;assert(pose_apply(&cpu,owner,storage,&skin,0)==2&&bone_writes==before_bones+2);assert(fabsf(last_bone_matrix[3]-10)<.0001f&&fabsf(last_bone_matrix[7]-20)<.0001f&&fabsf(last_bone_matrix[11]-31)<.0001f);assert(!memcmp(&cpu,&before,sizeof cpu));
     char encoded[POSE_B64_MAX+1];pose_encode(&captured,encoded);PoseFrame decoded;assert(pose_decode(encoded,&decoded)&&!memcmp(&captured,&decoded,4+captured.count*sizeof(PoseBone)));char save=encoded[4];encoded[4]='!';assert(!pose_decode(encoded,&decoded));encoded[4]=save;
     captured.bones[1].name=captured.bones[0].name;pose_encode(&captured,encoded);assert(!pose_decode(encoded,&decoded));captured.bones[1].name=pose_hash("Weapon_R");pose_encode(&captured,encoded);
     char *skeletal_frame[95];memcpy(skeletal_frame,atomic,sizeof atomic);skeletal_frame[2]="3";skeletal_frame[93]="0";skeletal_frame[94]=encoded;r.failed=false;remote(95,skeletal_frame,&r);assert(!r.failed&&desired.pose.count==2);Desired intact=desired;skeletal_frame[2]="4";skeletal_frame[94]="%%%=";remote(95,skeletal_frame,&r);assert(r.failed&&!memcmp(&intact,&desired,sizeof intact));
-    ST64(model_vt+0x70,0);pose_capture(owner,origin,0,&captured);assert(captured.count==0&&pose_apply(&cpu,owner,storage,&skin)==0);ST64(model_vt+0x70,g_site.hm_bone_get);
+    ST64(model_vt+0x70,0);pose_capture(owner,origin,0,&captured);assert(captured.count==0&&pose_apply(&cpu,owner,storage,&skin,0)==0);ST64(model_vt+0x70,g_site.hm_bone_get);
     float invalid=NAN;memcpy((void *)(uintptr_t)palette,&invalid,4);pose_capture(owner,origin,0,&captured);assert(captured.count==0&&pose_probe.skipped==1&&!strcmp(pose_probe.reason,"invalid-bone-matrix"));
     // Clothing comes from personal pouch entries, not the weapon actor getter.
     strcpy((char *)(uintptr_t)(ground_pouch_item+0x100),"Armor_001_Upper");ST64(ground_pouch_item+0x30,ground_pouch_item+0x100);ST32(ground_pouch_item+0x18,5);ST8(ground_pouch_item+0x24,1);ST8(ground_pouch_item+0x25,1);armor_read_at=0;capture_armor(&cpu);assert(armor_from_pouch&&!strcmp(local_armor[1],"Armor_001_Upper")&&!strcmp(local_armor[0],"Armor_Default_Head"));
@@ -291,6 +295,7 @@ int main(void) {
     ST32(ground_pouch_item+0x18,2);armor_read_at=0;capture_armor(&cpu);assert(!strcmp(local_armor[2],"Armor_Default_Lower"));ST32(ground_pouch_item+0x18,6);ST8(ground_pouch_item+0x24,0);armor_read_at=0;capture_armor(&cpu);assert(!strcmp(local_armor[2],"Armor_Default_Lower"));ST8(ground_pouch_item+0x24,1);
     #include "test_generation7.inc"
     #include "test_preview11.inc"
+    #include "test_preview12.inc"
     puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");

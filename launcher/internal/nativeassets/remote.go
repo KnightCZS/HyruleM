@@ -46,7 +46,7 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 		"ASUser":      Actor,
 		"ProfileUser": "DemoNPC", "AIProgramUser": "Dummy", "AIScheduleUser": "Dummy",
 		"AttentionUser": "Dummy", "AwarenessUser": "Dummy", "BoneControlUser": "Dummy",
-		"ChemicalUser": "Dummy", "ElinkUser": "Dummy", "SlinkUser": "Dummy", "XlinkUser": "Dummy",
+		"ChemicalUser": "Dummy", "ElinkUser": "Player_GameRom", "SlinkUser": "Dummy", "XlinkUser": "Dummy",
 		// A Player controller/damage handler may assume the concrete local Player
 		// class. The presence test deliberately has no collision/damage component.
 		"PhysicsUser": "Dummy", "DamageParamUser": "Dummy", "RgBlendWeightUser": "Dummy", "RgConfigListUser": "Dummy",
@@ -149,8 +149,10 @@ func BuildRemote(title, actorInfo, resourceTable []byte) (map[string][]byte, err
 	remote := original.CloneMap()
 	remote.Fields["name"] = gamefmt.Text(Actor)
 	remote.Fields["profile"] = gamefmt.Text("DemoNPC")
-	// Player-specific sound/effect controllers must not attach to the local player.
-	for _, key := range []string{"elink", "slink", "xlink"} {
+	// Only the generic ELink visual user is retained. Sound and Player XLink
+	// property/controller bindings remain disabled. Requests are replayed
+	// explicitly on this actor, never on the local Player.
+	for _, key := range []string{"slink", "xlink"} {
 		if remote.Get(key) != nil {
 			remote.Fields[key] = gamefmt.Text("Dummy")
 		}

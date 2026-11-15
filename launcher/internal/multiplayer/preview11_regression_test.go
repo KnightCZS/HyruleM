@@ -28,7 +28,7 @@ func TestCapturedBonesReachOtherNativeInstance(t *testing.T) {
 			g.mu.Lock()
 			defer g.mu.Unlock()
 			for _, cmd := range g.commands {
-				if strings.HasPrefix(cmd, "hm_native_remote ") && strings.HasSuffix(cmd, " "+want) {
+				if (strings.HasPrefix(cmd, "hm_native_remote ") || strings.HasPrefix(cmd, "hm_native_sample ")) && strings.HasSuffix(cmd, " "+want) {
 					return true
 				}
 			}

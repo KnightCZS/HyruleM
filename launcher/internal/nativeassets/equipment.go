@@ -59,6 +59,7 @@ func equipmentResources(player *f.SARC, simpleModel []byte, mainFiles map[string
 			return nil, nil, err
 		}
 		targets := map[string]string{"ModelUser": actor, "GParamUser": "Dummy", "AnimationInfo": "Dummy"}
+        effectUser:=source.Get("elink").Str();if effectUser=="" {effectUser="Dummy"};targets["ElinkUser"]=effectUser
 		if weapon {
 			targets["ASUser"] = "Dummy"
 		}
@@ -84,6 +85,7 @@ func equipmentResources(player *f.SARC, simpleModel []byte, mainFiles map[string
 		row.Fields["name"] = f.Text(actor)
 		row.Fields["bfres"] = f.Text(folder)
 		row.Fields["mainModel"] = f.Text(unit)
+        if source.Get("elink")!=nil {row.Fields["elink"]=f.Text(effectUser)}
 		rows = append(rows, row)
 	}
 	return out, rows, nil

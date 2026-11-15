@@ -7,15 +7,17 @@ import (
 	"encoding/json"
 	"fmt"
 	core "hyrulelauncher/internal/launcher"
+	"strings"
 	"time"
 )
 
-// Native presence and nearby map-enemy health use protocol 8. Full Gen1 combat
+// Native presence and nearby map-enemy health use protocol 9. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
 	session       string
 	sequence      uint64
 	lastStatus    time.Time
+	sampled       bool
 	state         string
 	waitingSince  time.Time
 	lastWorld     time.Time
@@ -34,6 +36,7 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 		SharedHealth     bool   `json:"shared_enemy_health"`
 		AnimationCapture bool   `json:"animation_capture"`
 		ActorJobBarrier  bool   `json:"actor_job_barrier"`
+		VisualEffects    bool   `json:"visual_effect_events"`
 	}
 	if err := b.command(ctx, "hm_caps", &caps); err != nil {
 		return nil, fmt.Errorf("o runtime não possui o adaptador nativo: %w", err)
@@ -52,6 +55,9 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 	}
 	if !caps.ActorJobBarrier {
 		return nil, fmt.Errorf("o ponto de atualização após as tarefas dos atores está ausente; recompile a biblioteca do jogo com o gerador da prévia 7")
+	}
+	if !caps.VisualEffects {
+		return nil, fmt.Errorf("faltam os hooks de efeitos visuais; aguarde a recompilação da biblioteca com o gerador novo")
 	}
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
@@ -105,7 +111,7 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 		lower = "-"
 	}
 	command := fmt.Sprintf("hm_native_remote %s %d %.4f %.4f %.4f %.6f %s %s %d %d %s %d %d %d %d", session, seq, pose.Position.X, pose.Position.Y, pose.Position.Z, pose.Yaw, animation, upper, pose.Upper.Sequence, boolInt(pose.Upper.Force), lower, pose.Lower.Sequence, boolInt(pose.Lower.Force), pose.Upper.Slot, pose.Lower.Slot)
-	if len(pose.Equipment) > 0 || pose.Skeleton != "" {
+	if len(pose.Equipment) > 0 || pose.Skeleton != "" || len(pose.Effects) > 0 {
 		var pieces [6]Equipment
 		for i := range pieces {
 			pieces[i].Slot = i
@@ -127,8 +133,18 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 			}
 		}
 	}
-	if pose.Skeleton != "" {
-		command += " " + pose.Skeleton
+	if pose.Skeleton != "" || len(pose.Effects) > 0 {
+		skeleton := pose.Skeleton
+		if skeleton == "" {
+			skeleton = "-"
+		}
+		command += " " + skeleton
+	}
+	if len(pose.Effects) > 0 {
+		command += fmt.Sprintf(" %d", len(pose.Effects))
+		for _, e := range pose.Effects {
+			command += fmt.Sprintf(" %d %d %d %d %s", e.Sequence, e.Slot, boolInt(e.Active), e.AgeMS, e.Name)
+		}
 	}
 	if len(command) > 65535 {
 		return "", fmt.Errorf("estado visual excede limite local")
@@ -142,6 +158,9 @@ func boolInt(b bool) int {
 	return 0
 }
 func (b *Bridge) capturePose(ctx context.Context, p *Pose) error {
+	return b.capturePoseCommand(ctx, p, "hm_local_state")
+}
+func (b *Bridge) capturePoseCommand(ctx context.Context, p *Pose, command string) error {
 	var s struct {
 		Yaw           float64
 		Upper         string
@@ -156,9 +175,15 @@ func (b *Bridge) capturePose(ctx context.Context, p *Pose) error {
 		X, Y, Z       float64
 		Equipment     string `json:"equipment_json"`
 		Skeleton      string `json:"skeleton_b64"`
+		Effects       string `json:"effects_json"`
 	}
-	if err := b.command(ctx, "hm_local_state", &s); err != nil {
+	if err := b.command(ctx, command, &s); err != nil {
 		return err
+	}
+	if s.Effects != "" {
+		if err := json.Unmarshal([]byte(s.Effects), &p.Effects); err != nil {
+			return fmt.Errorf("efeitos locais inválidos: %w", err)
+		}
 	}
 	p.Skeleton = s.Skeleton
 	p.Yaw = s.Yaw
@@ -176,9 +201,38 @@ func (b *Bridge) capturePose(ctx context.Context, p *Pose) error {
 	}
 	return nil
 }
-func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Time) error {
+
+// One queued control command both submits the remote frame and reads the
+// latest local capture. Control commands are drained once per presented frame;
+// two sequential roundtrips unnecessarily halved the sampling rate.
+func (b *Bridge) sampleNative(ctx context.Context, n *nativePreview, p *Pose, now time.Time) error {
 	remotes := b.Client.Remote(now)
 	if len(remotes) == 0 {
+		n.waitingSince = time.Time{}
+	} else if n.waitingSince.IsZero() {
+		n.waitingSince = now
+	}
+	n.sequence++
+	command := fmt.Sprintf("hm_native_sample %s %d clear", n.session, n.sequence)
+	if len(remotes) > 0 {
+		var err error
+		command, err = nativePoseCommand(n.session, n.sequence, remotes[0].Pose)
+		if err != nil {
+			return err
+		}
+		command = strings.Replace(command, "hm_native_remote ", "hm_native_sample ", 1)
+	}
+	if err := b.capturePoseCommand(ctx, p, command); err != nil {
+		return err
+	}
+	n.sampled = true
+	return nil
+}
+func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Time) error {
+	remotes := b.Client.Remote(now)
+	if n.sampled {
+		n.sampled = false
+	} else if len(remotes) == 0 {
 		n.waitingSince = time.Time{}
 		if err := b.clearNative(ctx, n); err != nil {
 			return err

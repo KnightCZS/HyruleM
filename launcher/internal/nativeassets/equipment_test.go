@@ -38,7 +38,7 @@ func TestEquipmentUsesMetadataAndVisualOnlyControllers(t *testing.T) {
 	}
 	row := f.Dict(map[string]*f.Node{"name": f.Text(Actor), "profile": f.Text("DemoNPC"), "bfres": f.Text("Link"), "mainModel": f.Text("Link")})
 	armor := f.Dict(map[string]*f.Node{"name": f.Text("Armor_001_Head"), "bfres": f.Text("Armor_001"), "mainModel": f.Text("Armor_001_Head_A")})
-	weapon := f.Dict(map[string]*f.Node{"name": f.Text("Weapon_Sword_001"), "bfres": f.Text("Weapon_Sword_001"), "mainModel": f.Text("Weapon_Sword_001")})
+	weapon := f.Dict(map[string]*f.Node{"name": f.Text("Weapon_Sword_001"), "bfres": f.Text("Weapon_Sword_001"), "mainModel": f.Text("Weapon_Sword_001"), "elink": f.Text("WeaponVisual")})
 	shared := map[string][]byte{"Actor/AS/HM_Test.bas": []byte("synthetic animation")}
 	before := append([]byte(nil), link...)
 	packs, rows, err := equipmentResources(player, model, shared, link, []*f.Node{armor, weapon}, row)
@@ -52,6 +52,9 @@ func TestEquipmentUsesMetadataAndVisualOnlyControllers(t *testing.T) {
 		name := r.Get("name").Str()
 		if r.Get("profile").Str() != "DemoNPC" {
 			t.Fatal("gameplay profile used")
+		}
+		if strings.Contains(name, "Weapon_") && r.Get("elink").Str() != "WeaponVisual" {
+			t.Fatal("weapon effect user not preserved")
 		}
 		data, _, err := f.Unpack(packs["Actor/Pack/"+name+".sbactorpack"])
 		if err != nil {

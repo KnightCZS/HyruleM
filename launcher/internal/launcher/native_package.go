@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 )
 
-const NativePreviewABI = 8
+const NativePreviewABI = 9
 const NativePackageManifest = "hyrulem-preview.json"
 
 // A native package selects its own mode even when the executable is opened

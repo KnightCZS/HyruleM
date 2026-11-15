@@ -243,7 +243,7 @@ func (c *Client) Remote(now time.Time) []Player {
 	if now.Sub(last.At) > time.Second {
 		return nil
 	}
-	target := now.Add(-100 * time.Millisecond)
+	target := now.Add(-presentationDelay(c.frames))
 	a, b := last, last
 	if target.Before(c.frames[0].At) {
 		a, b = c.frames[0], c.frames[0]
@@ -284,23 +284,67 @@ func (c *Client) Remote(now time.Time) []Player {
 						p.Pose.Equipment = interpolateEquipmentFrame(old.Pose.Equipment, p.Pose.Equipment, alpha, true)
 						if alpha < 1 {
 							p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
+							p.Pose.Effects = old.Pose.Effects
 						}
 					} else if skeletal == old.Pose.Skeleton {
 						p.Pose.Equipment = old.Pose.Equipment
 						p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
+						p.Pose.Effects = old.Pose.Effects
 					}
 					p.Pose.Skeleton = skeletal
 				} else {
 					p.Pose.Equipment = interpolateEquipment(old.Pose.Equipment, p.Pose.Equipment, alpha)
 					if alpha < 1 {
 						p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
+						p.Pose.Effects = old.Pose.Effects
 					}
 				}
 				break
 			}
 		}
 		p.Pose.Equipment = append([]Equipment(nil), p.Pose.Equipment...)
+		p.Pose.Effects = append([]VisualEffect(nil), p.Pose.Effects...)
 		out = append(out, p)
 	}
 	return out
+}
+
+// Keep roughly one snapshot in reserve. A stable LAN should not pay the old
+// fixed 100 ms; recent jitter can expand the reserve without extrapolating bones
+// or advancing weapons independently of the body.
+func presentationDelay(frames []Frame) time.Duration {
+	if len(frames) < 3 {
+		return 100 * time.Millisecond
+	}
+	var sum time.Duration
+	var intervals []time.Duration
+	for i := 1; i < len(frames); i++ {
+		d := frames[i].At.Sub(frames[i-1].At)
+		if d > 0 {
+			intervals = append(intervals, d)
+			sum += d
+		}
+	}
+	if len(intervals) == 0 {
+		return 100 * time.Millisecond
+	}
+	mean := sum / time.Duration(len(intervals))
+	var jitter time.Duration
+	for _, d := range intervals {
+		v := d - mean
+		if v < 0 {
+			v = -v
+		}
+		if v > jitter {
+			jitter = v
+		}
+	}
+	delay := mean + 2*jitter + 5*time.Millisecond
+	if delay < 20*time.Millisecond {
+		delay = 20 * time.Millisecond
+	}
+	if delay > 100*time.Millisecond {
+		delay = 100 * time.Millisecond
+	}
+	return delay
 }

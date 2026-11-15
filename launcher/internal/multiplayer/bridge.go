@@ -194,11 +194,16 @@ func (b *Bridge) run(ctx context.Context) {
 		}
 	}()
 	for ctx.Err() == nil && b.Client.Connected() {
+		cycleStart := time.Now()
 		var pos Vec3
 		var captured Pose
 		var readErr error
 		if b.native && native != nil {
-			readErr = b.capturePose(ctx, &captured)
+			if joined {
+				readErr = b.sampleNative(ctx, native, &captured, time.Now())
+			} else {
+				readErr = b.capturePose(ctx, &captured)
+			}
 			pos = captured.Position
 			if readErr == nil && !captured.Ready {
 				readErr = fmt.Errorf("mundo nativo aguardando atualização")
@@ -340,7 +345,9 @@ func (b *Bridge) run(ctx context.Context) {
 				b.say("Presença ativa; materiais experimentais aguardando: " + err.Error())
 				groundIssue = now
 			}
-			if !wait(ctx, 16*time.Millisecond) {
+			// Control requests already consume time. Sleeping a full period after
+			// them added avoidable delay to every capture and remote update.
+			if !wait(ctx, time.Until(cycleStart.Add(16*time.Millisecond))) {
 				return
 			}
 			continue

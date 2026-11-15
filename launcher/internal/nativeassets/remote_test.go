@@ -38,7 +38,7 @@ func TestPrivateRemoteResourcesPreserveOriginals(t *testing.T) {
 	originalLink := syntheticLink()
 	pack, _ := f.WriteSARC(map[string][]byte{"Actor/ActorLink/GameROMPlayer.bxml": originalLink, "Actor/Other/Keep.bin": []byte("synthetic animation")})
 	title, _ := f.WriteSARC(map[string][]byte{"Actor/Pack/GameROMPlayer.sbactorpack": f.PackYaz0(pack)})
-	original := f.Dict(map[string]*f.Node{"name": f.Text("GameROMPlayer"), "profile": f.Text("Player"), "bfres": f.Text("Link"), "mainModel": f.Text("Link")})
+	original := f.Dict(map[string]*f.Node{"name": f.Text("GameROMPlayer"), "profile": f.Text("Player"), "bfres": f.Text("Link"), "mainModel": f.Text("Link"), "elink": f.Text("Player_GameRom"), "slink": f.Text("GameROMPlayer"), "xlink": f.Text("Player")})
 	info, _ := f.WriteBYML(f.Document{Little: true, Version: 2, Root: f.Dict(map[string]*f.Node{"Actors": f.Arr(original), "Hashes": f.Arr(&f.Node{Kind: f.Uint, Bits: uint64(crc32.ChecksumIEEE([]byte("GameROMPlayer")))})})})
 	table := (&f.RSTB{Hashes: map[uint32]uint32{}, Names: map[string]uint32{}}).Bytes()
 	before := append([]byte(nil), title...)
@@ -86,6 +86,9 @@ func TestPrivateRemoteResourcesPreserveOriginals(t *testing.T) {
 	for _, a := range actors {
 		if a.Get("name").Str() == "GameROMPlayer" && a.Get("profile").Str() != "Player" {
 			t.Fatal("local player changed")
+		}
+		if a.Get("name").Str() == Actor && (a.Get("elink").Str() != "Player_GameRom" || a.Get("slink").Str() != "Dummy" || a.Get("xlink").Str() != "Dummy") {
+			t.Fatal("visual user/sound/controller isolation")
 		}
 		if a.Get("name").Str() == Actor && a.Get("profile").Str() != "DemoNPC" {
 			t.Fatal("remote actor controls the player")

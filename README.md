@@ -1,6 +1,6 @@
 # HyruleM
 
-Atualização experimental [0.5.0-preview.11](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.11): corrige a pose esquelética descartada pelo launcher, os tipos de armadura e a ordem nativa de arco/escudo. Ajusta quadros de corpo/arma e confirmação tardia de morte, com diagnóstico nativo integrado ao launcher. **ABI 8 / protocolo 8: atualizar o ZIP inteiro nos dois clientes e no servidor.** A biblioteca privada da prévia 10 pode ser reutilizada quando sua identidade for aceita pelo runtime. Resultado gráfico desta versão ainda sem confirmação. [Instalação e limites](native/README.md) · [Auditoria](docs/AUDITORIA_0.5.0-preview.11.md).
+Atualização experimental [0.5.0-preview.12](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.12): buffer adaptativo, captura/envio em um único comando local, paletas separadas para corpo/cabelo/roupa e eventos visuais ELink com ciclo de vida. O jogador confirmou roupas e animações da prévia 11; o resultado gráfico desta atualização ainda exige validação. **ABI 9 / protocolo 9: atualizar os dois clientes/servidor e aguardar a recompilação da biblioteca privada.** [Instalação e limites](native/README.md) · [Auditoria](docs/AUDITORIA_0.5.0-preview.12.md).
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 

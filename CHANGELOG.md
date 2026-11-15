@@ -1,5 +1,15 @@
 # Histórico do HyruleM
 
+
+## 0.5.0-preview.12
+
+- A confirmação do jogador estabelece roupas e animações de armas funcionando na prévia 11; o relatório confirma 121 ossos recebidos e aplicados no corpo dos dois clientes.
+- Reduz esperas: snapshots padrão de 20 ms, buffer adaptativo (25 ms em fluxo estável de 20 ms), uma consulta combinada por atualização e orçamento de 16 ms que inclui o custo das consultas. Remove a segunda suavização da raiz em quadros esqueléticos.
+- HMP2 separa paletas de corpo/cabeça/tronco/pernas e captura armadura ativa ligada ao Link local, incluindo transformações finais de cabelo/roupa.
+- Introduz captura e reprodução experimental de eventos ELink por nome, encerramento, isolamento de origem, proteção por geração e sequência. Não comprova ainda o rastro do spin attack na GPU nem cobre todos os caminhos de efeitos.
+- Diagnóstico por peça e por etapa dos efeitos. Novos testes de transporte contínuo, intervalo de apresentação, paletas duplicadas e ciclo de vida/replay de efeitos.
+- ABI 9/protocolo 9, novo overlay privado e recompilação da biblioteca necessária pelos dois hooks novos. Gamelib ABI 4. Mundo experimental mantém os limites anteriores.
+
 ## 0.5.0-preview.11
 
 - Corrige perda do campo Skeleton entre captura nativa e envio da pose no launcher. Regressão com dois clientes exercita o caminho até o comando remoto.

@@ -58,7 +58,7 @@ func Listen(address string, cfg ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("posição inicial inválida")
 	}
 	if cfg.Tick <= 0 {
-		cfg.Tick = 50 * time.Millisecond
+		cfg.Tick = 20 * time.Millisecond
 	}
 	if cfg.Tick < 20*time.Millisecond {
 		cfg.Tick = 20 * time.Millisecond
@@ -143,7 +143,7 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 			slot = 1
 		}
 	}
-	p := &serverPeer{conn: c, player: Player{ID: id, Name: name, Slot: slot}, out: make(chan Message, 2), done: make(chan struct{}), groundClaims: map[uint64]GroundClaim{}}
+	p := &serverPeer{conn: c, player: Player{ID: id, Name: name, Slot: slot}, out: make(chan Message, 1), done: make(chan struct{}), groundClaims: map[uint64]GroundClaim{}}
 	s.peers[id] = p
 	s.chooseEnvironmentHostLocked()
 	s.mu.Unlock()
@@ -329,6 +329,9 @@ func (s *Server) broadcast(ctx context.Context) {
 		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence, Enemies: enemies, HostID: host, Epoch: epoch, Environment: environment}
 		for _, p := range targets {
 			packet := m
+			// The receiver renders its own Link locally. Echoing its complete
+			// bone/effect payload consumes bandwidth without adding a frame.
+			packet.Players = recipientPlayers(m.Players, p.player.ID)
 			if s.cfg.SharedItems {
 				s.mu.Lock()
 				packet.GroundItems, packet.GroundClaims = s.groundSnapshot(p)
@@ -383,4 +386,16 @@ func (s *Server) Close() error {
 	s.mu.Unlock()
 	s.wg.Wait()
 	return e
+}
+
+func recipientPlayers(players []Player, recipient string) []Player {
+	out := append([]Player(nil), players...)
+	for i := range out {
+		if out[i].ID == recipient {
+			out[i].Pose.Skeleton = ""
+			out[i].Pose.Equipment = nil
+			out[i].Pose.Effects = nil
+		}
+	}
+	return out
 }

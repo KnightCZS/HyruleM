@@ -107,3 +107,36 @@ int main(void) {
   subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
   subprocess.run([str(p/'hook')],check=True)
 print('Deletion/drop/throw hooks: original load/STP and full CPU preservation passed')
+
+# Visual effect hooks do not replace the native request. The capture runs only
+# after it returned, then preserves the original branch to its epilogue.
+struct.pack_into('<I',image,0x340,0x17ffffe6)
+fragment=patches._hm_fx_capture(gen,base+0x340)
+source='''#include "cpu.h"
+#include <assert.h>
+#include <string.h>
+static unsigned calls;
+void rt_hyrulem_capture_effect(Cpu *c){assert(c->x[19]==19&&c->x[20]==20&&c->x[21]==21);calls++;}
+static void generated(Cpu *c){FRAGMENT assert(0);L_70000002d8:;}
+int main(void){Cpu c;memset(&c,0xa5,sizeof c);c.x[19]=19;c.x[20]=20;c.x[21]=21;Cpu before=c;generated(&c);assert(calls==1&&!memcmp(&c,&before,sizeof c));return 0;}
+'''.replace('FRAGMENT',fragment)
+with tempfile.TemporaryDirectory(prefix='hyrulem-fx-capture-') as temp:
+ p=Path(temp);(p/'hook.c').write_text(source)
+ subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
+ subprocess.run([str(p/'hook')],check=True)
+struct.pack_into('<I',image,0x380,0xa9bd7bfd)
+fragment=patches._hm_fx_stop(gen,base+0x380)
+source='''#include "cpu.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/mman.h>
+static unsigned calls;
+void rt_hyrulem_stop_effect(Cpu *c){assert(c->x[0]==0x7000000400ull);calls++;}
+static void generated(Cpu *c){FRAGMENT}
+int main(void){assert(mmap((void *)0x7000000000ull,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)!=(void *)-1);Cpu c;memset(&c,0xa5,sizeof c);c.sp=0x7000000f00ull;c.x[0]=0x7000000400ull;Cpu expected=c;expected.sp-=0x30;generated(&c);assert(calls==1&&!memcmp(&c,&expected,sizeof c)&&LD64(c.sp)==c.x[29]&&LD64(c.sp+8)==c.x[30]);return 0;}
+'''.replace('FRAGMENT',fragment)
+with tempfile.TemporaryDirectory(prefix='hyrulem-fx-stop-') as temp:
+ p=Path(temp);(p/'hook.c').write_text(source)
+ subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
+ subprocess.run([str(p/'hook')],check=True)
+print('Visual events: post-request branch and native stop STP/CPU preservation passed')

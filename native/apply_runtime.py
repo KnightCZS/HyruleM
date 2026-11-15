@@ -94,7 +94,16 @@ def apply(root):
         "    got = adrp_page(adrp, get + 0x24) + ((ldr >> 10) & 0xfff) * 8\n"
         "    return ('{ extern void rt_hyrulem_tick(Cpu *, uint64_t); '\n"
         "            f'rt_hyrulem_tick(c, LD64({got:#x}ull) + 0x10); c->x[8] = LD64(c->x[22]); }}')\n\n\n"
-        "PATCHES['hm_world_tick'] = _hm_world_tick\n\n\ndef table(sites):")
+        "PATCHES['hm_world_tick'] = _hm_world_tick\n\n\n"
+        "def _hm_fx_capture(gen, a):\n"
+        "    word = _word(gen, a)\n"
+        "    assert word == 0x17ffffe6, hex(word)\n"
+        "    return ('{ extern void rt_hyrulem_capture_effect(Cpu *); rt_hyrulem_capture_effect(c); } '\n"
+        "            f'goto L_{a - 0x68:x};')\n\n"
+        "def _hm_fx_stop(gen, a):\n"
+        "    assert _word(gen, a) == 0xa9bd7bfd, hex(_word(gen, a))\n"
+        "    return '{ extern void rt_hyrulem_stop_effect(Cpu *); rt_hyrulem_stop_effect(c); c->sp -= 0x30; ST64(c->sp, c->x[29]); ST64(c->sp + 8, c->x[30]); }'\n\n"
+        "PATCHES['hm_fx_capture'] = _hm_fx_capture\nPATCHES['hm_fx_stop'] = _hm_fx_stop\n\ndef table(sites):")
     text=patch.read_text()
     marker="# HyruleM material award hook"
     if marker in text:
@@ -116,10 +125,11 @@ def apply(root):
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
     shutil.copyfile(HERE / "runtime/hyrulem_items.inc", root / "runtime/hyrulem_items.inc")
     shutil.copyfile(HERE / "runtime/hyrulem_pose.inc", root / "runtime/hyrulem_pose.inc")
+    shutil.copyfile(HERE / "runtime/hyrulem_effects.inc", root / "runtime/hyrulem_effects.inc")
     replace_once(root / "runtime/control.c", "MAX_LINE = 4096,", "MAX_LINE = 65536,")
     shutil.copyfile(HERE / "runtime/hyrulem_world.inc", root / "runtime/hyrulem_world.inc")
     shutil.copyfile(HERE / "runtime/hyrulem_weapons.inc", root / "runtime/hyrulem_weapons.inc")
-    stamp = {"upstream": UPSTREAM, "preview_abi": 8, "weapons_sha256": hashlib.sha256((HERE / "runtime/hyrulem_weapons.inc").read_bytes()).hexdigest(), "world_sha256": hashlib.sha256((HERE / "runtime/hyrulem_world.inc").read_bytes()).hexdigest(), "pose_sha256": hashlib.sha256((HERE / "runtime/hyrulem_pose.inc").read_bytes()).hexdigest(), "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
+    stamp = {"upstream": UPSTREAM, "preview_abi": 9, "effects_sha256": hashlib.sha256((HERE / "runtime/hyrulem_effects.inc").read_bytes()).hexdigest(), "weapons_sha256": hashlib.sha256((HERE / "runtime/hyrulem_weapons.inc").read_bytes()).hexdigest(), "world_sha256": hashlib.sha256((HERE / "runtime/hyrulem_world.inc").read_bytes()).hexdigest(), "pose_sha256": hashlib.sha256((HERE / "runtime/hyrulem_pose.inc").read_bytes()).hexdigest(), "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
     (root / "hyrulem-build.json").write_text(json.dumps(stamp, indent=2) + "\n")
 
 
