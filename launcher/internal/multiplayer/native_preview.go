@@ -111,7 +111,7 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 		lower = "-"
 	}
 	command := fmt.Sprintf("hm_native_remote %s %d %.4f %.4f %.4f %.6f %s %s %d %d %s %d %d %d %d", session, seq, pose.Position.X, pose.Position.Y, pose.Position.Z, pose.Yaw, animation, upper, pose.Upper.Sequence, boolInt(pose.Upper.Force), lower, pose.Lower.Sequence, boolInt(pose.Lower.Force), pose.Upper.Slot, pose.Lower.Slot)
-	if len(pose.Equipment) > 0 || pose.Skeleton != "" || len(pose.Effects) > 0 {
+	if len(pose.Equipment) > 0 || pose.Skeleton != "" || len(pose.Effects) > 0 || pose.Appearance != "" {
 		var pieces [6]Equipment
 		for i := range pieces {
 			pieces[i].Slot = i
@@ -133,18 +133,25 @@ func nativePoseCommand(session string, seq uint64, pose Pose) (string, error) {
 			}
 		}
 	}
-	if pose.Skeleton != "" || len(pose.Effects) > 0 {
+	if pose.Skeleton != "" || len(pose.Effects) > 0 || pose.Appearance != "" {
 		skeleton := pose.Skeleton
 		if skeleton == "" {
 			skeleton = "-"
 		}
 		command += " " + skeleton
 	}
-	if len(pose.Effects) > 0 {
+	if len(pose.Effects) > 0 || pose.Appearance != "" {
 		command += fmt.Sprintf(" %d", len(pose.Effects))
 		for _, e := range pose.Effects {
 			command += fmt.Sprintf(" %d %d %d %d %s", e.Sequence, e.Slot, boolInt(e.Active), e.AgeMS, e.Name)
 		}
+	}
+	if pose.Appearance != "" {
+		token, err := appearanceToken(pose.Appearance)
+		if err != nil {
+			return "", err
+		}
+		command += " " + token
 	}
 	if len(command) > 65535 {
 		return "", fmt.Errorf("estado visual excede limite local")
@@ -175,6 +182,7 @@ func (b *Bridge) capturePoseCommand(ctx context.Context, p *Pose, command string
 		X, Y, Z       float64
 		Equipment     string `json:"equipment_json"`
 		Skeleton      string `json:"skeleton_b64"`
+		Appearance    string `json:"appearance_b64"`
 		Effects       string `json:"effects_json"`
 	}
 	if err := b.command(ctx, command, &s); err != nil {
@@ -186,6 +194,7 @@ func (b *Bridge) capturePoseCommand(ctx context.Context, p *Pose, command string
 		}
 	}
 	p.Skeleton = s.Skeleton
+	p.Appearance = s.Appearance
 	p.Yaw = s.Yaw
 	p.Position = Vec3{s.X, s.Y, s.Z}
 	p.Ready = s.Ready

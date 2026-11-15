@@ -1,3 +1,11 @@
+# Atualização de 15/11 — preview 14
+
+A análise privada do vídeo e do módulo identificou referências de armadura que não dependem de Actor::parent, máscaras separadas de visibilidade por osso/material e o caminho comum de criação ELink por descritor. Implementação original baseada em layouts conferidos no módulo do próprio usuário; nenhum código de decompilação copiado.
+
+35 assinaturas próprias, ABI 10/protocolo 10, gamelib ABI 4. Regeneração obrigatória pela adição do hook. Visibilidade e condições numéricas de efeitos acompanham o quadro; a reprodução usa setters nativos. Casos e limites estão na [auditoria](../docs/AUDITORIA_0.5.0-preview.14.md). Nenhuma confirmação de rendering desta versão com GPU.
+
+---
+
 # Hotfix 13: limite do transporte local — issue #8
 
 Os dois relatórios da prévia 12 indicam ABI 9 correto e 121 ossos capturados, mas nenhum recebido/aplicado no remoto. O título da issue relata “comando local inválido”. A reprodução com a classe real ControlStream demonstra a recusa de hm_native_sample acima de 256 caracteres; os testes anteriores de Bridge usavam GameControl simulado e não exercitavam essa validação. Um cliente também capturou 141 pedidos de efeitos, sem aplicação remota: isso não comprova o desenho desses efeitos.

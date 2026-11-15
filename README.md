@@ -1,6 +1,6 @@
 # HyruleM
 
-Hotfix [0.5.0-preview.13](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.13) para a [issue #8](https://github.com/KnightCZS/HyruleM/issues/8): o comando combinado `hm_native_sample` era recusado pelo limite antigo de 256 caracteres. Agora usa o mesmo teto de 65.535 do quadro nativo completo. A regressão usa dois clientes e o transporte TCP real do launcher, com 512 ossos e 16 efeitos por quadro. **ABI 9/protocolo 9 preservados; biblioteca válida da prévia 12 reutilizável.** [Instalação e limites](native/README.md) · [Auditoria](docs/AUDITORIA_0.5.0-preview.13.md).
+Prévia [0.5.0-preview.14](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.14): captura de armadura pelas referências nativas do jogador, máscaras de visibilidade de corpo/roupa e pedidos diretos/condições numéricas de efeitos. Correções motivadas pelo vídeo de chapéu rígido, sobreposição e efeitos ausentes. **ABI 10/protocolo 10; recompilação da biblioteca privada obrigatória.** Testes nativos e de transporte passaram; resultado desta versão ainda sem validação em duas instâncias/GPU. [Instalação e limites](native/README.md) · [Auditoria](docs/AUDITORIA_0.5.0-preview.14.md).
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 

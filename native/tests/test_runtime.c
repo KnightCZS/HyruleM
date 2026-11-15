@@ -13,6 +13,7 @@ static uint64_t mock_actor=HEAP_BASE+0x3000, retained=HEAP_BASE+0x4000;
 static bool reject,fail_handle,deny_lease;
 static uint64_t ground_pouch_item;static unsigned inventory_grants,inventory_debits;static bool inventory_full,inventory_ambiguous,remove_ambiguous;
 static unsigned create_state=1;
+static unsigned shape_writes,property_writes;
 static unsigned effect_emits,effect_stops;static uint64_t effect_user_expected;
 static bool empty_inventory;static bool weapon_test;static uint64_t weapon_vt,weapon_pouch;static unsigned weapon_entries;static uint32_t granted_modifier;static int granted_bonus;
 static uint64_t local_equipped[6],gear_handles[32],gear_actors[32];static unsigned gear_allocations,gear_handles_count;static bool reject_equipment;
@@ -20,7 +21,9 @@ void *hle_alloc(uint64_t size) { if(size==FX_MAX*16)return (void *)(uintptr_t)(H
 static uint64_t handle_actor(uint64_t handle) {if(handle==HLE_HEAP)return mock_actor;for(unsigned i=0;i<gear_handles_count;i++)if(gear_handles[i]==handle)return gear_actors[i];assert(false);return 0;}
 void guest_call(Cpu *c,uint64_t fn) {
     calls++;
-    if(fn==g_site.hm_fx_emit){assert(c->x[0]==effect_user_expected&&!strcmp((char *)(uintptr_t)c->x[1],"AttackSpin"));uint64_t context=HEAP_BASE+0xe0000+effect_emits*0x100;effect_emits++;ST64(c->x[2],context);ST32(c->x[2]+8,55);ST32(context+0x20,55);}
+    if(fn==g_site.hm_material_set||fn==g_site.hm_bone_visible_set){uint64_t bits=LD64(c->x[0]+(fn==g_site.hm_material_set?0xf0:0xe8));unsigned i=(unsigned)c->x[1];uint32_t v=LD32(bits+i/32*4),mask=1u<<(i%32);ST32(bits+i/32*4,c->x[2]?v|mask:v&~mask);shape_writes++;}
+    else if(fn==g_site.hm_fx_set_int||fn==g_site.hm_fx_set_float){uint32_t v=(uint32_t)c->x[2];if(fn==g_site.hm_fx_set_float)memcpy(&v,&c->v[0],4);ST32(LD64(c->x[0]+0x70)+c->x[1]*4,v);ST64(c->x[0]+0x68,LD64(c->x[0]+0x68)|(1ull<<c->x[1]));property_writes++;}
+    else if(fn==g_site.hm_fx_emit){assert(c->x[0]==effect_user_expected&&!strcmp((char *)(uintptr_t)c->x[1],"AttackSpin"));uint64_t context=HEAP_BASE+0xe0000+effect_emits*0x100;effect_emits++;ST64(c->x[2],context);ST32(c->x[2]+8,55);ST32(context+0x20,55);}
     else if(fn==g_site.hm_fx_stop){effect_stops++;ST32(c->x[0]+8,LD32(c->x[0]+8)|0x10);}
     else if (fn==g_site.hm_create) {
         creates++;uint64_t a=mock_actor;bool gear=c->x[3]!=HLE_HEAP+HANDLE;
@@ -296,6 +299,7 @@ int main(void) {
     #include "test_generation7.inc"
     #include "test_preview11.inc"
     #include "test_preview12.inc"
+    #include "test_preview14.inc"
     puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");

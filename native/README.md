@@ -1,15 +1,15 @@
-# HyruleM 0.5.0-preview.13
+# HyruleM 0.5.0-preview.14
 
-Hotfix da [issue #8](https://github.com/KnightCZS/HyruleM/issues/8), “comando local inválido”. O launcher da prévia 12 aplicava o limite antigo de 256 caracteres ao comando combinado, recusando poses completas antes de elas chegarem ao runtime. `hm_native_sample` passa a ter o mesmo limite de 65.535 caracteres de `hm_native_remote`, preservando as verificações de tamanho e quebra de linha.
+Correções motivadas pelo vídeo de 15/11: chapéu rígido, cabelo/roupa atravessando o corpo e efeitos de golpes ausentes no outro cliente. A captura de roupa da prévia anterior dependia de um parentesco que o jogador não precisa preencher; agora consulta suas referências nativas de armadura, com geração e acesso temporário conferidos. Também transmite máscaras de visibilidade e condições numéricas de efeitos, e captura pedidos ELink feitos diretamente por descritor, inclusive sem identificador de saída.
 
-A regressão usa o transporte TCP real do launcher com dois clientes, 512 ossos e 16 efeitos; falhou antes da correção e passou depois. Mantém o adaptador/recursos da prévia 12. **Não confirma ainda os resultados gráficos de cabelo/chapéu e do spin attack.**
+Os testes de memória, instruções nativas e transporte passaram. **O vídeo mostra a versão anterior; não houve execução desta versão com duas instâncias/GPU.** Não declara todas as deformações de tecido nem todos os rastros de espada visualmente confirmados.
 
 ## Atualizar e usar
 
 1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, incluindo `runtime-update`.
 2. Execute **Iniciar-Nativo.cmd**, que instala o runtime com backup.
-3. **Se já recompilou a biblioteca na prévia 12, ela pode ser reutilizada.** Este hotfix não altera hooks, gerador, headers ou gamelib ABI 4. Vindo da prévia 11 ou anterior, aguarde a recompilação exigida pelos hooks da prévia 12. Não altere `.id`.
-4. Atualize os dois clientes e o servidor: **ABI 9 / protocolo 9**. O overlay da prévia 12 permanece compatível; é gerado localmente quando necessário. O ZIP não contém arquivos do jogo.
+3. **Aguarde a recompilação da biblioteca privada do jogo com o gerador novo.** Há um hook novo; bibliotecas das prévias 12/13 precisam ser regeneradas. A gamelib ABI continua 4, mas a ABI do adaptador mudou. Não altere `.id`.
+4. Atualize os dois clientes e o servidor: **ABI 10 / protocolo 10**. O overlay de recursos da prévia 12 permanece compatível; é gerado localmente quando necessário. O ZIP não contém arquivos do jogo.
 5. Hospede e conecte pelo IP/porta escolhidos. Na primeira abertura desta versão, **Itens do mundo: ligados** é ativado no painel de hospedagem. Depois disso a escolha é preservada; pode desligá-la antes de hospedar. O servidor separado usa `--shared-items=true` por padrão, ou `--shared-items=false` para desligar.
 6. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.
 
@@ -23,19 +23,21 @@ O controle atende comandos uma vez por quadro apresentado. `hm_native_sample` en
 
 ## Corpo, cabelo e roupa
 
-HMP2 acrescenta à identidade de cada osso a origem: corpo ou peça equipada de cabeça/tronco/pernas. A captura lê também as paletas finais dos atores de armadura ativos e ligados ao Link local. Ossos compartilhados idênticos usam a paleta do corpo; transformações próprias da peça e ossos extras são transmitidos separadamente. Isso evita que um osso do corpo substitua um osso de cabelo/chapéu de mesmo nome.
+HMP2 distingue corpo e peça de cabeça/tronco/pernas. A prévia 14 usa as seis referências retidas pelo gerenciador de armadura do Link, valida geração/estado e obtém uma referência local temporária pelo resolvedor nativo. Não depende de `Actor::parent` nem percorre todos os atores do mundo para descobrir roupa. Uma referência negada é liberada e omitida; não há leitura por um ponteiro alternativo.
 
-Não ativa um segundo Havok nem colisões nas marionetes: reproduz as transformações finais calculadas no cliente de origem. O relatório expõe `armor_head_bones`, `armor_upper_bones` e `armor_lower_bones`. Zero pode indicar uma peça rígida, paleta indisponível ou ator que não corresponde ao filtro; precisa ser interpretado junto do equipamento usado. O limite permanece em 512 ossos. Uma paleta de peça inválida/excessiva é omitida inteira, preservando o corpo válido e registrando `piece-pose-unavailable`; uma paleta corporal inválida continua recusada.
+As paletas finais de cada peça são aplicadas por nome de osso e origem. Ossos compartilhados idênticos usam a paleta do corpo; os diferentes, incluindo ossos adicionais de cabelo/chapéu, mantêm sua própria transformação. Uma peça incompleta não descarta a pose corporal válida. Mantém o limite de 512 ossos. Não ativa uma segunda simulação Havok. Deformações feitas apenas nos vértices, sem alterar ossos, ainda não são transportadas.
 
-Roupas continuam vindo do inventário pessoal (tipos 4/5/6); categorias de arma convertem espada/escudo/arco para espada/arco/escudo na rede. Tinturas, expressões, bainhas e variações especiais não são integralmente reproduzidas. As marionetes continuam DemoNPCs visuais.
+O quadro `HMA1` carrega até 512 máscaras de visibilidade de osso/material, identificadas por nome e peça. O receptor usa os setters nativos e seus avisos de alteração, apenas quando o valor muda. Assim pode ocultar a pele/cabelo que o jogador local esconde ao equipar roupa. Esses estados permanecem no mesmo quadro discreto dos eventos/equipamentos; não são índices de memória copiados entre processos.
+
+Roupas continuam vindo do inventário pessoal, tipos 4/5/6. Tinturas, expressões e todos os modelos extras/acessórios não estão integralmente reproduzidos.
 
 ## Efeitos de ataques — experimental
 
-Um hook somente de leitura registra pedidos de efeito por nome depois que o ELink do corpo/armas locais retorna um identificador válido. Outro registra seu encerramento. Só chaves, origem, idade e sequência viajam pela rede; ponteiros e recursos permanecem em cada processo. A reprodução usa o usuário visual ELink da marionete/arma correspondente, depois de aplicar sua pose. Áudio e o controlador de propriedades Player XLink continuam desativados; não executa eventos de dano/AI.
+Além da API por nome, o hook comum registra o Event depois de inicializado e inserido no usuário visual, antes da escrita opcional do identificador de saída. Isso cobre pedidos diretos por descritor e pedidos sem saída. A API por nome e o hook comum são deduplicados por contexto/geração. Somente chaves e ciclo de vida viajam pela rede.
 
-Há até 16 eventos acompanhados, encerramento por ausência/limpeza e proteção por geração dos identificadores e sequência. Pedidos repetidos não reiniciam as partículas. `effects_source_users`, `effects_captured`, `effects_applied`, `effects_stopped`, `effects_missing_user`, `effects_overflow` e `effect_last_key` mostram onde o fluxo parou. `effects_applied` confirma um identificador nativo, não uma imagem renderizada.
+Até 256 condições numéricas dos quatro usuários ELink locais (corpo/espada/arco/escudo, até 64 cada) acompanham o quadro visual. O receptor resolve nome/tipo em suas próprias definições e aplica os setters inteiros/flutuantes, preservando a máscara nativa de alterações, antes de iniciar efeitos. Valores flutuantes não finitos e identidades duplicadas são recusados. Não ativa o controlador Player XLink nem eventos de combate/áudio.
 
-**O rastro do spin attack ainda precisa de confirmação no jogo.** O caminho cobre pedidos ELink por nome; efeitos acionados diretamente por outro caminho, fitas/shaders próprios da arma, condições elementais e todos os efeitos especiais não estão comprovados. Não basta o teste de socket para declarar esses visuais resolvidos.
+Até 16 eventos são acompanhados, com encerramento e proteção de geração/sequência. `effects_applied` confirma um identificador nativo, **não uma imagem desenhada**. Rastros feitos por renderizadores próprios da arma, condições textuais, todos os estados temporários entre amostras e efeitos especiais fora desses usuários ainda não estão comprovados. O rastro de cada ataque precisa de teste no jogo.
 
 ## Itens e armas — Hateno
 
@@ -69,8 +71,10 @@ Vida e inventários dos jogadores continuam pessoais. Uma pose de ataque remota 
 
 ## Diagnóstico e validação
 
-O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativos dos dois clientes e os inclui no próprio `diagnostico.txt`, sem congelar a janela. A coleta leve não lê memória privada de atores nem calcula hash das bibliotecas grandes. Há também telemetria `[hyrulem]` no log de cada processo enquanto a sessão está ativa. **Diagnosticar.cmd** gera `native-preview-diag.13`, incluindo:
+O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativos dos dois clientes e os inclui no próprio `diagnostico.txt`, sem congelar a janela. A coleta leve não lê memória privada de atores nem calcula hash das bibliotecas grandes. Há também telemetria `[hyrulem]` no log de cada processo enquanto a sessão está ativa. **Diagnosticar.cmd** gera `native-preview-diag.14`, incluindo:
 
+- `armor_references`, `armor_head_bones`, `armor_upper_bones`, `armor_lower_bones`: peças encontradas nas referências reais e ossos próprios capturados.
+- `visibility_captured`, `visibility_applied`, `effect_properties_captured`, `effect_properties_applied`: máscaras/condições capturadas e aplicações acumuladas.
 - `skeleton_captured`, `skeleton_received`, `body_pose_applied`, `skeleton_applied`, `armor_source`: captura, chegada pela rede, aplicação ao corpo, aplicação total e origem das roupas.
 - `pose_capture_status`, `pose_bones_skipped`: motivo da captura incompleta. A captura exige matrizes válidas e não publica um quadro corrompido.
 - `drop_error`, `drop_inventory_before`, `drop_inventory_after`: motivo nativo e quantidades conferidas do descarte de maçã. Não confundir ausência de maçã com erro de rede.
@@ -81,6 +85,6 @@ O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativ
 - `enemies_json` com `damage`: vida e contador cumulativo observado.
 - `replica_failures`, `pending_inventory_checks`: criação recusada e resultado de inventário ainda incerto.
 
-Testes Go/TCP e race, testes C com memória sintética, emissão compilada dos hooks, 29 assinaturas únicas privadas e roundtrips do setter nativo foram executados. Builds/instalação Windows são verificados no CI. Isso não substitui jogar com dois clientes. `native_ready` permanece reservado à geração completa; não anuncia combate/IA/interação geral prontos.
+Testes Go/TCP e race, testes C com memória sintética, emissão compilada dos hooks, 35 assinaturas únicas privadas e roundtrips do setter nativo foram executados. Builds/instalação Windows são verificados no CI. Isso não substitui jogar com dois clientes. `native_ready` permanece reservado à geração completa; não anuncia combate/IA/interação geral prontos.
 
-[Auditoria](../docs/AUDITORIA_0.5.0-preview.13.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.
+[Auditoria](../docs/AUDITORIA_0.5.0-preview.14.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.

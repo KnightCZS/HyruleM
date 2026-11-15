@@ -9,30 +9,35 @@ import (
 // Preview readiness is separate from complete Gen1 combat/AI capabilities.
 // A running older adapter must be diagnosed before interpreting actor state.
 type PreviewDiagnostic struct {
-	ArmorHeadBones     int    `json:"armor_head_bones"`
-	ArmorUpperBones    int    `json:"armor_upper_bones"`
-	ArmorLowerBones    int    `json:"armor_lower_bones"`
-	EffectsSourceUsers int    `json:"effects_source_users"`
-	EffectsCaptured    int    `json:"effects_captured"`
-	EffectsApplied     int    `json:"effects_applied"`
-	EffectsStopped     int    `json:"effects_stopped"`
-	EffectsMissingUser int    `json:"effects_missing_user"`
-	EffectLastKey      string `json:"effect_last_key,omitempty"`
-	ExpectedABI        int    `json:"expected_abi"`
-	ActualABI          int    `json:"actual_abi"`
-	Compatible         bool   `json:"compatible"`
-	Status             string `json:"status"`
-	Message            string `json:"message"`
-	GameTicks          uint64 `json:"game_ticks"`
-	RemoteActive       bool   `json:"remote_active"`
-	ResourceFallback   bool   `json:"resource_fallback"`
-	FirstError         string `json:"first_error,omitempty"`
-	SkeletonCaptured   int    `json:"skeleton_captured"`
-	SkeletonApplied    int    `json:"skeleton_applied"`
-	SkeletonReceived   int    `json:"skeleton_received"`
-	BodyPoseApplied    int    `json:"body_pose_applied"`
-	PoseCaptureStatus  string `json:"pose_capture_status,omitempty"`
-	ArmorSource        string `json:"armor_source,omitempty"`
+	VisibilityCaptured       int    `json:"visibility_captured"`
+	VisibilityApplied        int    `json:"visibility_applied"`
+	EffectPropertiesCaptured int    `json:"effect_properties_captured"`
+	EffectPropertiesApplied  int    `json:"effect_properties_applied"`
+	ArmorReferences          int    `json:"armor_references"`
+	ArmorHeadBones           int    `json:"armor_head_bones"`
+	ArmorUpperBones          int    `json:"armor_upper_bones"`
+	ArmorLowerBones          int    `json:"armor_lower_bones"`
+	EffectsSourceUsers       int    `json:"effects_source_users"`
+	EffectsCaptured          int    `json:"effects_captured"`
+	EffectsApplied           int    `json:"effects_applied"`
+	EffectsStopped           int    `json:"effects_stopped"`
+	EffectsMissingUser       int    `json:"effects_missing_user"`
+	EffectLastKey            string `json:"effect_last_key,omitempty"`
+	ExpectedABI              int    `json:"expected_abi"`
+	ActualABI                int    `json:"actual_abi"`
+	Compatible               bool   `json:"compatible"`
+	Status                   string `json:"status"`
+	Message                  string `json:"message"`
+	GameTicks                uint64 `json:"game_ticks"`
+	RemoteActive             bool   `json:"remote_active"`
+	ResourceFallback         bool   `json:"resource_fallback"`
+	FirstError               string `json:"first_error,omitempty"`
+	SkeletonCaptured         int    `json:"skeleton_captured"`
+	SkeletonApplied          int    `json:"skeleton_applied"`
+	SkeletonReceived         int    `json:"skeleton_received"`
+	BodyPoseApplied          int    `json:"body_pose_applied"`
+	PoseCaptureStatus        string `json:"pose_capture_status,omitempty"`
+	ArmorSource              string `json:"armor_source,omitempty"`
 }
 
 func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
@@ -76,39 +81,45 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 	}
 	p.Compatible = true
 	var s struct {
-		ArmorHeadBones     int    `json:"armor_head_bones"`
-		ArmorUpperBones    int    `json:"armor_upper_bones"`
-		ArmorLowerBones    int    `json:"armor_lower_bones"`
-		EffectsSourceUsers int    `json:"effects_source_users"`
-		EffectsCaptured    int    `json:"effects_captured"`
-		EffectsApplied     int    `json:"effects_applied"`
-		EffectsStopped     int    `json:"effects_stopped"`
-		EffectsMissingUser int    `json:"effects_missing_user"`
-		EffectLastKey      string `json:"effect_last_key"`
-		SkeletonCaptured   int    `json:"skeleton_captured"`
-		SkeletonApplied    int    `json:"skeleton_applied"`
-		SkeletonReceived   int    `json:"skeleton_received"`
-		BodyPoseApplied    int    `json:"body_pose_applied"`
-		PoseCaptureStatus  string `json:"pose_capture_status,omitempty"`
-		ArmorSource        string `json:"armor_source"`
-		State              string `json:"state"`
-		Error              string `json:"error"`
-		Ticks              uint64 `json:"game_ticks"`
-		Age                int64  `json:"tick_age_ms"`
-		Active             bool   `json:"active"`
-		Model              bool   `json:"model_ready"`
-		Animation          bool   `json:"animation_ready"`
-		Paused             bool   `json:"game_paused"`
-		Received           uint64 `json:"received_sequence"`
-		VisualOnly         bool   `json:"visual_only"`
-		ResourceFallback   bool   `json:"resource_fallback"`
-		FirstError         string `json:"first_error"`
+		VisibilityCaptured       int    `json:"visibility_captured"`
+		VisibilityApplied        int    `json:"visibility_applied"`
+		EffectPropertiesCaptured int    `json:"effect_properties_captured"`
+		EffectPropertiesApplied  int    `json:"effect_properties_applied"`
+		ArmorReferences          int    `json:"armor_references"`
+		ArmorHeadBones           int    `json:"armor_head_bones"`
+		ArmorUpperBones          int    `json:"armor_upper_bones"`
+		ArmorLowerBones          int    `json:"armor_lower_bones"`
+		EffectsSourceUsers       int    `json:"effects_source_users"`
+		EffectsCaptured          int    `json:"effects_captured"`
+		EffectsApplied           int    `json:"effects_applied"`
+		EffectsStopped           int    `json:"effects_stopped"`
+		EffectsMissingUser       int    `json:"effects_missing_user"`
+		EffectLastKey            string `json:"effect_last_key"`
+		SkeletonCaptured         int    `json:"skeleton_captured"`
+		SkeletonApplied          int    `json:"skeleton_applied"`
+		SkeletonReceived         int    `json:"skeleton_received"`
+		BodyPoseApplied          int    `json:"body_pose_applied"`
+		PoseCaptureStatus        string `json:"pose_capture_status,omitempty"`
+		ArmorSource              string `json:"armor_source"`
+		State                    string `json:"state"`
+		Error                    string `json:"error"`
+		Ticks                    uint64 `json:"game_ticks"`
+		Age                      int64  `json:"tick_age_ms"`
+		Active                   bool   `json:"active"`
+		Model                    bool   `json:"model_ready"`
+		Animation                bool   `json:"animation_ready"`
+		Paused                   bool   `json:"game_paused"`
+		Received                 uint64 `json:"received_sequence"`
+		VisualOnly               bool   `json:"visual_only"`
+		ResourceFallback         bool   `json:"resource_fallback"`
+		FirstError               string `json:"first_error"`
 	}
 	q, ok = byName["hm_native_status"]
 	if !ok || q.Error != "" || json.Unmarshal(q.Data, &s) != nil {
 		p.Status, p.Message = "status_unavailable", "O runtime não respondeu ao estado nativo. Gere o relatório mantendo o mundo carregado."
 		return p
 	}
+	p.VisibilityCaptured, p.VisibilityApplied, p.EffectPropertiesCaptured, p.EffectPropertiesApplied, p.ArmorReferences = s.VisibilityCaptured, s.VisibilityApplied, s.EffectPropertiesCaptured, s.EffectPropertiesApplied, s.ArmorReferences
 	p.ArmorHeadBones, p.ArmorUpperBones, p.ArmorLowerBones = s.ArmorHeadBones, s.ArmorUpperBones, s.ArmorLowerBones
 	p.EffectsSourceUsers, p.EffectsCaptured, p.EffectsApplied, p.EffectsStopped, p.EffectsMissingUser, p.EffectLastKey = s.EffectsSourceUsers, s.EffectsCaptured, s.EffectsApplied, s.EffectsStopped, s.EffectsMissingUser, s.EffectLastKey
 	p.GameTicks, p.RemoteActive = s.Ticks, s.Active

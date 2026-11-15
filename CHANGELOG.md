@@ -1,5 +1,12 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.14
+
+- Armadura capturada pelas referências nativas retidas pelo jogador, sem exigir parentesco.
+- Visibilidade de osso/material e condições numéricas de efeitos transmitidas por identidade.
+- Hook comum ELink cobre descritores diretos e pedidos sem identificador de saída.
+- ABI/protocolo 10; regeneração obrigatória. Testes C, instruções nativas e TCP completos; sem confirmação de rendering desta versão.
+
 
 ## 0.5.0-preview.13
 

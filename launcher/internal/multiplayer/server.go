@@ -393,6 +393,7 @@ func recipientPlayers(players []Player, recipient string) []Player {
 	for i := range out {
 		if out[i].ID == recipient {
 			out[i].Pose.Skeleton = ""
+			out[i].Pose.Appearance = ""
 			out[i].Pose.Equipment = nil
 			out[i].Pose.Effects = nil
 		}

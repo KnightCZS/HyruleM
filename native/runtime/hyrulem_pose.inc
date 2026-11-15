@@ -53,28 +53,30 @@ static void pose_capture_part(uint64_t a,const float xyz[3],float yaw,PoseFrame 
 static void pose_capture(uint64_t a,const float xyz[3],float yaw,PoseFrame *out){
     memset(out,0,sizeof *out);pose_probe=(PoseProbe){.reason="model-units-unavailable"};pose_capture_part(a,xyz,yaw,out,0);
 }
-// Armor has its own final palette (including cloth/hair), not just the body's
-// equally named bones. Capture only active armor parented to this local Link.
-// This read-only walk holds the same native creator lock as world_scan; it
-// never invokes model methods while holding that lock or retains pointers.
-static void pose_capture_attached(Cpu *c,uint64_t local,const float xyz[3],float yaw,PoseFrame *out){
-    if(!out->count||!g_site.pouch_lock||!g_site.pouch_unlock)return;
-    uint64_t creator=LD64(g_site.hm_creator);if(!range(creator,0xe8)||LD32(creator+0x4c)!=0x7b8)return;
-    call(c,g_site.pouch_lock,creator+0xa8,0,0,0,0,0,0);
-    uint64_t head=creator+0x38,node=LD64(head);unsigned limit=LD32(creator+0x48);bool seen[3]={0};if(limit>8192)limit=0;
-    for(unsigned step=0;node!=head&&step<limit;step++){
-        if(!range(node,16)||node<0x7b8)break;uint64_t a=node-0x7b8;node=LD64(node);
-        if(!range(a,0x7d0)||a==local||LD8(a+0x64)!=1||LD64(a+0x80)!=local)continue;
-        uint64_t name=LD64(a+0x10);if(!range(name,48)||!memchr((void *)(uintptr_t)name,0,48))continue;
-        for(unsigned part=0;part<3;part++)if(!seen[part]&&local_armor[part][0]&&!strcmp((const char *)(uintptr_t)name,local_armor[part])){
-            seen[part]=true;unsigned before=out->count;pose_capture_part(a,xyz,yaw,out,part+4);
-            // An asynchronously loaded cloth model must not discard a valid
-            // body palette. Capture appends only; roll back the whole piece.
-            if(!out->count){out->count=before;pose_probe.parts[part]=0;pose_probe.reason="piece-pose-unavailable";}break;
+// Player owns six retained armor references in its armor manager. They are
+// not required to have Actor::parent set. Resolve with a temporary native local
+// lease at the joined-jobs callback, then release even on denied access.
+// The optional layout signature and exact main build gate these offsets.
+static void visibility_capture(uint64_t,unsigned,Appearance *);
+static void pose_capture_attached(Cpu *c,uint64_t local,const float xyz[3],float yaw,PoseFrame *out,Appearance *appearance){
+    if(!out->count||!g_site.hm_armor_layout||!range(local,0x2450))return;
+    if(!pose_storage)pose_storage=(uint64_t)(uintptr_t)hle_alloc(BYTES);
+    if(!range(pose_storage,BYTES))return;unsigned refs=0;bool seen[3]={0};
+    for(unsigned slot=0;slot<6;slot++){
+        uint64_t index=local+0x23f0+slot*16,block=LD64(index);uint32_t generation=LD32(index+8);
+        if(generation==UINT32_MAX||!range(block,0x50)||LD32(block+0x40)!=generation)continue;
+        uint64_t expected=LD64(block+0x48);if(!range(expected,0x600)||expected==local)continue;
+        uint64_t a=call(c,g_site.actor_index_resolve,index,pose_storage+LOCAL,0,0,0,0,0);
+        if(a==expected&&LD64(pose_storage+LOCAL+8)==a&&LD8(a+0x64)==1){
+            uint64_t name=LD64(a+0x10);
+            if(range(name,48)&&memchr((void *)(uintptr_t)name,0,48))for(unsigned part=0;part<3;part++)if(!seen[part]&&gear_name((const char *)(uintptr_t)name,(int)part+3)){
+                seen[part]=true;refs++;unsigned before=out->count;pose_capture_part(a,xyz,yaw,out,part+4);visibility_capture(a,part+4,appearance);
+                if(!out->count){out->count=before;pose_probe.parts[part]=0;pose_probe.reason="piece-pose-unavailable";}break;
+            }
         }
-        if(!out->count)break;
+        call(c,g_site.actor_link_release,pose_storage+LOCAL,0,0,0,0,0,0);
     }
-    call(c,g_site.pouch_unlock,creator+0xa8,0,0,0,0,0,0);
+    pthread_mutex_lock(&mutex);published.armor_refs=refs;pthread_mutex_unlock(&mutex);
 }
 static unsigned pose_apply(Cpu *c,uint64_t a,uint64_t scratch,const Desired *d,unsigned part){
     if(!d->pose.count)return 0;uint64_t units;unsigned n,applied=0;if(!pose_units(a,&units,&n))return 0;
@@ -104,4 +106,55 @@ static bool pose_decode(const char *src,PoseFrame *frame){
     }
     if(w<8||(memcmp(raw,"HMP1",4)&&memcmp(raw,"HMP2",4))||raw[6]||raw[7])return false;unsigned stride=!memcmp(raw,"HMP2",4)?56:52;unsigned count=raw[4]|(unsigned)raw[5]<<8;if(!count||count>POSE_MAX||w!=8+(size_t)count*stride)return false;
     for(unsigned i=0;i<count;i++){const unsigned char *p=raw+8+i*stride;PoseBone *bone=&frame->bones[i];bone->name=pose_u32(p);bone->part=stride==56?pose_u32(p+4):0;if(bone->part&&(bone->part<4||bone->part>6))return false;if(!bone->name)return false;for(unsigned j=0;j<i;j++)if(frame->bones[j].name==bone->name&&frame->bones[j].part==bone->part)return false;for(int j=0;j<12;j++){uint32_t bits=pose_u32(p+stride-48+j*4);memcpy(&bone->matrix[j],&bits,4);}if(!pose_matrix(bone->matrix))return false;}frame->count=count;return true;
+}
+
+// Bone and material visibility are independent of the skeletal palette.
+// Player uses the material setter for Mt_Belt_* and other covered skin/hair.
+// Names and kind cross the network; local resource indices never do.
+static uint32_t visibility_name(uint64_t model,unsigned i,unsigned kind){
+    if(kind){uint64_t r,p;unsigned n;return pose_model(model,&r,&p,&n)&&i<n?pose_name(r,i):0;}
+    uint64_t res=LD64(model+0xe0);if(!range(res,0x50))return 0;
+    uint64_t dict=LD64(res+0x48);if(!range(dict,0x28+(uint64_t)i*16))return 0;
+    uint64_t text=LD64(dict+0x20+(uint64_t)i*16);if(!range(text,98))return 0;
+    const char *name=(const char *)(uintptr_t)(text+2);size_t n=strnlen(name,96);return n&&n<96?pose_hash(name):0;
+}
+static bool visibility_model(uint64_t m,unsigned kind,unsigned *count,uint64_t *bits){
+    uint64_t r,p;unsigned bones;if(!pose_model(m,&r,&p,&bones)||!g_site.hm_material_set||!g_site.hm_bone_visible_set)return false;
+    uint64_t vt=LD64(m);if(!range(vt,0x1c0)||LD64(vt+0x1b0)!=g_site.hm_material_set||LD64(vt+0x88)!=g_site.hm_bone_visible_set)return false;
+    *count=kind?bones:LD16(m+0x112);*bits=LD64(m+(kind?0xe8:0xf0));return *count>0&&*count<=VIS_MAX&&range(*bits,((*count+31)/32)*4);
+}
+static void visibility_capture(uint64_t a,unsigned part,Appearance *out){
+    uint64_t units;unsigned n;if(!pose_units(a,&units,&n))return;
+    for(unsigned j=0;j<n;j++)for(unsigned kind=0;kind<2;kind++){
+        uint64_t link=LD64(units+j*8);if(!range(link,8))continue;uint64_t m=LD64(link),bits;unsigned count;if(!visibility_model(m,kind,&count,&bits))continue;
+        for(unsigned i=0;i<count;i++){
+            uint32_t name=visibility_name(m,i,kind);if(!name)continue;bool seen=false;for(unsigned k=0;k<out->visibility;k++)if(out->mask[k].part==part&&out->mask[k].name==name&&out->mask[k].kind==kind){seen=true;break;}if(seen)continue;
+            if(out->visibility==VIS_MAX)return;out->mask[out->visibility++]=(VisibilityState){part,name,(LD32(bits+(i/32)*4)>>(i%32))&1,kind};
+        }
+    }
+}
+static void visibility_apply(Cpu *c,uint64_t a,const Appearance *state,unsigned part){
+    uint64_t units;unsigned n,applied=0;if(!pose_units(a,&units,&n))return;
+    for(unsigned j=0;j<n;j++)for(unsigned kind=0;kind<2;kind++){
+        uint64_t link=LD64(units+j*8);if(!range(link,8))continue;uint64_t m=LD64(link),bits;unsigned count;if(!visibility_model(m,kind,&count,&bits))continue;
+        for(unsigned i=0;i<count;i++){uint32_t name=visibility_name(m,i,kind);if(!name)continue;for(unsigned k=0;k<state->visibility;k++)if(state->mask[k].part==part&&state->mask[k].name==name&&state->mask[k].kind==kind){if(((LD32(bits+(i/32)*4)>>(i%32))&1)!=state->mask[k].visible)call(c,kind?g_site.hm_bone_visible_set:g_site.hm_material_set,m,i,state->mask[k].visible,0,0,0,0);applied++;break;}}
+    }
+    pthread_mutex_lock(&mutex);published.visibility_applied+=applied;pthread_mutex_unlock(&mutex);
+}
+static size_t appearance_encode(const Appearance *state,char *out){
+    unsigned char raw[8+16*(VIS_MAX+PROP_MAX)];memcpy(raw,"HMA1",4);raw[4]=state->visibility&255;raw[5]=state->visibility>>8;raw[6]=state->properties&255;raw[7]=state->properties>>8;
+    for(unsigned i=0;i<state->visibility;i++){unsigned char *p=raw+8+16*i;const VisibilityState *v=&state->mask[i];pose_put32(p,v->part);pose_put32(p+4,v->name);pose_put32(p+8,v->visible);pose_put32(p+12,v->kind);}
+    for(unsigned i=0;i<state->properties;i++){unsigned char *p=raw+8+16*(state->visibility+i);const FxProperty *v=&state->property[i];pose_put32(p,v->slot);pose_put32(p+4,v->name);pose_put32(p+8,v->type);pose_put32(p+12,v->value);}
+    size_t n=8+16*(state->visibility+state->properties),w=0;for(size_t i=0;i<n;i+=3){uint32_t v=(uint32_t)raw[i]<<16;if(i+1<n)v|=(uint32_t)raw[i+1]<<8;if(i+2<n)v|=raw[i+2];out[w++]=pose_b64[(v>>18)&63];out[w++]=pose_b64[(v>>12)&63];out[w++]=i+1<n?pose_b64[(v>>6)&63]:'=';out[w++]=i+2<n?pose_b64[v&63]:'=';}out[w]=0;return w;
+}
+static bool appearance_decode(const char *src,Appearance *out){
+    unsigned char raw[8+16*(VIS_MAX+PROP_MAX)];size_t n=strlen(src),w=0;memset(out,0,sizeof *out);if(!n||n%4||n>APPEARANCE_B64_MAX)return false;
+    for(size_t i=0;i<n;i+=4){uint32_t bits=0;int padding=0;for(int j=0;j<4;j++){const char *p=strchr(pose_b64,src[i+j]);if(src[i+j]=='='){if(i+4!=n||j<2)return false;padding++;bits<<=6;}else{if(padding||!p||!src[i+j])return false;bits=(bits<<6)|(uint32_t)(p-pose_b64);}}
+        if(padding>2||(padding==2&&(bits&0xffff))||(padding==1&&(bits&255)))return false;if(w+3-padding>sizeof raw)return false;raw[w++]=(unsigned char)(bits>>16);if(padding<2)raw[w++]=(unsigned char)(bits>>8);if(!padding)raw[w++]=(unsigned char)bits;
+    }
+    if(w<8||memcmp(raw,"HMA1",4))return false;unsigned shapes=raw[4]|(unsigned)raw[5]<<8,props=raw[6]|(unsigned)raw[7]<<8;
+    if(shapes>VIS_MAX||props>PROP_MAX||w!=8+16*(shapes+props))return false;
+    for(unsigned i=0;i<shapes;i++){const unsigned char *p=raw+8+16*i;VisibilityState *v=&out->mask[i];*v=(VisibilityState){pose_u32(p),pose_u32(p+4),pose_u32(p+8),pose_u32(p+12)};if((v->part&& (v->part<4||v->part>6))||!v->name||v->visible>1||v->kind>1)return false;for(unsigned j=0;j<i;j++)if(v->part==out->mask[j].part&&v->name==out->mask[j].name&&v->kind==out->mask[j].kind)return false;}
+    for(unsigned i=0;i<props;i++){const unsigned char *p=raw+8+16*(shapes+i);FxProperty *v=&out->property[i];*v=(FxProperty){pose_u32(p),pose_u32(p+4),pose_u32(p+8),pose_u32(p+12)};if(v->slot>3||!v->name||v->type>3)return false;if(v->type==2){float f;memcpy(&f,&v->value,4);if(!isfinite(f))return false;}for(unsigned j=0;j<i;j++)if(v->slot==out->property[j].slot&&v->name==out->property[j].name)return false;}
+    out->visibility=shapes;out->properties=props;return true;
 }

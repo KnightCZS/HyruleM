@@ -7,18 +7,22 @@
     ST64(cc+0x40,cc+0x100);ST64(cc+0x100,cc+0x200);ST64(cc+0x200,cm);ST64(cm+0x118,cc+0x900);ST64(cc+0x900,cr);ST64(cc+0x920,cp);ST16(cr+0x3c,3);ST64(cr+0x10,cc+0xb00);
     ST64(cc+0xb20,cc+0xd00);ST64(cc+0xb30,cc+0xd50);ST64(cc+0xb40,cc+0xda0);strcpy((char *)(uintptr_t)(cc+0xda2),"Hair_1");
     for(int i=0;i<3;i++){float m[16]={1,0,0,0,0,1,0,0,0,0,1,0,100+i*3,200,300,0};memcpy((void *)(uintptr_t)(cp+i*64),m,64);}
+    Appearance cloth_appearance={0};uint64_t cloth_ref=owner+0x23f0,cloth_block=coat+0x3000;
+    ST64(cloth_ref,cloth_block);ST32(cloth_ref+8,17);ST8(cloth_ref+12,1);ST32(cloth_block+0x40,17);ST64(cloth_block+0x48,coat);ST64(coat+0x80,0);
     snprintf(local_armor[0],48,"Armor_001_Head");ST32(creator+0x4c,0x7b8);ST32(creator+0x48,1);ST64(head,coat+0x7b8);ST64(coat+0x7b8,head);
     pose_capture(owner,origin,0,&captured);assert(captured.count==2);
-    pose_capture_attached(&cpu,owner,origin,0,&captured);assert(captured.count==4&&pose_probe.parts[0]==2&&captured.bones[2].part==4&&captured.bones[3].name==pose_hash("Hair_1"));assert(!memcmp(&cpu,&before,sizeof cpu));
+    pose_capture_attached(&cpu,owner,origin,0,&captured,&cloth_appearance);assert(captured.count==4&&pose_probe.parts[0]==2&&captured.bones[2].part==4&&captured.bones[3].name==pose_hash("Hair_1"));assert(!memcmp(&cpu,&before,sizeof cpu));
     pose_encode(&captured,encoded);assert(pose_decode(encoded,&decoded)&&decoded.count==4&&decoded.bones[2].part==4);
     skin.pose=captured;before_bones=bone_writes;assert(pose_apply(&cpu,owner,storage,&skin,0)==2&&bone_writes==before_bones+2);
     assert(pose_apply(&cpu,coat,storage,&skin,4)==3);
-    // A matching piece owned by a different actor must not enter our capture.
-    ST64(coat+0x80,mock_actor);pose_capture(owner,origin,0,&captured);pose_capture_attached(&cpu,owner,origin,0,&captured);assert(captured.count==2);
-    ST64(coat+0x80,owner);float bad_piece=NAN;memcpy((void *)(uintptr_t)cp,&bad_piece,4);pose_capture(owner,origin,0,&captured);pose_capture_attached(&cpu,owner,origin,0,&captured);assert(captured.count==2&&pose_probe.parts[0]==0&&!strcmp(pose_probe.reason,"piece-pose-unavailable"));
-    ST64(head,head);ST32(creator+0x48,0);
+    // The retained Player armor link is authoritative, even without a parent.
+    // A stale generation or denied lease must not enter the capture.
+    ST32(cloth_ref+8,18);pose_capture(owner,origin,0,&captured);pose_capture_attached(&cpu,owner,origin,0,&captured,&cloth_appearance);assert(captured.count==2);
+    ST32(cloth_ref+8,17);deny_lease=true;pose_capture(owner,origin,0,&captured);pose_capture_attached(&cpu,owner,origin,0,&captured,&cloth_appearance);assert(captured.count==2&&!LD64(pose_storage+LOCAL+8));deny_lease=false;
+    float bad_piece=NAN;memcpy((void *)(uintptr_t)cp,&bad_piece,4);pose_capture(owner,origin,0,&captured);pose_capture_attached(&cpu,owner,origin,0,&captured,&cloth_appearance);assert(captured.count==2&&pose_probe.parts[0]==0&&!strcmp(pose_probe.reason,"piece-pose-unavailable"));
+    ST64(head,head);ST32(creator+0x48,0);ST64(cloth_ref,0);
     // No second smoothing stage for already interpolated named-bone frames.
-    puts("preview 12: separate cloth palettes, parent isolation and piece-specific replay passed");
+    puts("preview 12: separate cloth palettes, retained-link isolation and piece-specific replay passed");
     // Capture the actual output-handle convention, isolate local ELink users,
     // and replay starts/stops once with the native generation at Event+0x20.
     fx_reset();uint64_t xo=HEAP_BASE+0xc1000,xb=HEAP_BASE+0xc2000,xu=HEAP_BASE+0xc3000,xh=HEAP_BASE+0xc4000,xc=HEAP_BASE+0xc5000,xk=HEAP_BASE+0xc6000;

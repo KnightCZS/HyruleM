@@ -79,12 +79,13 @@ func TestIssue8NativeSampleThroughProductionControlStream(t *testing.T) {
 		bones[i] = testBone(uint32(i+1), float32(i%10))
 	}
 	skeleton := encodeSkeleton(bones)
+	appearance := testAppearance(MaxVisibilityEntries, MaxEffectProperties)
 	effects := make([]VisualEffect, MaxVisualEffects)
 	for i := range effects {
 		effects[i] = VisualEffect{Sequence: uint64(i + 1), Slot: i % 4, Active: true, Name: "AttackSpin"}
 	}
-	ga := &fakeNativeGame{fakeGame: &fakeGame{position: Vec3{3430, 236, 2100}}, skeleton: skeleton, effects: effects}
-	gb := &fakeNativeGame{fakeGame: &fakeGame{position: Vec3{3431, 236, 2100}}, skeleton: skeleton, effects: effects}
+	ga := &fakeNativeGame{fakeGame: &fakeGame{position: Vec3{3430, 236, 2100}}, skeleton: skeleton, appearance: appearance, effects: effects}
+	gb := &fakeNativeGame{fakeGame: &fakeGame{position: Vec3{3431, 236, 2100}}, skeleton: skeleton, appearance: appearance, effects: effects}
 	ba := NewBridge(context.Background(), a, gameSocket(t, ga), 40, nil)
 	bb := NewBridge(context.Background(), b, gameSocket(t, gb), 40, nil)
 	t.Cleanup(func() { ba.Close(); bb.Close(); <-ba.Done(); <-bb.Done() })
@@ -92,7 +93,7 @@ func TestIssue8NativeSampleThroughProductionControlStream(t *testing.T) {
 		game.mu.Lock()
 		defer game.mu.Unlock()
 		for _, cmd := range game.commands {
-			if strings.HasPrefix(cmd, "hm_native_sample ") && len(cmd) > 30000 && strings.Count(cmd, "AttackSpin") == MaxVisualEffects && strings.Contains(cmd, skeleton) {
+			if strings.HasPrefix(cmd, "hm_native_sample ") && len(cmd) > 30000 && strings.Count(cmd, "AttackSpin") == MaxVisualEffects && strings.Contains(cmd, skeleton) && strings.HasSuffix(cmd, " "+appearance) {
 				return true
 			}
 		}

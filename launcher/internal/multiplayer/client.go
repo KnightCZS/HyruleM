@@ -285,11 +285,13 @@ func (c *Client) Remote(now time.Time) []Player {
 						if alpha < 1 {
 							p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
 							p.Pose.Effects = old.Pose.Effects
+							p.Pose.Appearance = old.Pose.Appearance
 						}
 					} else if skeletal == old.Pose.Skeleton {
 						p.Pose.Equipment = old.Pose.Equipment
 						p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
 						p.Pose.Effects = old.Pose.Effects
+						p.Pose.Appearance = old.Pose.Appearance
 					}
 					p.Pose.Skeleton = skeletal
 				} else {
@@ -297,6 +299,7 @@ func (c *Client) Remote(now time.Time) []Player {
 					if alpha < 1 {
 						p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
 						p.Pose.Effects = old.Pose.Effects
+						p.Pose.Appearance = old.Pose.Appearance
 					}
 				}
 				break

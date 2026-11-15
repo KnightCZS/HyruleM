@@ -18,7 +18,10 @@ typedef struct {
 enum { GEAR_COUNT=6,POSE_MAX=512,POSE_B64_MAX=((8+POSE_MAX*56+2)/3)*4 };
 typedef struct {uint32_t name,part;float matrix[12];} PoseBone;
 typedef struct {unsigned count;PoseBone bones[POSE_MAX];} PoseFrame;
-enum {FX_MAX=16};
+enum {FX_MAX=16, VIS_MAX=512, PROP_MAX=256, APPEARANCE_B64_MAX=((8+16*(VIS_MAX+PROP_MAX)+2)/3)*4};
+typedef struct {uint32_t part,name,visible,kind;} VisibilityState;
+typedef struct {uint32_t slot,name,type,value;} FxProperty;
+typedef struct {unsigned visibility,properties;VisibilityState mask[VIS_MAX];FxProperty property[PROP_MAX];} Appearance;
 typedef struct {uint64_t sequence;unsigned slot;bool active;uint32_t age;char name[64];} FxEvent;
 typedef struct {unsigned count;FxEvent events[FX_MAX];} FxFrame;
 typedef struct { char name[48];float matrix[12];uint64_t seq,received; } GearPose;
@@ -32,8 +35,10 @@ typedef struct {
     GearPose gear[GEAR_COUNT];
     PoseFrame pose;
     FxFrame effects;
+    Appearance appearance;
 } Desired;
 typedef struct {
+    unsigned visibility_captured,visibility_applied,properties_captured,properties_applied,armor_refs;
     unsigned fx_source_users;unsigned fx_captured,fx_applied,fx_stopped,fx_missing,fx_overflow;char fx_last[64];
     char state[32], error[96];
     char first_error[96];
@@ -68,6 +73,7 @@ static Track local_tracks[2], remote_tracks[2];
 static uint64_t capture_count;
 static float local_yaw;
 static GearPose local_gear[GEAR_COUNT];
+static Appearance local_appearance;static uint64_t pose_storage;
 static PoseFrame local_pose;static unsigned pose_applied,body_pose_applied;static uint64_t visual_log_at;
 static char local_armor[3][48];static uint64_t armor_read_at;static bool armor_from_pouch;
 static float local_position[3];
@@ -394,8 +400,9 @@ static void capture_gear(Cpu *c,uint64_t local) {
         if(!valid){g->name[0]=0;memset(g->matrix,0,sizeof g->matrix);g->matrix[0]=g->matrix[5]=g->matrix[10]=1;}
     }
     fx_owners_update(fx_actors);
-    PoseFrame pose;pose_capture(local,xyz,yaw,&pose);pose_capture_attached(c,local,xyz,yaw,&pose);
-    pthread_mutex_lock(&mutex);local_pose=pose;published.skeleton_captured=pose.count;published.pose_skipped=pose_probe.skipped;memcpy(published.armor_bones,pose_probe.parts,sizeof published.armor_bones);snprintf(published.pose_capture_status,sizeof published.pose_capture_status,"%s",pose_probe.reason);memcpy(local_gear,gear,sizeof gear);memcpy(local_position,xyz,sizeof xyz);local_ready=true;pthread_mutex_unlock(&mutex);
+    pthread_mutex_lock(&mutex);published.armor_refs=0;pthread_mutex_unlock(&mutex);
+    Appearance appearance={0};PoseFrame pose;pose_capture(local,xyz,yaw,&pose);visibility_capture(local,0,&appearance);pose_capture_attached(c,local,xyz,yaw,&pose,&appearance);fx_properties_capture(fx_actors,&appearance);
+    pthread_mutex_lock(&mutex);local_pose=pose;local_appearance=appearance;published.visibility_captured=appearance.visibility;published.properties_captured=appearance.properties;published.skeleton_captured=pose.count;published.pose_skipped=pose_probe.skipped;memcpy(published.armor_bones,pose_probe.parts,sizeof published.armor_bones);snprintf(published.pose_capture_status,sizeof published.pose_capture_status,"%s",pose_probe.reason);memcpy(local_gear,gear,sizeof gear);memcpy(local_position,xyz,sizeof xyz);local_ready=true;pthread_mutex_unlock(&mutex);
 }
 static void gear_tick(Cpu *c,Desired *d,uint64_t vt,bool animate) {
     for(int i=0;i<GEAR_COUNT;i++) {
@@ -430,7 +437,7 @@ static void gear_tick(Cpu *c,Desired *d,uint64_t vt,bool animate) {
         if(!range(LD64(ref.ptr+0x4e0),0xa4)){release_at(c,st);if(now_ms()-g->started>15000){g->failed=true;snprintf(g->error,sizeof g->error,"model-not-loaded");remove_gear(c,g);}continue;}
         float s=sinf(d->yaw),co=cosf(d->yaw),m[12];for(int j=0;j<4;j++){m[j]=co*p->matrix[j]+s*p->matrix[8+j];m[4+j]=p->matrix[4+j];m[8+j]=-s*p->matrix[j]+co*p->matrix[8+j];}m[3]+=d->x;m[7]+=d->y;m[11]+=d->z;
         memcpy((void *)(uintptr_t)(st+MATRIX),m,sizeof m);call(c,g_site.hm_set_mtx,ref.ptr,st+MATRIX,0,0,0,0,0);call(c,g_site.hm_set_mtx,ref.ptr,st+MATRIX,1,0,0,0,0);
-        if(animate&&i>=3&&!d->pose.count)play_tracks(c,st,ref.ptr,d,g->tracks,vt);if(i>=3)pose_applied+=pose_apply(c,ref.ptr,st,d,(unsigned)i+1);release_at(c,st);g->active=true;g->started=now_ms();
+        if(animate&&i>=3&&!d->pose.count)play_tracks(c,st,ref.ptr,d,g->tracks,vt);if(i>=3){pose_applied+=pose_apply(c,ref.ptr,st,d,(unsigned)i+1);visibility_apply(c,ref.ptr,&d->appearance,(unsigned)i+1);}fx_properties_apply(c,ref.ptr,&d->appearance,(unsigned)(i==0?1:i==1?2:3),i<3);release_at(c,st);g->active=true;g->started=now_ms();
     }
     char json[1536];size_t used=0;unsigned active=0;json[used++]='[';
     for(int i=0;i<GEAR_COUNT;i++){GearVisual *g=&gear_visual[i];active+=g->active;int n=snprintf(json+used,sizeof json-used,"%s{\"slot\":%d,\"name\":\"%s\",\"active\":%s,\"error\":\"%s\"}",i?",":"",i,g->name,g->active?"true":"false",g->error);if(n<0||(size_t)n>=sizeof json-used-2)break;used+=(size_t)n;}
@@ -575,7 +582,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     // Named bone frames have already been interpolated with the equipment by
     // the client. A second root filter adds latency and changes their timing.
     if(!d.pose.count)smooth_pose(&d,now_ms());
-    set_pose(c,a,&d,safe_string_vtable,resource_variant==0&&animation_ready&&!d.pose.count);pose_applied=body_pose_applied=pose_apply(c,a,storage,&d,0); release_local(c);
+    set_pose(c,a,&d,safe_string_vtable,resource_variant==0&&animation_ready&&!d.pose.count);pose_applied=body_pose_applied=pose_apply(c,a,storage,&d,0);visibility_apply(c,a,&d.appearance,0);fx_properties_apply(c,a,&d.appearance,0,true); release_local(c);
     gear_tick(c,&d,safe_string_vtable,resource_variant==0&&animation_ready);
     fx_tick(c,&d,safe_string_vtable);
     applied=d.seq; publish(resource_variant?"fallback-active":animation_ready?"active":"active-no-animation","",applied,true);
@@ -587,6 +594,7 @@ RT_ON_RESET(hyrulem_reset) {
     fx_reset();
     memset(&desired,0,sizeof desired); memset(&published,0,sizeof published);
     memset(local_tracks,0,sizeof local_tracks);memset(remote_tracks,0,sizeof remote_tracks);capture_count=0;local_yaw=0;
+    memset(&local_appearance,0,sizeof local_appearance);pose_storage=0;
     memset(&local_pose,0,sizeof local_pose);pose_applied=body_pose_applied=0;visual_log_at=0;memset(&pose_probe,0,sizeof pose_probe);memset(local_armor,0,sizeof local_armor);armor_read_at=0;armor_from_pouch=false;memset(local_gear,0,sizeof local_gear);memset(local_position,0,sizeof local_position);local_ready=false;
     world_count=health_count=world_history_count=world_zero_count=0;world_history_reset=false;last_world_scan=0;
     pthread_mutex_unlock(&mutex);
@@ -614,7 +622,7 @@ static bool number(const char *s, float *out, float limit) {
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",9);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_capture&&g_site.hm_fx_stop); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",10);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
     control_field_bool(r,"skeletal_pose",supported()&&pose_supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());
@@ -663,7 +671,7 @@ static void remote(int argc,char **argv,ControlReply *r) {
         g->seq=next.seq;g->received=now_ms();
     }
     if(argc>=95&&strcmp(argv[94],"-")&&!pose_decode(argv[94],&next.pose)){control_fail(r,"Invalid skeletal pose");return;}
-    if(argc>=96&&!fx_decode(argc,argv,&next.effects)){control_fail(r,"Invalid visual effects");return;}
+    if(argc>=96&&!fx_decode(argc,argv,&next.effects,&next.appearance)){control_fail(r,"Invalid visual effects");return;}
     pthread_mutex_lock(&mutex);
     bool ok=!strcmp(desired.session,argv[1]) && next.seq>desired.seq;
     if (ok) { snprintf(next.session,sizeof next.session,"%s",argv[1]); next.visible=true; next.received=now_ms();if(argc==16)memcpy(next.gear,desired.gear,sizeof next.gear); desired=next; }
@@ -713,14 +721,16 @@ static void status(int argc,char **argv,ControlReply *r) {
     control_field_str(r,"callback_phase","post-actor-jobs");
     control_field_int(r,"rejected_callbacks",p.rejected_callbacks);
     control_field_int(r,"armor_head_bones",p.armor_bones[0]);control_field_int(r,"armor_upper_bones",p.armor_bones[1]);control_field_int(r,"armor_lower_bones",p.armor_bones[2]);
+    control_field_int(r,"visibility_captured",p.visibility_captured);control_field_int(r,"visibility_applied",p.visibility_applied);control_field_int(r,"effect_properties_captured",p.properties_captured);control_field_int(r,"effect_properties_applied",p.properties_applied);control_field_int(r,"armor_references",p.armor_refs);
     control_field_str(r,"armor_source",p.armor_from_pouch?"personal-equipped-pouch":"awaiting-pouch");control_field_str(r,"pose_capture_status",p.pose_capture_status);control_field_int(r,"pose_bones_skipped",p.pose_skipped);control_field_int(r,"skeleton_received",p.skeleton_received);control_field_int(r,"body_pose_applied",p.body_pose_applied);control_field_int(r,"skeleton_applied",p.skeleton_applied);control_field_int(r,"skeleton_captured",p.skeleton_captured);
     control_field_int(r,"effects_source_users",p.fx_source_users);control_field_int(r,"effects_captured",p.fx_captured);control_field_int(r,"effects_applied",p.fx_applied);control_field_int(r,"effects_stopped",p.fx_stopped);control_field_int(r,"effects_missing_user",p.fx_missing);control_field_int(r,"effects_overflow",p.fx_overflow);control_field_str(r,"effect_last_key",p.fx_last);
     control_field_int(r,"equipment_active",p.equipment_active);control_field_str(r,"equipment_json",p.equipment_json[0]?p.equipment_json:"[]");
 }
 static void local_state(int argc,char **argv,ControlReply *r) {
     char effects_json[4096];fx_json(effects_json,sizeof effects_json);control_field_str(r,"effects_json",effects_json);
-    Track tracks[2];GearPose gear[GEAR_COUNT];PoseFrame pose;float xyz[3],yaw;uint64_t count;bool ready;
-    pthread_mutex_lock(&mutex);memcpy(tracks,local_tracks,sizeof tracks);memcpy(gear,local_gear,sizeof gear);pose=local_pose;memcpy(xyz,local_position,sizeof xyz);yaw=local_yaw;count=capture_count;ready=local_ready&&published.last_tick&&now_ms()-published.last_tick<1000;pthread_mutex_unlock(&mutex);
+    Track tracks[2];GearPose gear[GEAR_COUNT];PoseFrame pose;Appearance appearance;float xyz[3],yaw;uint64_t count;bool ready;
+    pthread_mutex_lock(&mutex);memcpy(tracks,local_tracks,sizeof tracks);memcpy(gear,local_gear,sizeof gear);pose=local_pose;appearance=local_appearance;memcpy(xyz,local_position,sizeof xyz);yaw=local_yaw;count=capture_count;ready=local_ready&&published.last_tick&&now_ms()-published.last_tick<1000;pthread_mutex_unlock(&mutex);
+    char appearance_b64[APPEARANCE_B64_MAX+1];appearance_encode(&appearance,appearance_b64);control_field_str(r,"appearance_b64",appearance_b64);
     char skeleton[POSE_B64_MAX+1];skeleton[0]=0;if(pose.count)pose_encode(&pose,skeleton);control_field_str(r,"skeleton_b64",skeleton);control_field_int(r,"skeleton_bones",pose.count);
     control_field_bool(r,"ready",ready);control_field_num(r,"x",xyz[0]);control_field_num(r,"y",xyz[1]);control_field_num(r,"z",xyz[2]);
     control_field_num(r,"yaw",yaw);control_field_int(r,"capture_count",count);

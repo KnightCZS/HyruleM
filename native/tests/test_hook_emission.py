@@ -140,3 +140,22 @@ with tempfile.TemporaryDirectory(prefix='hyrulem-fx-stop-') as temp:
  subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
  subprocess.run([str(p/'hook')],check=True)
 print('Visual events: post-request branch and native stop STP/CPU preservation passed')
+
+# Direct descriptor emission can omit an output handle. Preserve the initialized
+# event hook's original STR and every CPU register/flag in both generator modes.
+struct.pack_into('<I',image,0x3c0,0xb9001a88)
+fragment=patches._hm_fx_created(gen,base+0x3c0)
+source='''#include "cpu.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/mman.h>
+static unsigned calls;
+void rt_hyrulem_created_effect(Cpu *c){assert(c->x[20]==0x7000000400ull&&c->x[23]==23);calls++;}
+static void generated(Cpu *c){FRAGMENT}
+int main(void){assert(mmap((void *)0x7000000000ull,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)!=(void *)-1);Cpu c;memset(&c,0xa5,sizeof c);c.x[20]=0x7000000400ull;c.x[23]=23;c.x[8]=0x1234;Cpu before=c;generated(&c);assert(calls==1&&!memcmp(&c,&before,sizeof c)&&LD32(c.x[20]+0x18)==0x1234);return 0;}
+'''.replace('FRAGMENT',fragment)
+with tempfile.TemporaryDirectory(prefix='hyrulem-fx-created-') as temp:
+ p=Path(temp);(p/'hook.c').write_text(source)
+ subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
+ subprocess.run([str(p/'hook')],check=True)
+print('Direct visual descriptor hook: original STR and full CPU preservation passed')

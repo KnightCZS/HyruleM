@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 9
+const Protocol = 10
 const MaxLine = 256 * 1024
 const MaxPlayers = 2
 
@@ -43,16 +43,17 @@ func (a Vec3) Valid() bool {
 }
 
 type Pose struct {
-	Effects   []VisualEffect `json:"effects,omitempty"`
-	Position  Vec3           `json:"position"`
-	Velocity  Vec3           `json:"velocity"`
-	Yaw       float64        `json:"yaw"`
-	Phase     float64        `json:"phase"`
-	Ready     bool           `json:"ready"`
-	Upper     AnimationTrack `json:"upper,omitempty"`
-	Lower     AnimationTrack `json:"lower,omitempty"`
-	Skeleton  string         `json:"skeleton,omitempty"`
-	Equipment []Equipment    `json:"equipment,omitempty"`
+	Appearance string         `json:"appearance,omitempty"`
+	Effects    []VisualEffect `json:"effects,omitempty"`
+	Position   Vec3           `json:"position"`
+	Velocity   Vec3           `json:"velocity"`
+	Yaw        float64        `json:"yaw"`
+	Phase      float64        `json:"phase"`
+	Ready      bool           `json:"ready"`
+	Upper      AnimationTrack `json:"upper,omitempty"`
+	Lower      AnimationTrack `json:"lower,omitempty"`
+	Skeleton   string         `json:"skeleton,omitempty"`
+	Equipment  []Equipment    `json:"equipment,omitempty"`
 }
 type AnimationTrack struct {
 	Name     string `json:"name,omitempty"`
@@ -77,7 +78,7 @@ func (p Pose) Valid() bool {
 	if _, err := decodeSkeleton(p.Skeleton); err != nil {
 		return false
 	}
-	if !validEffects(p.Effects) || len(p.Equipment) > 6 {
+	if !validAppearance(p.Appearance) || !validEffects(p.Effects) || len(p.Equipment) > 6 {
 		return false
 	}
 	seen := [6]bool{}

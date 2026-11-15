@@ -17,19 +17,28 @@ static void fx_owners_update(const uint64_t actors[4]){
     for(unsigned i=0;i<FX_MAX;i++){FxSource *s=&fx_sources[i];if(!s->event.sequence||!s->event.active)continue;if(next[s->event.slot].user!=s->user||!fx_owner_live(&next[s->event.slot])||!range(s->context,0x24)||LD32(s->context+0x20)!=s->generation||(LD32(s->context+8)&0x10))s->event.active=false;}
     pthread_mutex_unlock(&mutex);
 }
-// Hook after the native name lookup/emit returned: x19 is the output handle,
-// x20 the UserInstance and x21 the key C string. Failed requests are ignored.
-void rt_hyrulem_capture_effect(Cpu *c){
-    if(!supported())return;uint64_t handle=c->x[19],user=c->x[20],key=c->x[21];
-    if(!range(handle,12)||!range(key,64)||!memchr((void *)(uintptr_t)key,0,64))return;
+// Both the named API and the direct descriptor API arrive at an initialized
+// native Event. Requests without an output handle must be captured too.
+static void fx_capture(uint64_t context,uint64_t user,uint64_t key,uint32_t generation){
+    if(!range(context,0x38)||LD32(context+0x20)!=generation||!range(key,64)||!memchr((void *)(uintptr_t)key,0,64))return;
     char name[64];memcpy(name,(void *)(uintptr_t)key,64);if(!fx_key(name))return;
-    uint64_t context=LD64(handle);if(!range(context,0x24))return;uint32_t generation=LD32(handle+8);if(LD32(context+0x20)!=generation)return;
     pthread_mutex_lock(&mutex);int slot=-1;
     for(unsigned i=0;i<4;i++)if(fx_owners[i].user==user&&fx_owner_live(&fx_owners[i])){slot=(int)i;break;}
     if(slot<0){pthread_mutex_unlock(&mutex);return;}
     int at=-1;for(unsigned i=0;i<FX_MAX;i++){FxSource *s=&fx_sources[i];if(s->event.sequence&&s->context==context&&s->generation==generation){pthread_mutex_unlock(&mutex);return;}if(!s->event.active&&(at<0||s->at<fx_sources[at].at))at=(int)i;}
     if(at>=0){FxSource *s=&fx_sources[at];memset(s,0,sizeof *s);s->event.sequence=++fx_sequence;s->event.slot=(unsigned)slot;s->event.active=true;snprintf(s->event.name,64,"%s",name);s->context=context;s->user=user;s->generation=generation;s->at=now_ms();published.fx_captured++;snprintf(published.fx_last,64,"%s",name);}else published.fx_overflow++;
     pthread_mutex_unlock(&mutex);
+}
+void rt_hyrulem_capture_effect(Cpu *c){
+    if(!supported()||!range(c->x[19],12))return;uint64_t handle=c->x[19];
+    fx_capture(LD64(handle),c->x[20],c->x[21],LD32(handle+8));
+}
+// After initialization/list insertion, before optional output-handle write.
+// x23 is the Event and x20 its owner; Event+0x30 is its local call definition.
+void rt_hyrulem_created_effect(Cpu *c){
+    if(!supported()||!range(c->x[23],0x38)||LD64(c->x[23]+0x28)!=c->x[20])return;
+    uint64_t event=c->x[23],definition=LD64(event+0x30);if(!range(definition,8))return;
+    fx_capture(event,c->x[20],LD64(definition),LD32(event+0x20));
 }
 void rt_hyrulem_stop_effect(Cpu *c){
     if(!supported()||!range(c->x[0],0x24))return;uint64_t context=c->x[0];uint32_t generation=LD32(context+0x20);
@@ -42,9 +51,10 @@ static void fx_json(char *out,size_t size){
         if(n<0||(size_t)n>=size-used-2)break;used+=(size_t)n;any=true;
     }pthread_mutex_unlock(&mutex);out[used++]=']';out[used]=0;
 }
-static bool fx_decode(int argc,char **argv,FxFrame *out){
+static bool fx_decode(int argc,char **argv,FxFrame *out,Appearance *appearance){
     uint64_t count;if(!strcmp(argv[95],"0"))count=0;else if(!integer(argv[95],&count))return false;
-    if(count>FX_MAX||argc!=96+(int)count*5)return false;out->count=(unsigned)count;
+    if(count>FX_MAX)return false;int end=96+(int)count*5;if(argc!=end&&argc!=end+1)return false;
+    if(argc==end+1&&strcmp(argv[end],"-")&&!appearance_decode(argv[end],appearance))return false;out->count=(unsigned)count;
     for(unsigned i=0;i<count;i++){int at=96+(int)i*5;FxEvent *e=&out->events[i];uint64_t slot,age;
         if(!integer(argv[at],&e->sequence))return false;
         if(!strcmp(argv[at+1],"0"))slot=0;else if(!integer(argv[at+1],&slot))return false;
@@ -81,3 +91,37 @@ static void fx_tick(Cpu *c,const Desired *d,uint64_t vt){
     }
 }
 static void fx_reset(void){memset(fx_owners,0,sizeof fx_owners);memset(fx_sources,0,sizeof fx_sources);memset(fx_visual,0,sizeof fx_visual);fx_sequence=fx_storage=fx_highwater=0;}
+
+// Numeric ELink conditions belong to each visual UserInstance. Replay by
+// property name/type, not by sender-local index, and use native setters so its
+// dirty mask and downstream effect selection update together. No Player
+// controller or sound callback is enabled on the DemoNPC.
+static bool fx_property_table(uint64_t user,uint64_t *defs,uint64_t *values,unsigned *count){
+    if(!range(user,0x78))return false;uint64_t res=LD64(user+0x30);if(!range(res,0x50))return false;
+    *count=LD16(res+0x44);*defs=LD64(res+0x48);*values=LD64(user+0x70);
+    return *count>0&&*count<=64&&range(*defs,*count*8)&&range(*values,*count*4);
+}
+static uint32_t fx_property_name(uint64_t def){
+    if(!range(def,0x64))return 0;uint64_t text=LD64(def+0x10);if(!range(text,64))return 0;
+    size_t n=strnlen((const char *)(uintptr_t)text,64);return n&&n<64?pose_hash((const char *)(uintptr_t)text):0;
+}
+static void fx_properties_capture(const uint64_t actors[4],Appearance *out){
+    for(unsigned slot=0;slot<4;slot++){
+        uint64_t defs,values;unsigned count;if(!fx_property_table(fx_user(actors[slot]),&defs,&values,&count))continue;
+        for(unsigned i=0;i<count;i++){uint64_t def=LD64(defs+i*8);uint32_t name=fx_property_name(def);if(!name)continue;uint32_t type=LD32(def+0x60),value=LD32(values+i*4);if(type>3)continue;if(type==2){float f;memcpy(&f,&value,4);if(!isfinite(f))continue;}
+            bool seen=false;for(unsigned k=0;k<out->properties;k++)if(out->property[k].slot==slot&&out->property[k].name==name){seen=true;break;}if(seen)continue;
+            if(out->properties==PROP_MAX)return;out->property[out->properties++]=(FxProperty){slot,name,type,value};
+        }
+    }
+}
+static void fx_properties_apply(Cpu *c,uint64_t actor,const Appearance *state,unsigned slot,bool enabled){
+    if(!enabled||!g_site.hm_fx_set_int||!g_site.hm_fx_set_float)return;
+    uint64_t user=fx_user(actor),defs,values;unsigned count,applied=0;if(!fx_property_table(user,&defs,&values,&count))return;
+    for(unsigned i=0;i<count;i++){
+        uint64_t def=LD64(defs+i*8);uint32_t name=fx_property_name(def);if(!name)continue;uint32_t type=LD32(def+0x60);
+        for(unsigned j=0;j<state->properties;j++){const FxProperty *p=&state->property[j];if(p->slot!=slot||p->name!=name||p->type!=type)continue;
+            if(LD32(values+i*4)!=p->value){if(type==2){Cpu scratch=*c;scratch.x[0]=user;scratch.x[1]=i;memcpy(&scratch.v[0],&p->value,4);guest_call(&scratch,g_site.hm_fx_set_float);}else call(c,g_site.hm_fx_set_int,user,i,p->value,0,0,0,0);}applied++;break;
+        }
+    }
+    pthread_mutex_lock(&mutex);published.properties_applied+=applied;pthread_mutex_unlock(&mutex);
+}

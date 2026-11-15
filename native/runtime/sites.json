@@ -201,5 +201,47 @@
     "kind": "code",
     "pattern": "a9bd7bfd f9000bf5 a9024ff4 910003fd b9400808 321c0108 b9000808 f9401408",
     "at": 0
+  },
+  {
+    "name": "hm_armor_layout",
+    "address": "0x7000ccc2cc",
+    "kind": "code",
+    "pattern": "52847e08 8b080260 94000000/fc000000 b4000000/ff00001f 1e204100 aa0003f4 94000000/fc000000 aa1403e0",
+    "at": 0
+  },
+  {
+    "name": "hm_material_set",
+    "address": "0x7000f98470",
+    "kind": "code",
+    "pattern": "f9407809 13057c2a 52800028 1ac1210c 1200004d b86ad92b 6a0c017f 0a2c016b",
+    "at": 0
+  },
+  {
+    "name": "hm_fx_created",
+    "address": "0x7000f511c8",
+    "kind": "code",
+    "pattern": "b9001a88 b4000015/ff00001f f90002b7 b94022e8 b9000aa8 39434288 321e0108 39034288",
+    "at": 0
+  },
+  {
+    "name": "hm_fx_set_int",
+    "address": "0x7000f514e4",
+    "kind": "code",
+    "pattern": "a9bd7bfd f9000bf5 a9024ff4 910003fd aa0003f3 f9401800 2a0203f5 2a0103f4",
+    "at": 0
+  },
+  {
+    "name": "hm_fx_set_float",
+    "address": "0x7000f515ec",
+    "kind": "code",
+    "pattern": "fc1d0fe8 a9017bfd a9024ff4 910043fd aa0003f3 f9401800 1e204008 2a0103f4",
+    "at": 0
+  },
+  {
+    "name": "hm_bone_visible_set",
+    "address": "0x7000f97ddc",
+    "kind": "code",
+    "pattern": "f9407409 13057c2a 52800028 1ac1210c 1200004d b86ad92b 6a0c017f 0a2c016b",
+    "at": 0
   }
 ]
