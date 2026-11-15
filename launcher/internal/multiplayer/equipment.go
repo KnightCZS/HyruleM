@@ -58,6 +58,17 @@ func interpolateEquipment(a, b []Equipment, t float64) []Equipment {
 	return interpolateEquipmentFrame(a, b, t, false)
 }
 
+func sameEquipmentNames(a, b []Equipment) bool {
+	var left, right [6]string
+	for _, e := range a {
+		left[e.Slot] = e.Name
+	}
+	for _, e := range b {
+		right[e.Slot] = e.Name
+	}
+	return left == right
+}
+
 func interpolateEquipmentFrame(a, b []Equipment, t float64, skeletal bool) []Equipment {
 	out := append([]Equipment(nil), b...)
 	for i, e := range out {

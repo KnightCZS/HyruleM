@@ -13,6 +13,7 @@ static GroundReceipt ground_receipts[GROUND_MAX];
 typedef struct{uint64_t storage,id;GroundSource source;int state;} GroundPending;
 static GroundPending ground_pending[GROUND_MAX];
 static uint64_t ground_pending_actor(uint64_t storage){if(!storage)return 0;uint64_t link=LD64(storage+HANDLE);return range(link,0x18)?LD64(link+0x10):0;}
+static char ground_drop_error[48];static int ground_drop_before,ground_drop_after;
 static pthread_mutex_t ground_mutex=PTHREAD_MUTEX_INITIALIZER;
 static GroundMode ground_mode,ground_live;
 static GroundState ground_state[GROUND_MAX];
@@ -24,7 +25,7 @@ static GroundReplica ground_replica[GROUND_MAX];
 static uint64_t ground_next_local,ground_next_request,ground_scan_at,ground_intercepts;
 static bool ground_session_ready;
 enum{GROUND_DROPS=8};
-typedef struct{GearVisual visual;GroundSource source;uint64_t request,id;char world[25];bool active,confirmed;int terminal;} GroundDrop;
+typedef struct{GearVisual visual;GroundSource source;uint64_t request,id;char world[25];bool active,confirmed;int terminal,before,after;char error[48];} GroundDrop;
 typedef struct{uint64_t request,id;char session[17],world[25];} GroundDropCommand;
 typedef struct{uint64_t actor,storage,id;GroundSource source;char world[25];bool confirmed;} GroundDropHook;
 static GroundDrop ground_drops[GROUND_DROPS];static GroundDropHook ground_drop_hooks[GROUND_DROPS];
@@ -119,7 +120,7 @@ static void ground_reset(void) {
     memset(ground_drops,0,sizeof ground_drops);memset(ground_drop_hooks,0,sizeof ground_drop_hooks);memset(&ground_drop_queued,0,sizeof ground_drop_queued);memset(&ground_drop_last_source,0,sizeof ground_drop_last_source);
     memset(ground_destroyed,0,sizeof ground_destroyed);ground_destroyed_count=0;memset(native_drops,0,sizeof native_drops);native_drop_sequence=native_drop_vt=0;
     ground_drop_sequence=ground_drop_last_request=ground_drop_last_id=0;ground_drop_last_result=0;ground_drop_busy=false;ground_origin[0]=0;
-    ground_next_local=ground_next_request=ground_scan_at=ground_intercepts=0;ground_session_ready=false;
+    ground_drop_error[0]=0;ground_drop_before=ground_drop_after=-1;ground_next_local=ground_next_request=ground_scan_at=ground_intercepts=0;ground_session_ready=false;
     pthread_mutex_unlock(&ground_mutex);
 }
 static uint64_t ground_storage(void) {
@@ -179,7 +180,7 @@ static int ground_count(Cpu *c,uint64_t mgr,const char *name) {
 }
 static void ground_drop_publish(GroundDrop *d,int result){
     d->terminal=result;
-    pthread_mutex_lock(&ground_mutex);ground_drop_last_request=d->request;ground_drop_last_id=d->id;ground_drop_last_result=result;ground_drop_last_source=d->source;ground_drop_busy=false;pthread_mutex_unlock(&ground_mutex);
+    pthread_mutex_lock(&ground_mutex);ground_drop_last_request=d->request;ground_drop_last_id=d->id;ground_drop_last_result=result;ground_drop_last_source=d->source;ground_drop_busy=false;snprintf(ground_drop_error,sizeof ground_drop_error,"%s",d->error);ground_drop_before=d->before;ground_drop_after=d->after;pthread_mutex_unlock(&ground_mutex);
 }
 static void ground_drop_hooks_publish(void){
     pthread_mutex_lock(&ground_mutex);
@@ -200,7 +201,7 @@ static void ground_drop_tick(Cpu *c,uint64_t player,uint64_t vt,const GroundMode
     GroundDropCommand queued;pthread_mutex_lock(&ground_mutex);queued=ground_drop_queued;memset(&ground_drop_queued,0,sizeof ground_drop_queued);pthread_mutex_unlock(&ground_mutex);
     if(queued.request){
         GroundDrop *d=NULL;for(int i=0;i<GROUND_DROPS;i++)if(!ground_drops[i].active){d=&ground_drops[i];break;}
-        if(d){uint64_t st=d->visual.storage;memset(d,0,sizeof *d);d->visual.storage=st?st:ground_storage();d->visual.started=now_ms();d->request=queued.request;d->id=queued.id;d->source=states[d->id-1].source;d->active=true;snprintf(d->world,sizeof d->world,"%s",queued.world);}
+        if(d){uint64_t st=d->visual.storage;memset(d,0,sizeof *d);d->visual.storage=st?st:ground_storage();d->visual.started=now_ms();d->before=d->after=-1;d->request=queued.request;d->id=queued.id;d->source=states[d->id-1].source;d->active=true;snprintf(d->world,sizeof d->world,"%s",queued.world);}
         else{pthread_mutex_lock(&ground_mutex);ground_drop_last_result=-1;ground_drop_busy=false;pthread_mutex_unlock(&ground_mutex);}
     }
     for(int i=0;i<GROUND_DROPS;i++){
@@ -210,31 +211,31 @@ static void ground_drop_tick(Cpu *c,uint64_t player,uint64_t vt,const GroundMode
         if(d->confirmed&&(states[d->id-1].state==2||states[d->id-1].state==3||states[d->id-1].state==5)){if(remove_gear(c,g))d->active=false;continue;}
         if(d->confirmed){ActorRef ref=resolve_at(c,g->storage,g->actor);if(ref.ptr)release_at(c,g->storage);else if(ref.invalid){call(c,g_site.actor_index_release,g->storage+INDEX,0,0,0,0,0,0);g->actor=0;d->active=false;}continue;}
         float pos[3];for(int j=0;j<3;j++)pos[j]=read_float(player+0x3a4+j*16);float distance=0;for(int j=0;j<3;j++){float delta=pos[j]-d->source.pos[j];distance+=delta*delta;}
-        if(!g->storage||now_ms()-g->started>15000||!isfinite(distance)||distance>16||!ground_in_zone(d->source.pos,mode,90)){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
+        if(!g->storage||now_ms()-g->started>15000||!isfinite(distance)||distance>16||!ground_in_zone(d->source.pos,mode,90)){snprintf(d->error,sizeof d->error,"%s",!g->storage?"storage-unavailable":now_ms()-g->started>15000?"activation-timeout":"player-moved-or-outside-zone");ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
         if(g->spawning){
-            if(call(c,g_site.hm_handle_failed,g->storage+HANDLE,0,0,0,0,0,0)||now_ms()-g->started>15000){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
+            if(call(c,g_site.hm_handle_failed,g->storage+HANDLE,0,0,0,0,0,0)||now_ms()-g->started>15000){snprintf(d->error,sizeof d->error,"create-handle-failed");ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
             if(!call(c,g_site.hm_handle_ready,g->storage+HANDLE,0,0,0,0,0,0))continue;
             uint64_t a=call(c,g_site.hm_handle_get,g->storage+HANDLE,0,0,0,0,0,0);
-            if(!range(a,0x7d0)||!call(c,g_site.actor_index_assign,g->storage+INDEX,a,1,0,0,0,0)){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
-            g->actor=a;uint64_t awake=call(c,g_site.hm_handle_wake,g->storage+HANDLE,0,0,0,0,0,0);g->spawning=false;if(awake!=a){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
+            if(!range(a,0x7d0)||!call(c,g_site.actor_index_assign,g->storage+INDEX,a,1,0,0,0,0)){snprintf(d->error,sizeof d->error,"reference-failed");ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
+            g->actor=a;uint64_t awake=call(c,g_site.hm_handle_wake,g->storage+HANDLE,0,0,0,0,0,0);g->spawning=false;if(awake!=a){snprintf(d->error,sizeof d->error,"wake-failed");ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;continue;}
         }
         if(!g->actor){
             uint64_t creator=LD64(g_site.hm_creator),manager=LD64(g_site.hm_heap_mgr);if(!range(creator,0x60)||!range(manager,0x30)||LD8(creator+0x59))continue;uint64_t heap=LD64(manager+0x28);if(!range(heap,8))continue;
             uint64_t st=g->storage;memset((void *)(uintptr_t)(st+HANDLE),0,16);memset((void *)(uintptr_t)(st+PARAMS),0,0xd8);memcpy((void *)(uintptr_t)(st+VECTOR),d->source.pos,12);ST64(st+SSTR,vt);ST64(st+SSTR+8,st+KEY);snprintf((char *)(uintptr_t)(st+NAME),64,"%s",d->source.name);
             ground_drop_hooks_publish();call(c,g_site.hm_param_add,st+PARAMS+0x10,st+VECTOR,st+SSTR,12,4,0,0);
-            if(!call(c,g_site.hm_create,creator,st+NAME,heap,st+HANDLE,st+PARAMS,0,1)){ground_drop_publish(d,-1);d->active=false;continue;}g->spawning=true;g->started=now_ms();continue;
+            if(!call(c,g_site.hm_create,creator,st+NAME,heap,st+HANDLE,st+PARAMS,0,1)){snprintf(d->error,sizeof d->error,"actor-create-rejected");ground_drop_publish(d,-1);d->active=false;continue;}g->spawning=true;g->started=now_ms();continue;
         }
-        ActorRef ref=resolve_at(c,g->storage,g->actor);if(!ref.ptr||ref.state!=1){if(ref.ptr)release_at(c,g->storage);if(ref.invalid||now_ms()-g->started>15000){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;}continue;}
+        ActorRef ref=resolve_at(c,g->storage,g->actor);if(!ref.ptr||ref.state!=1){if(ref.ptr)release_at(c,g->storage);if(ref.invalid||now_ms()-g->started>15000){snprintf(d->error,sizeof d->error,"actor-reference-or-activation-failed");ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;}continue;}
         // Confirm an active actor near the prepared location before any debit.
         float actual[3],offset=0;for(int j=0;j<3;j++){actual[j]=read_float(ref.ptr+0x3a4+j*16);float delta=actual[j]-d->source.pos[j];offset+=delta*delta;}
-        if(!isfinite(offset)||offset>16){release_at(c,g->storage);if(now_ms()-g->started>15000){ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;}continue;}
-        uint64_t mgr=LD64(g_site.hm_pouch_mgr);int result=-1;
+        if(!isfinite(offset)||offset>16){release_at(c,g->storage);if(now_ms()-g->started>15000){snprintf(d->error,sizeof d->error,"spawn-position-not-confirmed");ground_drop_publish(d,-1);if(remove_gear(c,g))d->active=false;}continue;}
+        uint64_t mgr=LD64(g_site.hm_pouch_mgr);int result=-1;snprintf(d->error,sizeof d->error,"inventory-unavailable");
         if(range(mgr,0x4449c)){
-            call(c,g_site.pouch_lock,mgr+0x28,0,0,0,0,0,0);int before=ground_count(c,mgr,"Item_Fruit_A");
-            if(before>0){snprintf((char *)(uintptr_t)(g->storage+NAME),64,"Item_Fruit_A");ST64(g->storage+SSTR,vt);ST64(g->storage+SSTR+8,g->storage+NAME);call(c,g_site.hm_item_remove,mgr,g->storage+SSTR,1,0,0,0,0);int after=ground_count(c,mgr,"Item_Fruit_A");result=after==before-1?1:after==before?-1:2;}
+            call(c,g_site.pouch_lock,mgr+0x28,0,0,0,0,0,0);int before=ground_count(c,mgr,"Item_Fruit_A");d->before=before;snprintf(d->error,sizeof d->error,"%s",before<0?"inventory-layout-invalid":before==0?"apple-missing":"inventory-remove-not-applied");
+            if(before>0){snprintf((char *)(uintptr_t)(g->storage+NAME),64,"Item_Fruit_A");ST64(g->storage+SSTR,vt);ST64(g->storage+SSTR+8,g->storage+NAME);call(c,g_site.hm_item_remove,mgr,g->storage+SSTR,1,0,0,0,0);int after=ground_count(c,mgr,"Item_Fruit_A");d->after=after;result=after==before-1?1:after==before?-1:2;}
             call(c,g_site.pouch_unlock,mgr+0x28,0,0,0,0,0,0);
         }
-        if(result==1){memcpy(d->source.pos,actual,sizeof actual);d->confirmed=true;}
+        if(result==1){d->error[0]=0;memcpy(d->source.pos,actual,sizeof actual);d->confirmed=true;}else if(result==2)snprintf(d->error,sizeof d->error,"inventory-write-uncertain");
         release_at(c,g->storage);ground_drop_publish(d,result);
         if(result!=1){if(remove_gear(c,g))d->active=false;}
     }
@@ -245,7 +246,7 @@ static void ground_drop_command(int argc,char **argv,ControlReply *r){
     pthread_mutex_lock(&ground_mutex);
     bool valid=!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2])&&ground_mode.heartbeat&&now_ms()-ground_mode.heartbeat<2500;
     GroundState *s=&ground_state[id-1];valid=valid&&s->id==id&&s->own&&s->state==4&&s->source.drop&&s->source.local==request&&!strcmp(s->source.origin,ground_origin)&&!strcmp(s->source.name,"Item_Fruit_A");
-    if(valid&&request>ground_drop_sequence){if(ground_drop_busy||ground_drop_queued.request)valid=false;else{ground_drop_sequence=request;ground_drop_last_request=request;ground_drop_last_id=id;ground_drop_last_result=0;ground_drop_busy=true;ground_drop_queued.request=request;ground_drop_queued.id=id;snprintf(ground_drop_queued.session,sizeof ground_drop_queued.session,"%s",argv[1]);snprintf(ground_drop_queued.world,sizeof ground_drop_queued.world,"%s",argv[2]);}}
+    if(valid&&request>ground_drop_sequence){if(ground_drop_busy||ground_drop_queued.request)valid=false;else{ground_drop_sequence=request;ground_drop_last_request=request;ground_drop_last_id=id;ground_drop_last_result=0;ground_drop_error[0]=0;ground_drop_before=ground_drop_after=-1;ground_drop_busy=true;ground_drop_queued.request=request;ground_drop_queued.id=id;snprintf(ground_drop_queued.session,sizeof ground_drop_queued.session,"%s",argv[1]);snprintf(ground_drop_queued.world,sizeof ground_drop_queued.world,"%s",argv[2]);}}
     pthread_mutex_unlock(&ground_mutex);if(!valid){control_fail(r,"Drop not prepared by the server, or another drop is pending");return;}control_field_bool(r,"queued",true);
 }
 
@@ -368,10 +369,10 @@ static int ground_source_json(char *out,size_t n,const GroundSource *s) {
     return snprintf(out,n,"{\"local\":%llu,\"hash\":%u,\"value\":%d,\"modifier\":%u,\"modifier_value\":%d,\"native_drop\":%s,\"drop\":%s,\"origin\":\"%s\",\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"position\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f}}",(unsigned long long)s->local,s->hash,s->value,s->modifier,s->bonus,s->native_drop?"true":"false",s->drop?"true":"false",s->origin,s->name,s->spawn[0],s->spawn[1],s->spawn[2],s->pos[0],s->pos[1],s->pos[2]);
 }
 static void ground_status(int argc,char **argv,ControlReply *r) {
-    GroundSource seen[GROUND_MAX];GroundEvent events[GROUND_EVENTS];int n;uint64_t count;GroundSource drop_source;uint64_t drop_request,drop_id,drop_sequence;int drop_result;char origin[17];GroundReceipt receipts[GROUND_MAX];
+    GroundSource seen[GROUND_MAX];GroundEvent events[GROUND_EVENTS];int n;uint64_t count;GroundSource drop_source;uint64_t drop_request,drop_id,drop_sequence;int drop_result;char origin[17];GroundReceipt receipts[GROUND_MAX];char drop_error[48];int apple_before,apple_after;
     pthread_mutex_lock(&ground_mutex);n=0;for(int i=0;i<ground_seen_count;i++){GroundSource *s=&ground_seen[i];bool keep=!s->native_drop;if(s->native_drop)for(int j=0;j<NATIVE_DROPS;j++)if(native_drops[j].active&&!native_drops[j].local_only&&native_drops[j].source.local==s->local){keep=true;native_drops[j].exported=true;break;}if(keep)seen[n++]=*s;}
-    for(int j=0;j<NATIVE_DROPS&&n<GROUND_MAX;j++){NativeDrop *d=&native_drops[j];if(!d->active||d->local_only||d->id)continue;bool found=false;for(int i=0;i<n;i++)if(seen[i].native_drop&&seen[i].local==d->source.local)found=true;if(!found){seen[n++]=d->source;d->exported=true;}}memcpy(events,ground_events,sizeof events);count=ground_intercepts;memcpy(receipts,ground_receipts,sizeof receipts);drop_request=ground_drop_last_request;drop_id=ground_drop_last_id;drop_result=ground_drop_last_result;drop_source=ground_drop_last_source;drop_sequence=ground_drop_sequence;snprintf(origin,sizeof origin,"%s",ground_origin);pthread_mutex_unlock(&ground_mutex);
-    char json[20000];pthread_mutex_lock(&ground_mutex);size_t destroy_used=0;json[destroy_used++]='[';for(unsigned i=0;i<ground_destroyed_count;i++){int k=snprintf(json+destroy_used,sizeof json-destroy_used,"%s%llu",i?",":"",(unsigned long long)ground_destroyed[i]);destroy_used+=(size_t)k;}json[destroy_used++]=']';json[destroy_used]=0;pthread_mutex_unlock(&ground_mutex);control_field_str(r,"destroyed_json",json);size_t used=1;json[0]='[';
+    for(int j=0;j<NATIVE_DROPS&&n<GROUND_MAX;j++){NativeDrop *d=&native_drops[j];if(!d->active||d->local_only||d->id)continue;bool found=false;for(int i=0;i<n;i++)if(seen[i].native_drop&&seen[i].local==d->source.local)found=true;if(!found){seen[n++]=d->source;d->exported=true;}}memcpy(events,ground_events,sizeof events);count=ground_intercepts;memcpy(receipts,ground_receipts,sizeof receipts);drop_request=ground_drop_last_request;drop_id=ground_drop_last_id;drop_result=ground_drop_last_result;drop_source=ground_drop_last_source;drop_sequence=ground_drop_sequence;snprintf(origin,sizeof origin,"%s",ground_origin);snprintf(drop_error,sizeof drop_error,"%s",ground_drop_error);apple_before=ground_drop_before;apple_after=ground_drop_after;pthread_mutex_unlock(&ground_mutex);
+    char json[20000];pthread_mutex_lock(&ground_mutex);size_t destroy_used=0;json[destroy_used++]='[';for(unsigned i=0;i<ground_destroyed_count;i++){int k=snprintf(json+destroy_used,sizeof json-destroy_used,"%s%llu",i?",":"",(unsigned long long)ground_destroyed[i]);destroy_used+=(size_t)k;}json[destroy_used++]=']';json[destroy_used]=0;pthread_mutex_unlock(&ground_mutex);control_field_str(r,"drop_error",drop_error);control_field_int(r,"drop_inventory_before",apple_before);control_field_int(r,"drop_inventory_after",apple_after);control_field_str(r,"destroyed_json",json);size_t used=1;json[0]='[';
     for(int i=0;i<n;i++){if(i)json[used++]=',';int k=ground_source_json(json+used,sizeof json-used,&seen[i]);if(k<0||(size_t)k>=sizeof json-used-2){control_fail(r,"Materials overflow");return;}used+=(size_t)k;}json[used++]=']';json[used]=0;control_field_str(r,"items_json",json);
     used=1;json[0]='[';bool comma=false;
     for(int i=0;i<GROUND_EVENTS;i++)if(events[i].request&&!events[i].done){int k=snprintf(json+used,sizeof json-used,"%s{\"request\":%llu,\"item\":%llu,\"source\":",comma?",":"",(unsigned long long)events[i].request,(unsigned long long)events[i].id);if(k<0||(size_t)k>=sizeof json-used-2){control_fail(r,"Events overflow");return;}used+=(size_t)k;k=ground_source_json(json+used,sizeof json-used,&events[i].source);if(k<0||(size_t)k>=sizeof json-used-3){control_fail(r,"Events overflow");return;}used+=(size_t)k;json[used++]='}';comma=true;}

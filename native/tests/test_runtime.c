@@ -13,7 +13,7 @@ static uint64_t mock_actor=HEAP_BASE+0x3000, retained=HEAP_BASE+0x4000;
 static bool reject,fail_handle,deny_lease;
 static uint64_t ground_pouch_item;static unsigned inventory_grants,inventory_debits;static bool inventory_full,inventory_ambiguous,remove_ambiguous;
 static unsigned create_state=1;
-static bool weapon_test;static uint64_t weapon_vt,weapon_pouch;static unsigned weapon_entries;static uint32_t granted_modifier;static int granted_bonus;
+static bool empty_inventory;static bool weapon_test;static uint64_t weapon_vt,weapon_pouch;static unsigned weapon_entries;static uint32_t granted_modifier;static int granted_bonus;
 static uint64_t local_equipped[6],gear_handles[32],gear_actors[32];static unsigned gear_allocations,gear_handles_count;static bool reject_equipment;
 void *hle_alloc(uint64_t size) { assert(size==BYTES);return (void *)(uintptr_t)(storage?HLE_HEAP+0x1000+0x400*gear_allocations++:HLE_HEAP); }
 static uint64_t handle_actor(uint64_t handle) {if(handle==HLE_HEAP)return mock_actor;for(unsigned i=0;i<gear_handles_count;i++)if(gear_handles[i]==handle)return gear_actors[i];assert(false);return 0;}
@@ -42,7 +42,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     else if (fn==g_site.hm_set_mtx) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);assert(c->x[2]<=1);memcpy((void *)(uintptr_t)(c->x[0]+0x398),(void *)(uintptr_t)c->x[1],48);moves++;}
     else if (fn==g_site.hm_play_as) {assert(c->x[0]==HEAP_BASE+0x5000);plays++;}
     else if(fn==g_site.hm_bone_set){bone_writes++;memcpy(last_bone_matrix,(void *)(uintptr_t)c->x[1],sizeof last_bone_matrix);assert(c->x[2]<POSE_MAX);}
-    else if(fn==g_site.pouch_page_count)c->x[0]=weapon_test?weapon_entries:1;
+    else if(fn==g_site.pouch_page_count)c->x[0]=empty_inventory?0:weapon_test?weapon_entries:1;
     else if(fn==g_site.pouch_page_item)c->x[0]=weapon_test?weapon_pouch+c->x[2]*0x100:ground_pouch_item;
     else if(fn==g_site.hm_item_remove){assert(c->x[2]==1&&c->x[3]==0);if(LD32(ground_pouch_item+0x20)>0){ST32(ground_pouch_item+0x20,LD32(ground_pouch_item+0x20)-1);inventory_debits++;if(remove_ambiguous){ST32(ground_pouch_item+0x20,UINT32_MAX);deny_lease=true;}}}
     else if(fn==g_site.hm_item_get&&weapon_test){assert(c->x[2]==900&&c->x[3]);granted_modifier=LD32(c->x[3]);granted_bonus=(int32_t)LD32(c->x[3]+4);ST64(c->x[3],0);if(!inventory_full){uint64_t p=weapon_pouch+weapon_entries++*0x100;ST32(p+0x18,0);ST32(p+0x20,900);ST8(p+0x25,1);ST64(p+0x30,p+0x80);strcpy((char *)(uintptr_t)(p+0x80),"Weapon_Sword_001");inventory_grants++;}}
@@ -201,6 +201,9 @@ int main(void) {
     float ownerMatrix[12]={1,0,0,100,0,1,0,200,0,0,1,300};memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),ownerMatrix,sizeof ownerMatrix);
     ownerMatrix[3]=102;ownerMatrix[11]=303;memcpy((void *)(uintptr_t)(source+0x958),ownerMatrix,sizeof ownerMatrix);
     capture_gear(&cpu,HEAP_BASE+0x1000);assert(!strcmp(local_gear[0].name,"Weapon_Sword_001")&&local_gear[0].matrix[3]==2&&local_gear[0].matrix[11]==3&&LD32(source+0x200)==0x12345678);
+    // Native equipment categories are sword/shield/bow, not wire slots.
+    for(int raw=1;raw<=2;raw++){uint64_t equipment=source+raw*0x1000;local_equipped[raw]=equipment;ST8(equipment+0x64,1);ST64(equipment+0x10,equipment+0x800);strcpy((char *)(uintptr_t)(equipment+0x800),raw==1?"Weapon_Shield_001":"Weapon_Bow_001");ST64(equipment+0x4e0,equipment+0x900);memcpy((void *)(uintptr_t)(equipment+0x958),ownerMatrix,sizeof ownerMatrix);}
+    capture_gear(&cpu,HEAP_BASE+0x1000);assert(!strcmp(local_gear[1].name,"Weapon_Bow_001")&&!strcmp(local_gear[2].name,"Weapon_Shield_001"));local_equipped[1]=local_equipped[2]=0;
     ownerMatrix[3]=NAN;memcpy((void *)(uintptr_t)(source+0x958),ownerMatrix,sizeof ownerMatrix);
     capture_gear(&cpu,HEAP_BASE+0x1000);assert(!local_gear[0].name[0]&&local_gear[0].matrix[0]==1&&isfinite(local_gear[0].matrix[3])&&local_ready);
     // Parse one atomic six-slot frame and reject a late invalid matrix without
@@ -279,10 +282,15 @@ int main(void) {
     captured.bones[1].name=captured.bones[0].name;pose_encode(&captured,encoded);assert(!pose_decode(encoded,&decoded));captured.bones[1].name=pose_hash("Weapon_R");pose_encode(&captured,encoded);
     char *skeletal_frame[95];memcpy(skeletal_frame,atomic,sizeof atomic);skeletal_frame[2]="3";skeletal_frame[93]="0";skeletal_frame[94]=encoded;r.failed=false;remote(95,skeletal_frame,&r);assert(!r.failed&&desired.pose.count==2);Desired intact=desired;skeletal_frame[2]="4";skeletal_frame[94]="%%%=";remote(95,skeletal_frame,&r);assert(r.failed&&!memcmp(&intact,&desired,sizeof intact));
     ST64(model_vt+0x70,0);pose_capture(owner,origin,0,&captured);assert(captured.count==0&&pose_apply(&cpu,owner,storage,&skin)==0);ST64(model_vt+0x70,g_site.hm_bone_get);
-    float invalid=NAN;memcpy((void *)(uintptr_t)palette,&invalid,4);pose_capture(owner,origin,0,&captured);assert(captured.count==0);
+    float invalid=NAN;memcpy((void *)(uintptr_t)palette,&invalid,4);pose_capture(owner,origin,0,&captured);assert(captured.count==0&&pose_probe.skipped==1&&!strcmp(pose_probe.reason,"invalid-bone-matrix"));
     // Clothing comes from personal pouch entries, not the weapon actor getter.
-    strcpy((char *)(uintptr_t)(ground_pouch_item+0x100),"Armor_001_Upper");ST64(ground_pouch_item+0x30,ground_pouch_item+0x100);ST32(ground_pouch_item+0x18,2);ST8(ground_pouch_item+0x24,1);ST8(ground_pouch_item+0x25,1);armor_read_at=0;capture_armor(&cpu);assert(armor_from_pouch&&!strcmp(local_armor[1],"Armor_001_Upper")&&!strcmp(local_armor[0],"Armor_Default_Head"));
+    strcpy((char *)(uintptr_t)(ground_pouch_item+0x100),"Armor_001_Upper");ST64(ground_pouch_item+0x30,ground_pouch_item+0x100);ST32(ground_pouch_item+0x18,5);ST8(ground_pouch_item+0x24,1);ST8(ground_pouch_item+0x25,1);armor_read_at=0;capture_armor(&cpu);assert(armor_from_pouch&&!strcmp(local_armor[1],"Armor_001_Upper")&&!strcmp(local_armor[0],"Armor_Default_Head"));
+    // Raw armor types 4/5/6 are distinct; arrow type 2 and unequipped
+    // entries must never become remote armor, even when names look plausible.
+    for(int type=4;type<=6;type++){const char *suffix=type==4?"Head":type==5?"Upper":"Lower";snprintf((char *)(uintptr_t)(ground_pouch_item+0x100),48,"Armor_001_%s",suffix);ST32(ground_pouch_item+0x18,type);armor_read_at=0;capture_armor(&cpu);assert(!strcmp(local_armor[type-4],(char *)(uintptr_t)(ground_pouch_item+0x100)));}
+    ST32(ground_pouch_item+0x18,2);armor_read_at=0;capture_armor(&cpu);assert(!strcmp(local_armor[2],"Armor_Default_Lower"));ST32(ground_pouch_item+0x18,6);ST8(ground_pouch_item+0x24,0);armor_read_at=0;capture_armor(&cpu);assert(!strcmp(local_armor[2],"Armor_Default_Lower"));ST8(ground_pouch_item+0x24,1);
     #include "test_generation7.inc"
+    #include "test_preview11.inc"
     puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");

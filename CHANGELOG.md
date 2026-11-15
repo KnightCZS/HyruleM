@@ -1,5 +1,15 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.11
+
+- Corrige perda do campo Skeleton entre captura nativa e envio da pose no launcher. Regressão com dois clientes exercita o caminho até o comando remoto.
+- Corrige tipos de roupa (4/5/6, em vez do tipo 2 de flechas) e categorias nativas espada/escudo/arco.
+- Mantém corpo/arma no mesmo quadro no início da interpolação, na troca de equipamento e no avanço por matriz degenerada.
+- Reenvia confirmação tardia de vida zero com orçamento e intervalo, liberando a fila nativa de mortes.
+- Diagnóstico do launcher inclui estados ao vivo dos dois clientes, sem bloquear a janela; contadores de captura/recebimento/aplicação e motivos do descarte de maçã.
+- ABI 8/protocolo 8. Mantém limites do mundo experimental; não acrescenta combate/IA/física geral.
+
+
 ## 0.5.0-preview.10
 
 - Issue #7: pose final dos ossos e arma no mesmo intervalo; roupa lida do inventário equipado.

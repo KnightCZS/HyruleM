@@ -6,12 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hyrulelauncher/internal/nativebridge"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -196,6 +198,7 @@ type app struct {
 	installing         bool
 	preparing          bool
 	controlBusy        bool
+	diagnosing         bool
 	sandboxActive      bool
 	controlPort        int
 	controlCancel      context.CancelFunc
@@ -508,6 +511,13 @@ func (a *app) drain() {
 			continue
 		}
 		switch e.kind {
+		case "logs-ready":
+			a.diagnosing = false
+			a.setStatus("Diagnóstico salvo com os estados nativos disponíveis.", false)
+			a.openPath(e.message)
+		case "logs-failed":
+			a.diagnosing = false
+			a.setStatus(e.message, true)
 		case "progress":
 			label := e.progress.Stage
 			if e.progress.Total > 0 {
@@ -689,6 +699,10 @@ func (a *app) openPath(path string) {
 	}
 }
 func (a *app) logs() {
+	if a.diagnosing {
+		return
+	}
+	a.diagnosing = true
 	c := a.gather()
 	body := "HYRULE LAUNCHER " + core.Version + "\r\n\r\nLAUNCHER\r\n" + core.ReadLogTail(core.LogPath(a.root), 48000) + "\r\n\r\nPROCESSO\r\n" + core.ReadLogTail(filepath.Join(a.root, "logs", "processo.log"), 48000)
 	body += "\r\n\r\nSANDBOX\r\n" + core.ReadLogTail(filepath.Join(a.root, "logs", "sandbox-processo.log"), 48000)
@@ -709,13 +723,38 @@ func (a *app) logs() {
 			body += "\r\n\r\nRUNTIME CLIENTE " + fmt.Sprint(i+1) + "\r\n" + core.ReadLogTail(core.RuntimeLog(private), 48000)
 		}
 	}
-	file := filepath.Join(a.root, "logs", "diagnostico.txt")
-	_ = os.MkdirAll(filepath.Dir(file), 0700)
-	if err := os.WriteFile(file, []byte(body), 0600); err != nil {
-		a.setStatus(err.Error(), true)
-		return
+	root := a.root
+	ports := [2]int{}
+	if a.multiplayer != nil {
+		for i := range ports {
+			ports[i] = a.multiplayer.slots[i].port
+		}
 	}
-	a.openPath(file)
+	a.setStatus("Coletando diagnóstico e estado dos dois clientes…", false)
+	go func() {
+		if os.Getenv(core.NativePreviewEnv) == "1" {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+			for i, port := range ports {
+				report, err := nativebridge.ProbeSessionAt(ctx, c, root, i+1, port)
+				if err != nil {
+					report.NativeError = err.Error()
+				}
+				data, _ := json.MarshalIndent(report, "", "  ")
+				body += "\r\n\r\nDIAGNÓSTICO NATIVO CLIENTE " + fmt.Sprint(i+1) + "\r\n" + string(data)
+			}
+		}
+		file := filepath.Join(root, "logs", "diagnostico.txt")
+		if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+			a.post(uiEvent{kind: "logs-failed", message: err.Error()})
+			return
+		}
+		if err := os.WriteFile(file, []byte(body), 0600); err != nil {
+			a.post(uiEvent{kind: "logs-failed", message: err.Error()})
+			return
+		}
+		a.post(uiEvent{kind: "logs-ready", message: file})
+	}()
 }
 func windowProc(h uintptr, message uint32, w, l uintptr) uintptr {
 	a := current

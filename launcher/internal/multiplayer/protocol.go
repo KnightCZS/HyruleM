@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 7
+const Protocol = 8
 const MaxLine = 256 * 1024
 const MaxPlayers = 2
 

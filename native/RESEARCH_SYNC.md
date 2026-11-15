@@ -6,7 +6,7 @@ Quatro novos sites próprios da 1.9.0 identificam entrada de aquisição, item-g
 
 O experimento vem desligado: cinco materiais comuns em até 90 m de Hateno, 32 identidades por sessão. O servidor arbitra a coleta, aceita observações identificadas do mapa do host e um descarte explícito de maçã do dono, preparado antes de debitar e confirmado pela diferença de quantidade. Atores naturais sem hash não são classificados como drops; o menu normal de descarte fica fora desta etapa. Uma concessão incerta não libera nova concessão. O caminho nativo e seus efeitos na GPU/primeira coleta ainda requerem validação em jogo; isso não constitui sincronização geral de eventos.
 
-[Auditoria](../docs/AUDITORIA_0.5.0-preview.10.md) e [instalação/limites](README.md).
+[Auditoria](../docs/AUDITORIA_0.5.0-preview.11.md) e [instalação/limites](README.md).
 
 ## Histórico
 
@@ -68,3 +68,8 @@ A prévia 3 trata a instalação como parte do fluxo: atalho confere e instala n
 ## Correção do issue #7 — prévia 10
 
 A redução do grafo Player a um clipe não conserva a pose final de ataques. A nova transmissão usa ossos finais por nome e matrizes relativas, com os mesmos quadros das armas. Getter/setter SDK conferidos na versão privada 1.9.0. Roupas vêm de entradas pessoais equipadas. Hooks originais de descarte/arremesso capturam ator/proprietário/condição e não debitam novamente o inventário. Dano é cumulativo por origem; somente vida zero é evidência de destruição. Esses mecanismos são implementados e testados sinteticamente, mas não equivalem a um Player remoto completo, eventos de ação, física geral ou queda de árvores comprovada. Veja a auditoria atual.
+
+
+## Falhas de integração confirmadas — prévia 11
+
+A prévia 10 capturava HMP1, mas o caminho contínuo do launcher copiava campos individuais e perdia Skeleton. Publicar o quadro inteiro corrige o fluxo; um teste com dois clientes TCP falha antes da correção e passa depois. Categorias nativas do getter são espada/escudo/arco; o protocolo usa espada/arco/escudo. Os tipos de armadura no pouch são 4/5/6; tipo 2 é flecha. A leitura anterior selecionava o tipo errado e testes com fixtures erradas não detectaram. A prévia 11 acrescenta testes representativos e diagnóstico por etapa, sem anunciar visibilidade GPU pelo mero sucesso de getters/setters. O guia enviado pelo usuário orienta a disciplina de quadros e autoridade; suas tabelas baseadas no pacote não são evidência de gameplay.

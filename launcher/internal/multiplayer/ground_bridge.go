@@ -16,6 +16,7 @@ type groundSync struct {
 	receiptAt                       map[uint64]time.Time
 	dropRequest, dropItem, dropNext uint64
 	dropSource                      GroundSource
+	dropError                       string
 }
 
 func (b *Bridge) closeGround(ctx context.Context, n *groundSync) bool {
@@ -103,6 +104,7 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		DropItem     uint64 `json:"drop_item"`
 		DropResult   int    `json:"drop_result"`
 		DropSource   string `json:"drop_source_json"`
+		DropError    string `json:"drop_error"`
 	}
 	if err := b.command(ctx, "hm_items_status", &status); err != nil {
 		return err
@@ -122,6 +124,9 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 	}
 	if len(events) > MaxGroundItems || len(receipts) > MaxGroundItems {
 		return fmt.Errorf("fila nativa de materiais excessiva")
+	}
+	if status.DropRequest == n.dropRequest {
+		n.dropError = status.DropError
 	}
 	if err := b.finishDrop(ctx, n, status.DropRequest, status.DropItem, status.DropResult, status.DropSource); err != nil {
 		return err

@@ -273,18 +273,28 @@ func (c *Client) Remote(now time.Time) []Player {
 			if old.ID == p.ID && old.Pose.Ready && p.Pose.Position.Sub(old.Pose.Position).Len() < 20 {
 				p.Pose.Position = old.Pose.Position.Mul(1 - alpha).Add(p.Pose.Position.Mul(alpha))
 				p.Pose.Yaw = old.Pose.Yaw + math.Remainder(p.Pose.Yaw-old.Pose.Yaw, 2*math.Pi)*alpha
-				if alpha < 1 {
-					p.Pose.Upper = old.Pose.Upper
-					p.Pose.Lower = old.Pose.Lower
-				}
 				if old.Pose.Skeleton != "" && p.Pose.Skeleton != "" {
+					// An equipment swap chooses the complete new visual frame.
+					// A weapon cannot keep its old matrix while the body advances.
+					if !sameEquipmentNames(old.Pose.Equipment, p.Pose.Equipment) {
+						break
+					}
 					skeletal, snap := interpolateSkeleton(old.Pose.Skeleton, p.Pose.Skeleton, alpha)
 					if !snap {
 						p.Pose.Equipment = interpolateEquipmentFrame(old.Pose.Equipment, p.Pose.Equipment, alpha, true)
+						if alpha < 1 {
+							p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
+						}
+					} else if skeletal == old.Pose.Skeleton {
+						p.Pose.Equipment = old.Pose.Equipment
+						p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
 					}
 					p.Pose.Skeleton = skeletal
 				} else {
 					p.Pose.Equipment = interpolateEquipment(old.Pose.Equipment, p.Pose.Equipment, alpha)
+					if alpha < 1 {
+						p.Pose.Upper, p.Pose.Lower = old.Pose.Upper, old.Pose.Lower
+					}
 				}
 				break
 			}

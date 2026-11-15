@@ -122,7 +122,16 @@ func Probe(ctx context.Context, cfg core.Config, slot, port int) (Report, error)
 // ProbeAt uses the folder of the selected config.json for launcher capture logs,
 // including when --config points outside the default AppDir.
 func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port int) (Report, error) {
-	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.10", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
+	return probeAt(ctx, cfg, appRoot, slot, port, true)
+}
+
+// ProbeSessionAt collects live feature counters without hashing large game
+// libraries or inspecting private actor memory. Suitable for the launcher UI.
+func ProbeSessionAt(ctx context.Context, cfg core.Config, appRoot string, slot, port int) (Report, error) {
+	return probeAt(ctx, cfg, appRoot, slot, port, false)
+}
+func probeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port int, detailed bool) (Report, error) {
+	r := Report{Schema: 2, ProbeVersion: "native-preview-diag.11", Created: time.Now().UTC().Format(time.RFC3339), Slot: slot}
 	if cfg.DataDir == "" || slot < 0 || slot > 2 {
 		return r, fmt.Errorf("configuração/pasta de dados ou instância inválida")
 	}
@@ -130,14 +139,16 @@ func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port in
 	if slot > 0 {
 		data = core.InstanceDataDir(cfg, slot-1)
 	}
-	r.Files = append(r.Files, FileInfo("runtime", cfg.Executable), FileInfo("extracted/exefs/main", filepath.Join(cfg.DataDir, "extracted", "exefs", "main")))
+	if detailed {
+		r.Files = append(r.Files, FileInfo("runtime", cfg.Executable), FileInfo("extracted/exefs/main", filepath.Join(cfg.DataDir, "extracted", "exefs", "main")))
+	}
 	var policy map[string]string
 	if b, e := os.ReadFile(filepath.Join(core.NativePreviewOverlay(cfg), "hyrulem-native-overlay.json")); e == nil && json.Unmarshal(b, &policy) == nil {
 		r.OverlayPolicy = policy["policy"]
 	}
 	for _, actor := range []string{"HyruleM_RemoteLink", "HyruleM_RemoteLink_Fallback"} {
 		path := filepath.Join(core.NativePreviewOverlay(cfg), "Actor", "Pack", actor+".sbactorpack")
-		if core.IsFile(path) {
+		if detailed && core.IsFile(path) {
 			r.Files = append(r.Files, FileInfo("overlay/"+actor, path))
 		}
 	}
@@ -161,9 +172,11 @@ func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port in
 		}
 	}
 	for _, name := range []string{"swgame.dll", "swgame.so"} {
-		path := filepath.Join(data, name)
-		if _, err := os.Stat(path); err == nil {
-			r.Files = append(r.Files, FileInfo(name, path))
+		for _, path := range []string{filepath.Join(data, "extracted", name), filepath.Join(data, name)} {
+			if detailed && core.IsFile(path) {
+				r.Files = append(r.Files, FileInfo(name, path))
+				break
+			}
 		}
 	}
 	if port == 0 {
@@ -183,7 +196,11 @@ func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port in
 	r.Port = port
 	c := core.ControlClient{Port: port, Timeout: 2 * time.Second}
 	playerLoaded := false
-	for _, command := range []string{"version", "help", "sites", "mem regions", "pos", "camera", "hm_caps", "hm_native_status", "hm_world_status", "hm_local_state", "time", "weather", "hm_items_status"} {
+	commands := []string{"version", "help", "sites", "mem regions", "pos", "camera", "hm_caps", "hm_native_status", "hm_world_status", "hm_local_state", "time", "weather", "hm_items_status"}
+	if !detailed {
+		commands = []string{"version", "hm_caps", "hm_native_status", "hm_local_state", "hm_world_status", "hm_items_status", "time", "weather"}
+	}
+	for _, command := range commands {
 		if ctx.Err() != nil {
 			r.NativeError = ctx.Err().Error()
 			break
@@ -218,7 +235,7 @@ func ProbeAt(ctx context.Context, cfg core.Config, appRoot string, slot, port in
 		}
 	}
 	r.Preview = DiagnosePreview(r.Queries)
-	if playerLoaded && ctx.Err() == nil {
+	if detailed && playerLoaded && ctx.Err() == nil {
 		r.Inspection = inspectNative(ctx, r.Files[1].SHA256, controlMemory{client: c})
 	}
 	return r, nil

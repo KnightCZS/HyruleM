@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Native presence and nearby map-enemy health use protocol 7. Full Gen1 combat
+// Native presence and nearby map-enemy health use protocol 8. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
 	session       string
@@ -21,6 +21,8 @@ type nativePreview struct {
 	lastWorld     time.Time
 	spawnAttempts uint64
 	sentHealth    map[string]int
+	zeroAckAt     map[string]time.Time
+	worldCursor   int
 }
 
 func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
@@ -199,18 +201,21 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 	}
 	n.lastStatus = now
 	var status struct {
-		State            string `json:"state"`
-		Error            string `json:"error"`
-		Active           bool   `json:"active"`
-		Applied          uint64 `json:"applied_sequence"`
-		Model            bool   `json:"model_ready"`
-		Animation        bool   `json:"animation_ready"`
-		TickAge          int64  `json:"tick_age_ms"`
-		Paused           bool   `json:"game_paused"`
-		VisualOnly       bool   `json:"visual_only"`
-		ResourceFallback bool   `json:"resource_fallback"`
-		FirstError       string `json:"first_error"`
-		SpawnAttempts    uint64 `json:"spawn_attempts"`
+		State             string `json:"state"`
+		Error             string `json:"error"`
+		Active            bool   `json:"active"`
+		Applied           uint64 `json:"applied_sequence"`
+		Model             bool   `json:"model_ready"`
+		Animation         bool   `json:"animation_ready"`
+		TickAge           int64  `json:"tick_age_ms"`
+		Paused            bool   `json:"game_paused"`
+		VisualOnly        bool   `json:"visual_only"`
+		ResourceFallback  bool   `json:"resource_fallback"`
+		FirstError        string `json:"first_error"`
+		SpawnAttempts     uint64 `json:"spawn_attempts"`
+		SkeletonReceived  int    `json:"skeleton_received"`
+		BodyPoseApplied   int    `json:"body_pose_applied"`
+		PoseCaptureStatus string `json:"pose_capture_status"`
 	}
 	if err := b.command(ctx, "hm_native_status", &status); err != nil {
 		return err
@@ -240,10 +245,22 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 	if status.Active && (!status.Model || (!status.Animation && !status.VisualOnly)) {
 		return fmt.Errorf("o ator remoto não confirmou modelo e animação")
 	}
-	if status.State != n.state {
-		n.state = status.State
+	visualState := status.State
+	if status.Active {
+		if status.BodyPoseApplied > 0 {
+			visualState += "/skeletal"
+		} else if status.PoseCaptureStatus != "" {
+			visualState += "/approximate"
+		}
+	}
+	if visualState != n.state {
+		n.state = visualState
 		if status.Active {
-			if status.ResourceFallback {
+			if status.BodyPoseApplied > 0 {
+				b.say("Pose esquelética recebida e aplicada ao corpo remoto")
+			} else if status.PoseCaptureStatus != "" {
+				b.say("Presença ativa; pose esquelética incompleta. O diagnóstico mostra captura, recebimento e aplicação.")
+			} else if status.ResourceFallback {
 				b.say("Modelo de contingência ativo · movimento sem animação · falha inicial: " + status.FirstError)
 			} else if status.VisualOnly {
 				b.say("Modelo remoto ativo · movimento disponível · animação ainda indisponível")
@@ -294,15 +311,25 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 		}
 	}
 	writes := 0
-	for _, e := range local {
+	start := 0
+	if len(local) > 0 {
+		start = n.worldCursor % len(local)
+	}
+	for step := 0; step < len(local); step++ {
+		index := (start + step) % len(local)
+		e := local[index]
 		shared, ok := byKey[e.key()]
 		if !ok || shared.Health > e.Health || shared.Health == e.Health && e.Health != 0 {
 			continue
 		}
 		// The native queue retains the lowest health for this session. Repeating
 		// every observed enemy would stall visual frames behind control replies.
+		// Zero is also an acknowledgement of the deletion-hook evidence. It
+		// may arrive after a previous zero write; do not strand that queue.
 		if sent, ok := n.sentHealth[e.key()]; ok && sent <= shared.Health {
-			continue
+			if shared.Health != 0 || now.Sub(n.zeroAckAt[e.key()]) < time.Second {
+				continue
+			}
 		}
 		if writes == 4 {
 			break
@@ -311,7 +338,14 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 		if err := b.command(ctx, cmd, nil); err != nil {
 			return err
 		}
+		n.worldCursor = (index + 1) % len(local)
 		n.sentHealth[e.key()] = shared.Health
+		if shared.Health == 0 {
+			if n.zeroAckAt == nil {
+				n.zeroAckAt = map[string]time.Time{}
+			}
+			n.zeroAckAt[e.key()] = now
+		}
 		writes++
 	}
 	return nil

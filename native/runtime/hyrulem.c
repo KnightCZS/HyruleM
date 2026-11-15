@@ -43,7 +43,7 @@ typedef struct {
     uint64_t activation_wait_ticks;
     uint64_t rejected_callbacks;
     char equipment_json[1536];
-    unsigned equipment_active;unsigned skeleton_captured,skeleton_applied;bool armor_from_pouch;
+    unsigned equipment_active;unsigned skeleton_captured,skeleton_received,skeleton_applied,body_pose_applied,pose_skipped;bool armor_from_pouch;char pose_capture_status[48];
 } Published;
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static Desired desired;
@@ -63,7 +63,7 @@ static Track local_tracks[2], remote_tracks[2];
 static uint64_t capture_count;
 static float local_yaw;
 static GearPose local_gear[GEAR_COUNT];
-static PoseFrame local_pose;static unsigned pose_applied;
+static PoseFrame local_pose;static unsigned pose_applied,body_pose_applied;static uint64_t visual_log_at;
 static char local_armor[3][48];static uint64_t armor_read_at;static bool armor_from_pouch;
 static float local_position[3];
 static bool local_ready;
@@ -131,10 +131,12 @@ static void publish(const char *state, const char *error, uint64_t seq, bool act
     pthread_mutex_lock(&mutex);
     snprintf(published.state,sizeof published.state,"%s",state);
     snprintf(published.error,sizeof published.error,"%s",error?error:"");
-    published.armor_from_pouch=armor_from_pouch;published.skeleton_applied=pose_applied;published.applied=seq; published.received=desired.seq; published.active=active;
+    published.armor_from_pouch=armor_from_pouch;published.skeleton_received=desired.pose.count;published.skeleton_applied=pose_applied;published.body_pose_applied=body_pose_applied;published.applied=seq; published.received=desired.seq; published.active=active;
     published.ticks=tick_count; published.last_tick=now_ms();
     published.spawn_attempts=spawn_attempts;published.resource_fallback=resource_variant!=0;
+    Published log=published;bool emit=desired.session[0]&&now_ms()-visual_log_at>=2000;
     pthread_mutex_unlock(&mutex);
+    if(emit){visual_log_at=now_ms();fprintf(stderr,"[hyrulem] frame=%llu state=%s bones_capture=%u bones_received=%u bones_applied=%u body_bones=%u capture=%s armor=%s\n",(unsigned long long)log.ticks,log.state,log.skeleton_captured,log.skeleton_received,log.skeleton_applied,log.body_pose_applied,log.pose_capture_status,log.armor_from_pouch?"pouch":"unavailable");}
 }
 static void release_local(Cpu *c) { call(c,g_site.actor_link_release,storage+LOCAL,0,0,0,0,0,0); }
 static void release_at(Cpu *c,uint64_t st) {call(c,g_site.actor_link_release,st+LOCAL,0,0,0,0,0,0);}
@@ -345,9 +347,11 @@ static void capture_armor(Cpu *c) {
     for(int tab=0;valid&&tab<tabs;tab++) {
         int count=(int32_t)call(c,g_site.pouch_page_count,mgr,tab,0,0,0,0,0);if(count<0||count>20){valid=false;break;}
         for(int slot=0;slot<count;slot++) {
-            uint64_t item=call(c,g_site.pouch_page_item,mgr,tab,slot,0,0,0,0);if(!range(item,0x38)||LD32(item+0x18)!=2||!LD8(item+0x24)||!LD8(item+0x25))continue;
+            uint64_t item=call(c,g_site.pouch_page_item,mgr,tab,slot,0,0,0,0);if(!range(item,0x38)||!LD8(item+0x24)||!LD8(item+0x25))continue;
+            // Raw pouch types: 2 is arrows, 4/5/6 are head/upper/lower.
+            uint32_t type=LD32(item+0x18);if(type<4||type>6)continue;unsigned piece=type-4;
             uint64_t name=LD64(item+0x30);if(!range(name,48)||!memchr((void *)(uintptr_t)name,0,48))continue;
-            for(int i=0;i<3;i++)if(gear_name((const char *)(uintptr_t)name,i+3))snprintf(names[i],48,"%s",(const char *)(uintptr_t)name);
+            if(gear_name((const char *)(uintptr_t)name,(int)piece+3))snprintf(names[piece],48,"%s",(const char *)(uintptr_t)name);
         }
     }
     call(c,g_site.pouch_unlock,mgr+0x28,0,0,0,0,0,0);if(valid){memcpy(local_armor,names,sizeof names);armor_from_pouch=true;}
@@ -361,7 +365,10 @@ static void capture_gear(Cpu *c,uint64_t local) {
         GearPose *g=&gear[i];g->matrix[0]=g->matrix[5]=g->matrix[10]=1;
         if(i>=3){if(local_armor[i-3][0])snprintf(g->name,sizeof g->name,"%s",local_armor[i-3]);else snprintf(g->name,sizeof g->name,"Armor_Default_%s",i==3?"Head":i==4?"Upper":"Lower");continue;}
         if(!g_site.player_equipment)continue;
-        uint64_t a=call(c,g_site.player_equipment,local,i,0,0,0,0,0);
+        // Native category order is sword/shield/bow; wire slots are
+        // sword/bow/shield. They are distinct from raw pouch item types.
+        unsigned native_slot=i==1?2:i==2?1:0;
+        uint64_t a=call(c,g_site.player_equipment,local,native_slot,0,0,0,0,0);
         if(a==local||!range(a,0x600)||LD8(a+0x64)!=1)continue;
         uint64_t name=LD64(a+0x10);if(!range(name,48)||!memchr((void *)(uintptr_t)name,0,48)||!gear_name((char *)(uintptr_t)name,i))continue;
         snprintf(g->name,sizeof g->name,"%s",(char *)(uintptr_t)name);
@@ -378,7 +385,7 @@ static void capture_gear(Cpu *c,uint64_t local) {
         if(!valid){g->name[0]=0;memset(g->matrix,0,sizeof g->matrix);g->matrix[0]=g->matrix[5]=g->matrix[10]=1;}
     }
     PoseFrame pose;pose_capture(local,xyz,yaw,&pose);
-    pthread_mutex_lock(&mutex);local_pose=pose;published.skeleton_captured=pose.count;memcpy(local_gear,gear,sizeof gear);memcpy(local_position,xyz,sizeof xyz);local_ready=true;pthread_mutex_unlock(&mutex);
+    pthread_mutex_lock(&mutex);local_pose=pose;published.skeleton_captured=pose.count;published.pose_skipped=pose_probe.skipped;snprintf(published.pose_capture_status,sizeof published.pose_capture_status,"%s",pose_probe.reason);memcpy(local_gear,gear,sizeof gear);memcpy(local_position,xyz,sizeof xyz);local_ready=true;pthread_mutex_unlock(&mutex);
 }
 static void gear_tick(Cpu *c,Desired *d,uint64_t vt,bool animate) {
     for(int i=0;i<GEAR_COUNT;i++) {
@@ -441,7 +448,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     if (!range(info,0x68)) return;
     uint64_t local=LD64(info+0x60);
     if (!range(local,0x600)||LD8(local+0x64)!=1) return;
-    capture_gear(c,local);pose_applied=0;
+    capture_gear(c,local);pose_applied=body_pose_applied=0;
     tick_count++;
     pthread_mutex_lock(&mutex);
     local_yaw=atan2f(read_float(local+0x3a0),read_float(local+0x398));
@@ -556,7 +563,7 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     for(int i=0;i<3;i++)published.observed[i]=read_float(a+0x3a4+i*16);
     pthread_mutex_unlock(&mutex);
     smooth_pose(&d,now_ms());
-    set_pose(c,a,&d,safe_string_vtable,resource_variant==0&&animation_ready&&!d.pose.count);pose_applied=pose_apply(c,a,storage,&d); release_local(c);
+    set_pose(c,a,&d,safe_string_vtable,resource_variant==0&&animation_ready&&!d.pose.count);pose_applied=body_pose_applied=pose_apply(c,a,storage,&d); release_local(c);
     gear_tick(c,&d,safe_string_vtable,resource_variant==0&&animation_ready);
     applied=d.seq; publish(resource_variant?"fallback-active":animation_ready?"active":"active-no-animation","",applied,true);
 }
@@ -566,7 +573,7 @@ RT_ON_RESET(hyrulem_reset) {
     pthread_mutex_lock(&mutex);
     memset(&desired,0,sizeof desired); memset(&published,0,sizeof published);
     memset(local_tracks,0,sizeof local_tracks);memset(remote_tracks,0,sizeof remote_tracks);capture_count=0;local_yaw=0;
-    memset(&local_pose,0,sizeof local_pose);pose_applied=0;memset(local_armor,0,sizeof local_armor);armor_read_at=0;armor_from_pouch=false;memset(local_gear,0,sizeof local_gear);memset(local_position,0,sizeof local_position);local_ready=false;
+    memset(&local_pose,0,sizeof local_pose);pose_applied=body_pose_applied=0;visual_log_at=0;memset(&pose_probe,0,sizeof pose_probe);memset(local_armor,0,sizeof local_armor);armor_read_at=0;armor_from_pouch=false;memset(local_gear,0,sizeof local_gear);memset(local_position,0,sizeof local_position);local_ready=false;
     world_count=health_count=world_history_count=world_zero_count=0;world_history_reset=false;last_world_scan=0;
     pthread_mutex_unlock(&mutex);
     storage=actor=spawning_at=applied=tick_count=activation_wait_ticks=activation_wait_at=0; session[0]=0;
@@ -593,7 +600,7 @@ static bool number(const char *s, float *out, float limit) {
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",7); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",8); control_field_bool(r,"native_preview",supported());
     control_field_bool(r,"skeletal_pose",supported()&&pose_supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());
@@ -690,7 +697,7 @@ static void status(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"activation_wait_ticks",p.activation_wait_ticks);
     control_field_str(r,"callback_phase","post-actor-jobs");
     control_field_int(r,"rejected_callbacks",p.rejected_callbacks);
-    control_field_str(r,"armor_source",p.armor_from_pouch?"personal-equipped-pouch":"awaiting-pouch");control_field_int(r,"skeleton_applied",p.skeleton_applied);control_field_int(r,"skeleton_captured",p.skeleton_captured);
+    control_field_str(r,"armor_source",p.armor_from_pouch?"personal-equipped-pouch":"awaiting-pouch");control_field_str(r,"pose_capture_status",p.pose_capture_status);control_field_int(r,"pose_bones_skipped",p.pose_skipped);control_field_int(r,"skeleton_received",p.skeleton_received);control_field_int(r,"body_pose_applied",p.body_pose_applied);control_field_int(r,"skeleton_applied",p.skeleton_applied);control_field_int(r,"skeleton_captured",p.skeleton_captured);
     control_field_int(r,"equipment_active",p.equipment_active);control_field_str(r,"equipment_json",p.equipment_json[0]?p.equipment_json:"[]");
 }
 static void local_state(int argc,char **argv,ControlReply *r) {
@@ -711,15 +718,15 @@ static void local_state(int argc,char **argv,ControlReply *r) {
     json[used++]=']';json[used]=0;control_field_str(r,"equipment_json",json);
 }
 static void world_status(int argc,char **argv,ControlReply *r) {
-    EnemyHealth copy[WORLD_MAX];int n;
-    pthread_mutex_lock(&mutex);n=world_count;memcpy(copy,world_seen,sizeof *copy*n);pthread_mutex_unlock(&mutex);
+    EnemyHealth copy[WORLD_MAX];int n,zeros;
+    pthread_mutex_lock(&mutex);zeros=world_zero_count;n=world_count;memcpy(copy,world_seen,sizeof *copy*n);pthread_mutex_unlock(&mutex);
     char json[24000];size_t used=0;json[used++]='[';
     for(int i=0;i<n;i++) {
         EnemyHealth *e=&copy[i];
         int written=snprintf(json+used,sizeof json-used,"%s{\"hash\":%u,\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"position\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"health\":%d,\"damage\":%llu}",i?",":"",e->hash,e->name,e->spawn[0],e->spawn[1],e->spawn[2],e->position[0],e->position[1],e->position[2],e->health,(unsigned long long)e->damage);
         if(written<0||(size_t)written>=sizeof json-used-2){control_fail(r,"Enemy snapshot overflow");return;}used+=(size_t)written;
     }
-    json[used++]=']';json[used]=0;control_field_str(r,"enemies_json",json);control_field_int(r,"count",n);
+    json[used++]=']';json[used]=0;control_field_str(r,"enemies_json",json);control_field_int(r,"count",n);control_field_int(r,"pending_zero_events",zeros);
 }
 static void receive_health(int argc,char **argv,ControlReply *r) {
     EnemyHealth e={0};uint64_t hash,hp;

@@ -88,7 +88,7 @@ func interpolateSkeleton(a, b string, t float64) (string, bool) {
 		return b, false
 	}
 	if t <= 0 {
-		return a, true
+		return a, false
 	}
 	old, e1 := decodeSkeleton(a)
 	next, e2 := decodeSkeleton(b)

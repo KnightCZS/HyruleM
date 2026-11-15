@@ -1,3 +1,5 @@
+typedef struct {unsigned models,skipped;const char *reason;} PoseProbe;
+static PoseProbe pose_probe;
 // Final skeletal poses. Layouts are independently verified for Switch 1.9.0.
 // No Player graph or event is executed on behalf of another player's input.
 static bool pose_supported(void) {return g_site.hm_bone_count&&g_site.hm_bone_name&&g_site.hm_bone_get&&g_site.hm_bone_set;}
@@ -29,19 +31,20 @@ static bool pose_units(uint64_t a,uint64_t *units,unsigned *count){
     *count=LD32(comp+0x38);*units=LD64(comp+0x40);return *count>0&&*count<=32&&range(*units,(uint64_t)*count*8);
 }
 static void pose_capture(uint64_t a,const float xyz[3],float yaw,PoseFrame *out){
-    memset(out,0,sizeof *out);uint64_t units;unsigned n;if(!pose_units(a,&units,&n))return;
+    memset(out,0,sizeof *out);pose_probe=(PoseProbe){0,0,"model-units-unavailable"};uint64_t units;unsigned n;if(!pose_units(a,&units,&n))return;pose_probe.reason="sdk-model-unavailable";
     float s=sinf(yaw),co=cosf(yaw);
     for(unsigned unit=0;unit<n;unit++){
         uint64_t link=LD64(units+unit*8);if(!range(link,8))continue;uint64_t model=LD64(link),res,palette;unsigned count;
-        if(!pose_model(model,&res,&palette,&count))continue;
+        if(!pose_model(model,&res,&palette,&count)){pose_probe.skipped++;continue;}pose_probe.models++;pose_probe.reason="bone-names-unavailable";
         for(unsigned i=0;i<count;i++){
-            uint32_t name=pose_name(res,i);if(!name)continue;bool seen=false;for(unsigned j=0;j<out->count;j++)if(out->bones[j].name==name){seen=true;break;}if(seen)continue;
+            uint32_t name=pose_name(res,i);if(!name){pose_probe.skipped++;continue;}bool seen=false;for(unsigned j=0;j<out->count;j++)if(out->bones[j].name==name){seen=true;break;}if(seen)continue;
             PoseBone bone={0};bone.name=name;float world[12];for(int row=0;row<3;row++)for(int col=0;col<4;col++)world[row*4+col]=read_float(palette+(uint64_t)i*64+(col*4+row)*4);
             for(int j=0;j<3;j++){bone.matrix[j]=co*world[j]-s*world[8+j];bone.matrix[4+j]=world[4+j];bone.matrix[8+j]=s*world[j]+co*world[8+j];}
             float dx=world[3]-xyz[0],dy=world[7]-xyz[1],dz=world[11]-xyz[2];bone.matrix[3]=co*dx-s*dz;bone.matrix[7]=dy;bone.matrix[11]=s*dx+co*dz;
-            if(!pose_matrix(bone.matrix)){out->count=0;return;}if(out->count>=POSE_MAX){out->count=0;return;}out->bones[out->count++]=bone;
+            if(!pose_matrix(bone.matrix)){pose_probe.skipped++;pose_probe.reason="invalid-bone-matrix";out->count=0;return;}if(out->count>=POSE_MAX){pose_probe.reason="bone-limit-exceeded";out->count=0;return;}out->bones[out->count++]=bone;
         }
     }
+    if(out->count)pose_probe.reason=pose_probe.skipped?"partial-pose":"captured";
 }
 static unsigned pose_apply(Cpu *c,uint64_t a,uint64_t scratch,const Desired *d){
     if(!d->pose.count)return 0;uint64_t units;unsigned n,applied=0;if(!pose_units(a,&units,&n))return 0;

@@ -311,10 +311,10 @@ func (b *Bridge) run(ctx context.Context) {
 		pose := Pose{Position: pos, Velocity: velocity, Yaw: yaw, Phase: phase, Ready: true}
 		if native != nil {
 			if captured.Ready {
-				pose.Yaw = captured.Yaw
-				pose.Upper = captured.Upper
-				pose.Lower = captured.Lower
-				pose.Equipment = captured.Equipment
+				// Publish the complete atomic native frame. Copying individual
+				// visual fields silently dropped Skeleton in preview 10.
+				pose = captured
+				pose.Velocity, pose.Phase = velocity, phase
 			} else if err := b.capturePose(ctx, &pose); err != nil {
 				b.fail("Captura nativa interrompida: " + err.Error())
 				return

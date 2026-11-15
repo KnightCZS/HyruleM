@@ -9,18 +9,21 @@ import (
 // Preview readiness is separate from complete Gen1 combat/AI capabilities.
 // A running older adapter must be diagnosed before interpreting actor state.
 type PreviewDiagnostic struct {
-	ExpectedABI      int    `json:"expected_abi"`
-	ActualABI        int    `json:"actual_abi"`
-	Compatible       bool   `json:"compatible"`
-	Status           string `json:"status"`
-	Message          string `json:"message"`
-	GameTicks        uint64 `json:"game_ticks"`
-	RemoteActive     bool   `json:"remote_active"`
-	ResourceFallback bool   `json:"resource_fallback"`
-	FirstError       string `json:"first_error,omitempty"`
-	SkeletonCaptured int    `json:"skeleton_captured"`
-	SkeletonApplied  int    `json:"skeleton_applied"`
-	ArmorSource      string `json:"armor_source,omitempty"`
+	ExpectedABI       int    `json:"expected_abi"`
+	ActualABI         int    `json:"actual_abi"`
+	Compatible        bool   `json:"compatible"`
+	Status            string `json:"status"`
+	Message           string `json:"message"`
+	GameTicks         uint64 `json:"game_ticks"`
+	RemoteActive      bool   `json:"remote_active"`
+	ResourceFallback  bool   `json:"resource_fallback"`
+	FirstError        string `json:"first_error,omitempty"`
+	SkeletonCaptured  int    `json:"skeleton_captured"`
+	SkeletonApplied   int    `json:"skeleton_applied"`
+	SkeletonReceived  int    `json:"skeleton_received"`
+	BodyPoseApplied   int    `json:"body_pose_applied"`
+	PoseCaptureStatus string `json:"pose_capture_status,omitempty"`
+	ArmorSource       string `json:"armor_source,omitempty"`
 }
 
 func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
@@ -64,21 +67,24 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 	}
 	p.Compatible = true
 	var s struct {
-		SkeletonCaptured int    `json:"skeleton_captured"`
-		SkeletonApplied  int    `json:"skeleton_applied"`
-		ArmorSource      string `json:"armor_source"`
-		State            string `json:"state"`
-		Error            string `json:"error"`
-		Ticks            uint64 `json:"game_ticks"`
-		Age              int64  `json:"tick_age_ms"`
-		Active           bool   `json:"active"`
-		Model            bool   `json:"model_ready"`
-		Animation        bool   `json:"animation_ready"`
-		Paused           bool   `json:"game_paused"`
-		Received         uint64 `json:"received_sequence"`
-		VisualOnly       bool   `json:"visual_only"`
-		ResourceFallback bool   `json:"resource_fallback"`
-		FirstError       string `json:"first_error"`
+		SkeletonCaptured  int    `json:"skeleton_captured"`
+		SkeletonApplied   int    `json:"skeleton_applied"`
+		SkeletonReceived  int    `json:"skeleton_received"`
+		BodyPoseApplied   int    `json:"body_pose_applied"`
+		PoseCaptureStatus string `json:"pose_capture_status,omitempty"`
+		ArmorSource       string `json:"armor_source"`
+		State             string `json:"state"`
+		Error             string `json:"error"`
+		Ticks             uint64 `json:"game_ticks"`
+		Age               int64  `json:"tick_age_ms"`
+		Active            bool   `json:"active"`
+		Model             bool   `json:"model_ready"`
+		Animation         bool   `json:"animation_ready"`
+		Paused            bool   `json:"game_paused"`
+		Received          uint64 `json:"received_sequence"`
+		VisualOnly        bool   `json:"visual_only"`
+		ResourceFallback  bool   `json:"resource_fallback"`
+		FirstError        string `json:"first_error"`
 	}
 	q, ok = byName["hm_native_status"]
 	if !ok || q.Error != "" || json.Unmarshal(q.Data, &s) != nil {
@@ -87,6 +93,7 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 	}
 	p.GameTicks, p.RemoteActive = s.Ticks, s.Active
 	p.SkeletonCaptured, p.SkeletonApplied, p.ArmorSource = s.SkeletonCaptured, s.SkeletonApplied, s.ArmorSource
+	p.SkeletonReceived, p.BodyPoseApplied, p.PoseCaptureStatus = s.SkeletonReceived, s.BodyPoseApplied, s.PoseCaptureStatus
 	p.ResourceFallback, p.FirstError = s.ResourceFallback, s.FirstError
 	switch {
 	case s.Error != "" || s.State == "error":
@@ -97,6 +104,12 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		p.Status, p.Message = "callback_stalled", "O callback não está atualizando. Reconstrua a biblioteca com o gerador novo e teste sem pausa."
 	case s.Active && s.Model && s.ResourceFallback:
 		p.Status, p.Message = "visual_fallback", "Contingência visual ativa, sem animação. Falha da variante principal: "+s.FirstError
+	case s.Active && s.Model && s.SkeletonReceived > 0 && s.BodyPoseApplied == 0:
+		p.Status, p.Message = "pose_not_applied", "A pose chegou pela rede, mas não encontrou ossos compatíveis no corpo remoto."
+	case s.Active && s.Model && s.PoseCaptureStatus != "" && s.SkeletonCaptured == 0:
+		p.Status, p.Message = "pose_capture_unavailable", "O ator existe, mas a captura esquelética local falhou: "+s.PoseCaptureStatus
+	case s.Active && s.Model && s.PoseCaptureStatus != "" && s.SkeletonReceived == 0:
+		p.Status, p.Message = "pose_not_received", "O ator existe, mas a pose esquelética do outro cliente ainda não chegou."
 	case s.Active && s.Model && s.SkeletonApplied > 0:
 		p.Status, p.Message = "active", "Ator ativo com pose esquelética recebida. O desenho final e as interações ainda exigem teste no jogo."
 	case s.Active && s.Model && s.VisualOnly:

@@ -1,23 +1,23 @@
-# HyruleM 0.5.0-preview.10
+# HyruleM 0.5.0-preview.11
 
-Correções motivadas pelo [relatório #7](https://github.com/KnightCZS/HyruleM/issues/7): pose real em vez de clipe aproximado, roupas equipadas pelo inventário pessoal, dano cumulativo e primeira integração de descarte/arremesso normal de armas. O jogador confirmou presença/movimento e fluidez na versão anterior; **esta nova integração ainda precisa de teste com dois jogos e GPU**. Não é uma implementação completa de todas as ações de Link.
+Correções dos bloqueios reais da prévia 10, encontrados após o diagnóstico e o guia enviados pelo jogador. A captura esquelética existia, mas o launcher descartava `Skeleton` ao montar o pacote. Armadura era procurada no tipo de flechas (2), e arco/escudo usavam categorias nativas invertidas. As três falhas foram reproduzidas ou isoladas em testes e corrigidas. **O resultado final desta versão ainda precisa de confirmação com dois jogos/GPU.** Não é uma implementação completa de todas as ações de Link.
 
 ## Atualizar e usar
 
 1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, incluindo `runtime-update`.
 2. Execute **Iniciar-Nativo.cmd**, que instala o runtime com backup.
-3. **Aguarde regenerar e recompilar a biblioteca do jogo.** Há novos hooks e assinaturas. Não altere `.id` para pular a verificação.
-4. Atualize os dois clientes e o servidor: **ABI 7 / protocolo 7**. O overlay de aparência da prévia 8 permanece compatível; seus recursos continuam gerados localmente.
+3. O runtime verifica a identidade da biblioteca privada. **Uma biblioteca válida da prévia 10 pode ser reutilizada**: esta correção não muda os hooks/símbolos do jogo nem o ABI 4 do gamelib. Se o runtime pedir regeneração/compilação, aguarde terminar; não altere `.id` para pular a verificação.
+4. Atualize os dois clientes e o servidor: **ABI 8 / protocolo 8**. O overlay de aparência da prévia 8 permanece compatível; seus recursos continuam gerados localmente.
 5. Hospede e conecte pelo IP/porta escolhidos. Na primeira abertura desta versão, **Itens do mundo: ligados** é ativado no painel de hospedagem. Depois disso a escolha é preservada; pode desligá-la antes de hospedar. O servidor separado usa `--shared-items=true` por padrão, ou `--shared-items=false` para desligar.
 6. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.
 
 ## Corpo, armas e roupas
 
-A versão anterior escolhia um clipe esquelético representativo do grafo Player, enquanto a arma usava a transformação real do jogador. Isso explica movimentos diferentes entre corpo e espada. O novo caminho captura a paleta final dos ossos do modelo local, identifica os ossos por CRC do nome e aplica a pose pelo setter nativo do modelo remoto. Corpo, roupa e transformações das armas usam o mesmo intervalo de interpolação. Matrizes singulares fazem o quadro visual completo avançar junto, sem separar a arma do corpo.
+O caminho aproximado escolhia um clipe representativo do grafo Player, enquanto a arma usava a transformação real. A prévia 10 adicionou captura dos ossos, mas `Bridge.run` reconstruía o pacote sem o campo esquelético. A prévia 11 publica o quadro nativo completo, preservando também os equipamentos e as trilhas de animação. O caminho captura a paleta final dos ossos do modelo local, identifica os ossos por CRC do nome e aplica a pose pelo setter nativo do modelo remoto. Corpo, roupa e transformações das armas usam o mesmo intervalo de interpolação. O início exato do intervalo conserva corpo/arma juntos; trocar o nome do equipamento seleciona um quadro visual inteiro, sem combinar a arma antiga com a pose nova. Matrizes singulares fazem o quadro visual completo avançar junto, sem separar a arma do corpo.
 
 O formato HMP1 contém até 512 ossos com matrizes relativas à raiz; não transporta endereços, recursos nem arquivos do jogo. O setter e seus layouts foram conferidos no módulo privado 1.9.0, inclusive executando as instruções nativas em memória sintética. Isso comprova os getters/setters e os limites, **não comprova o resultado final do renderer**. Verifique `skeleton_captured` e `skeleton_applied` nos relatórios. Se não houver ossos compatíveis, o caminho AS antigo continua como contingência aproximada.
 
-As roupas agora vêm das entradas válidas/equipadas do inventário pessoal. O getter de atores de equipamento continua sendo usado para as armas. Tinturas, expressões, efeitos, bainhas e variações especiais ainda não são reproduzidos integralmente. As marionetes continuam DemoNPCs visuais, sem controlador Player completo.
+As roupas vêm das entradas válidas/equipadas do inventário pessoal, com tipos nativos 4/5/6 para cabeça/tronco/pernas. O tipo 2 é flecha. As categorias do getter de armas são espada/escudo/arco e são convertidas para os slots de rede espada/arco/escudo. O getter de atores de equipamento continua sendo usado para as armas. Tinturas, expressões, efeitos, bainhas e variações especiais ainda não são reproduzidos integralmente. As marionetes continuam DemoNPCs visuais, sem controlador Player completo.
 
 ## Itens e armas — Hateno
 
@@ -43,7 +43,7 @@ Posições vêm do proprietário, com atualizações limitadas; rotação, traje
 
 A identidade é hash do mapa + nome + posição original. Cada instância calcula a perda de vida local acumulada antes de aplicar o estado do servidor. O servidor soma as contribuições dos clientes e deduplica pelo contador de cada origem. Aplicar dano recebido não o transforma em outro golpe local.
 
-O hook de remoção conserva evidência de vida realmente zerada antes que o ator desapareça. A captura admite monstros de mapa e árvores em pé com getter nativo de vida compatível; exclui raízes, galhos, tocos e troncos. **Zerar vida ainda não comprova a transição da IA de árvore para árvore caída/tronco**, e essa sequência não foi validada em gameplay. Não é correto anunciar o corte de árvores como resolvido somente por este mecanismo. O registro de dano comporta 128 entidades; observações são limitadas a 64 próximas por amostra.
+O hook de remoção conserva evidência de vida realmente zerada antes que o ator desapareça. A captura admite monstros de mapa e árvores em pé com getter nativo de vida compatível; exclui raízes, galhos, tocos e troncos. **Zerar vida ainda não comprova a transição da IA de árvore para árvore caída/tronco**, e essa sequência não foi validada em gameplay. Não é correto anunciar o corte de árvores como resolvido somente por este mecanismo. Confirmações de vida zero podem ser reenviadas uma vez por segundo, respeitando o orçamento rotativo de quatro comandos, para liberar evidência capturada depois de uma escrita anterior. O registro de dano comporta 128 entidades; observações são limitadas a 64 próximas por amostra.
 
 Horário/clima continuam sob autoridade do anfitrião, com sucessão e descarte de amostras antigas. Dia, Blood Moon, missões, flags gerais, posição/IA dos monstros, runas, projéteis, dano entre Links e todos os eventos do mundo ainda não estão integrados. O servidor coordena estado; não executa BOTW.
 
@@ -51,9 +51,12 @@ Vida e inventários dos jogadores continuam pessoais. Uma pose de ataque remota 
 
 ## Diagnóstico e validação
 
-**Diagnosticar.cmd** gera `native-preview-diag.10`, incluindo:
+O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativos dos dois clientes e os inclui no próprio `diagnostico.txt`, sem congelar a janela. A coleta leve não lê memória privada de atores nem calcula hash das bibliotecas grandes. Há também telemetria `[hyrulem]` no log de cada processo enquanto a sessão está ativa. **Diagnosticar.cmd** gera `native-preview-diag.11`, incluindo:
 
-- `skeleton_captured`, `skeleton_applied`, `armor_source`: captura/aplicação de ossos e origem das roupas.
+- `skeleton_captured`, `skeleton_received`, `body_pose_applied`, `skeleton_applied`, `armor_source`: captura, chegada pela rede, aplicação ao corpo, aplicação total e origem das roupas.
+- `pose_capture_status`, `pose_bones_skipped`: motivo da captura incompleta. A captura exige matrizes válidas e não publica um quadro corrompido.
+- `drop_error`, `drop_inventory_before`, `drop_inventory_after`: motivo nativo e quantidades conferidas do descarte de maçã. Não confundir ausência de maçã com erro de rede.
+- `pending_zero_events`: evidências de vida zero aguardando confirmação.
 - `world_items_active`, `heartbeat_age_ms`, `source_materials`: modo ativo e observações.
 - `native_drop_count`, `native_drops_active`, `native_drop_local_recovery`: descartes normais e recuperação local.
 - `items_json`, `events_json`, `receipts_json`, `destroyed_json`: fontes, reservas, resultados e quebras.
@@ -62,4 +65,4 @@ Vida e inventários dos jogadores continuam pessoais. Uma pose de ataque remota 
 
 Testes Go/TCP e race, testes C com memória sintética, emissão compilada dos hooks, 26 assinaturas únicas privadas e roundtrips do setter nativo foram executados. Builds/instalação Windows são verificados no CI. Isso não substitui jogar com dois clientes. `native_ready` permanece reservado à geração completa; não anuncia combate/IA/interação geral prontos.
 
-[Auditoria](../docs/AUDITORIA_0.5.0-preview.10.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.
+[Auditoria](../docs/AUDITORIA_0.5.0-preview.11.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.

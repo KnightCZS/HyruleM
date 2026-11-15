@@ -36,6 +36,7 @@ func (b *Bridge) prepareDropFromUI(n *groundSync, origin string, sequence uint64
 		}
 		n.dropNext++
 		n.dropRequest = n.dropNext
+		n.dropError = ""
 		n.dropSource = GroundSource{Local: n.dropRequest, Drop: true, Origin: origin, Actor: "Item_Fruit_A", Position: pose.Position.Add(Vec3{math.Sin(pose.Yaw) * 2, .4, math.Cos(pose.Yaw) * 2})}
 		n.dropSource.Spawn = n.dropSource.Position
 		b.say("Reservando um lugar para largar 1 maçã…")
@@ -58,7 +59,7 @@ func (b *Bridge) finishDrop(ctx context.Context, n *groundSync, request, item ui
 		case "committed", "cancelled", "uncertain", "rejected":
 			message := "Maçã largada na sessão"
 			if r.Status == "cancelled" {
-				message = "Não foi possível largar a maçã; confira o inventário e o diagnóstico."
+				message = dropFailureMessage(n.dropError)
 			}
 			if r.Status == "rejected" {
 				message = "Drop recusado: fique em Hateno e confira o limite da sessão."
@@ -87,4 +88,21 @@ func (b *Bridge) finishDrop(ctx context.Context, n *groundSync, request, item ui
 
 func (b *Bridge) CanDropApple() bool {
 	return b.native && b.dropReady.Load() && b.Client.Connected() && b.Client.Ground().Enabled && len(b.Client.Ground().Items) < MaxGroundItems && !b.DropBusy()
+}
+
+func dropFailureMessage(reason string) string {
+	switch reason {
+	case "apple-missing":
+		return "Você não tem maçãs no inventário deste cliente."
+	case "player-moved-or-outside-zone":
+		return "Descarte cancelado: fique parado perto do encontro em Hateno."
+	case "inventory-layout-invalid", "inventory-unavailable":
+		return "O runtime não conseguiu conferir o inventário; veja o diagnóstico."
+	case "inventory-remove-not-applied":
+		return "O jogo não confirmou a retirada da maçã; o descarte foi cancelado."
+	case "actor-create-rejected", "create-handle-failed", "wake-failed", "reference-failed", "actor-reference-or-activation-failed", "activation-timeout", "spawn-position-not-confirmed":
+		return "O jogo não confirmou a criação do objeto; veja o motivo no diagnóstico."
+	default:
+		return "Não foi possível largar a maçã; confira o inventário e o diagnóstico."
+	}
 }
