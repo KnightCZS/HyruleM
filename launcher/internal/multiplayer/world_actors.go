@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+// ponytail: one bounded snapshot of loaded map actors; add lifecycle replication
+// after native spawn/despawn has been validated.
 const MaxWorldActors = 64
 const WorldRadius = 180
 const worldActorStride = 300

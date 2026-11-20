@@ -106,10 +106,10 @@ def apply(root):
         "def _hm_fx_created(gen, a):\n"
         "    assert _word(gen, a) == 0xb9001a88, hex(_word(gen, a))\n"
         "    return '{ extern void rt_hyrulem_created_effect(Cpu *); rt_hyrulem_created_effect(c); ST32(c->x[20] + 0x18, (uint32_t)c->x[8]); }'\n\n"
-        "def _hm_world_ai_calc(gen, a):\n"
-        "    assert _word(gen, a) == 0xa9bd7bfd, hex(_word(gen, a))\n"
-        "    return '{ extern _Bool rt_hyrulem_world_ai(Cpu *); if (rt_hyrulem_world_ai(c)) return; c->sp -= 0x30; ST64(c->sp, c->x[29]); ST64(c->sp + 8, c->x[30]); }'\n\n"
-        "PATCHES['hm_world_ai_calc'] = _hm_world_ai_calc\n"
+        "def _hm_world_ai_dispatch(gen, a):\n"
+        "    assert _word(gen, a) == 0xf942ae60, hex(_word(gen, a))\n"
+        "    return ('{ extern _Bool rt_hyrulem_world_ai(Cpu *); if (rt_hyrulem_world_ai(c)) ' + f'goto L_{a + 0x14:x}; ' + 'c->x[0] = LD64(c->x[19] + 0x558); }')\n\n"
+        "PATCHES['hm_world_ai_dispatch'] = _hm_world_ai_dispatch\n"
         "PATCHES['hm_fx_created'] = _hm_fx_created\n"
         "PATCHES['hm_fx_capture'] = _hm_fx_capture\nPATCHES['hm_fx_stop'] = _hm_fx_stop\n\ndef table(sites):")
     text=patch.read_text()

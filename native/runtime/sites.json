@@ -245,10 +245,10 @@
     "at": 0
   },
   {
-    "name": "hm_world_ai_calc",
-    "address": "0x70010c8814",
+    "name": "hm_world_ai_dispatch",
+    "address": "0x7001524e58",
     "kind": "code",
-    "pattern": "a9bd7bfd f9000bf5 a9024ff4 910003fd aa0003f3 94000000/fc000000 7942da68 37400008/fff8001f",
+    "pattern": "f942ae60 b4000080 f9400008 f9405108 d63f0100 f9400268 aa1303e0 f9415d08",
     "at": 0
   }
 ]

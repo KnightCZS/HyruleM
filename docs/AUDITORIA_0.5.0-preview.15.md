@@ -15,14 +15,16 @@ Não há spawn/delete arbitrário neste caminho. Armas equipadas são excluídas
 - Go/race: transporte TCP real com dois clientes, publicação restrita ao host, troca de host, entrada tardia, replay, época antiga e quadros completos de 64 atores pelo ControlStream usado pelo launcher.
 - C sintético: captura host, correspondência por mapa, escrita de transformações nativas, NPC com um canal AS, ausência sem criação/destruição, arma equipada excluída, geração antiga, acesso negado e liberação, timeout, isolamento do jogador/inventário e identidade alterada durante resolução.
 - Interpolação de rotação exercitada a 30/60/90/120 atualizações por segundo, incluindo meia-volta sem matriz degenerada.
-- Emissão compilada do hook RootAI: retorno condicional, prólogo original e CPU preservada. Funções contendo hooks regeneradas/compiladas nos dois modos de registradores.
+- Emissão compilada do hook no despacho de IA: salto condicional para a continuação, LDR original no caminho normal e CPU preservada. Funções contendo hooks regeneradas/compiladas nos dois modos de registradores.
 - Módulo privado Switch 1.9.0: 36 assinaturas próprias únicas, 201 sites resolvidos e despacho Actor -> RootAI executado com proprietário sintético. Não é gameplay.
 
 ## Primeiro teste no PC
 
 O candidato inicial foi instalado numa pasta separada, com saves/cache próprios e somente referências de leitura aos recursos originais. A biblioteca privada foi regenerada e carregou os 201 sites. Duas instâncias entraram no mundo com GPU. A captura inicial retornou zero: a leitura da lista real encontrou NPCs de mapa no estado 2, enquanto o filtro aceitava apenas o estado 1 usado pelas marionetes. Depois de um teleporte curto, NPCs passaram ao estado 1 e a mesma varredura capturou 10 atores.
 
-A captura/aplicação agora aceita atores inicializados nos estados 1/2 com modelo presente e referência nativa válida. Inicialização (0), remoção (3), modelo ausente, geração antiga e acesso negado continuam excluídos. A regressão sintética inclui NPC no estado 2. A correção ainda precisa repetir o teste GPU completo; não há confirmação visual de movimento de monstros e objetos nesta revisão.
+A captura/aplicação agora aceita atores inicializados nos estados 1/2 com modelo presente e referência nativa válida. Inicialização (0), remoção (3), modelo ausente, geração antiga e acesso negado continuam excluídos. A regressão sintética inclui NPC no estado 2. A captura AS de NPCs também deixa de depender da existência do PlayerInfo, para conservar o pedido inicial antes do Link; esse caso tem fixture própria. No segundo candidato houve 26/26 correspondências e nenhuma ausência na área de teste, mas a comparação independente das matrizes na memória do cliente detectou divergência máxima de 21,60 m em NPCs. Portanto esse teste reprovou, apesar dos contadores de aplicação. Não é um resultado de mundo sincronizado validado.
+
+O hook passou da implementação base de RootAI para o despacho virtual comum do Actor, antes da chamada, cobrindo implementações substituídas. O retorno condicional agora salta apenas a chamada de IA e continua o restante da atualização do Actor; não retorna indevidamente da função chamadora. A captura inicial de AS antes do PlayerInfo é independente desta correção. A nova revisão precisa repetir a conferência de posições e rendering; o acesso remoto terminou por timeout antes disso. A candidata permanece sem publicação.
 
 ## Limites e próximo teste
 

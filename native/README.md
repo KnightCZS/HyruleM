@@ -1,8 +1,8 @@
-# HyruleM 0.5.0-preview.15
+# HyruleM 0.5.0-preview.15 - candidata em validação
 
 Primeira camada de mundo sob autoridade do anfitrião: posição, rotação e pedidos de animação dos atores de mapa já carregados nos dois jogos. Usa os atores nativos correspondentes, com IA local suspensa apenas no seguidor que recebeu estado recente. Até 64 atores em 180 m; veja os limites abaixo.
 
-Os testes nativos e de transporte passaram; o resultado desta camada ainda precisa de validação em dois jogos com GPU. O último relato confirma evolução das marionetes, mas efeitos de espada/impacto e algumas roupas continuam pendentes.
+Os testes nativos e de transporte passaram. Candidatos anteriores foram testados com duas instâncias/GPU: corrigida a captura vazia, houve 26/26 correspondências, mas a conferência de posições reprovou com divergência de NPCs. O hook de IA foi movido para o despacho virtual comum; esta revisão ainda precisa repetir o teste GPU e não foi publicada. O último relato confirma evolução das marionetes, mas efeitos de espada/impacto e algumas roupas continuam pendentes.
 
 ## Atualizar e usar
 

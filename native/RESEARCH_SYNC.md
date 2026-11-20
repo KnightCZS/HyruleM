@@ -1,6 +1,6 @@
 # Prévia 15 - atores de mapa sob autoridade do host
 
-Captura limitada, correspondência por identidade de mapa, matrizes/pedidos AS e suspensão condicional da RootAI do seguidor. 36 assinaturas próprias, 201 sites, ABI/protocolo 11. Novo hook exige regeneração privada. Sem spawn/delete neste caminho; rendering em dois jogos ainda pendente. [Auditoria](../docs/AUDITORIA_0.5.0-preview.15.md) e [limites](README.md).
+Captura limitada, correspondência por identidade de mapa, matrizes/pedidos AS e suspensão condicional no despacho virtual de IA do seguidor. Teste GPU anterior encontrou 26/26 correspondências, mas até 21,60 m de divergência; a nova revisão ainda aguarda repetição do teste. 36 assinaturas próprias, 201 sites, ABI/protocolo 11. Novo hook exige regeneração privada. Sem spawn/delete neste caminho; rendering em dois jogos ainda pendente. [Auditoria](../docs/AUDITORIA_0.5.0-preview.15.md) e [limites](README.md).
 
 ---
 

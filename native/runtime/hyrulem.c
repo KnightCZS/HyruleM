@@ -126,10 +126,12 @@ static bool clip_name(const char *s) {
 // Read-only entry hook at the actual AS request body, including direct calls.
 // Remote requests have another owner and can never become local input.
 void rt_hyrulem_capture_as(Cpu *c) {
-    if(!supported()||!g_site.hm_as_play_entry||!range(g_site.player_info,8))return;
-    uint64_t info=LD64(g_site.player_info),as=c->x[0],request=c->x[1];
-    if(!range(info,0x68)||!range(as,0xe0)||!range(request,0x38)||LD32(request+0x18)>1||LD32(request+0x1c)>1)return;
+    if(!supported()||!g_site.hm_as_play_entry)return;
+    uint64_t as=c->x[0],request=c->x[1];
+    if(!range(as,0xe0)||!range(request,0x38)||LD32(request+0x18)>1||LD32(request+0x1c)>1)return;
     actor_world_capture_as(as,request);
+    // NPCs can request their first AS before PlayerInfo exists.
+    if(!range(g_site.player_info,8))return;uint64_t info=LD64(g_site.player_info);if(!range(info,0x68))return;
     uint64_t local=LD64(info+0x60),ptr=LD64(request+0x10);
     if(!local||LD64(as+0xd8)!=local||!range(ptr,64))return;
     char name[64];memcpy(name,(void *)(uintptr_t)ptr,64);if(!memchr(name,0,64))return;
@@ -633,7 +635,7 @@ static bool number(const char *s, float *out, float limit) {
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",11);control_field_bool(r,"world_actor_sync",world_supported()&&g_site.hm_world_ai_calc);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",11);control_field_bool(r,"world_actor_sync",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
     control_field_bool(r,"skeletal_pose",supported()&&pose_supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());

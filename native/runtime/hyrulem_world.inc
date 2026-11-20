@@ -85,11 +85,12 @@ static void actor_world_capture_as(uint64_t as,uint64_t request){
     if(at==128){at=oldest;memset(&actor_world_as[at],0,sizeof actor_world_as[at]);}WorldAS *cache=&actor_world_as[at];cache->actor=a;cache->block=block;cache->generation=generation;cache->at=now_ms();
     Track *t=&cache->tracks[LD32(request+0x18)];memset(t,0,sizeof *t);snprintf(t->name,64,"%s",(char *)(uintptr_t)p);t->sequence=++actor_world_capture_seq;t->force=(LD8(request+0x21)&1)!=0;t->slot=LD32(request+0x1c);pthread_mutex_unlock(&actor_world_mutex);
 }
-// This RootAI entry is reached before its action tree runs. The owner backlink
+// Gate the Actor dispatcher before its virtual RootAI call, including overrides.
+// The owner backlink
 // and retained generation must both agree. No guest call occurs in this hook.
 bool rt_hyrulem_world_ai(Cpu *c){
-    if(!supported()||!g_site.hm_world_ai_calc||!range(c->x[0],16))return false;
-    uint64_t root=c->x[0],a=LD64(root+8);if(!actor_world_ready(a)||LD64(a+0x558)!=root)return false;
+    if(!supported()||!g_site.hm_world_ai_dispatch||!actor_world_ready(c->x[19]))return false;
+    uint64_t a=c->x[19],root=LD64(a+0x558);if(!range(root,16)||LD64(root+8)!=a)return false;
     bool block=false;pthread_mutex_lock(&actor_world_mutex);
     if(actor_world_mode.role==2&&actor_world_live.role==2&&actor_world_live.epoch==actor_world_mode.epoch&&!strcmp(actor_world_live.world,actor_world_mode.world)&&!strcmp(actor_world_live.session,actor_world_mode.session)&&actor_world_mode.heartbeat&&now_ms()-actor_world_mode.heartbeat<1500)for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){WorldBinding *b=&actor_world_bindings[i];if(b->actor==a&&b->id&&b->applied_at&&now_ms()-b->applied_at<500&&actor_world_index(b)){block=true;actor_world_ai_skipped++;break;}}
     pthread_mutex_unlock(&actor_world_mutex);return block;
@@ -130,7 +131,7 @@ static bool actor_world_integer(const char *p,uint64_t *n){if(!strcmp(p,"0")){*n
 static bool actor_world_token(const char *s,unsigned length){if(strlen(s)!=length)return false;for(unsigned i=0;i<length;i++)if(!((s[i]>='0'&&s[i]<='9')||(s[i]>='a'&&s[i]<='f')))return false;return true;}
 static void actor_world_sample(int argc,char **argv,ControlReply *r){
     ActorWorldMode next={0};uint64_t role,pause;
-    if(argc!=11||!world_supported()||!g_site.hm_world_ai_calc||!actor_world_token(argv[1],16)||!actor_world_token(argv[2],24)||!actor_world_integer(argv[3],&next.epoch)||!next.epoch||!actor_world_integer(argv[4],&role)||role>2||!actor_world_integer(argv[5],&next.sequence)||!actor_world_integer(argv[6],&pause)||pause>1){control_fail(r,"Invalid authoritative world command");return;}
+    if(argc!=11||!world_supported()||!g_site.hm_world_ai_dispatch||!actor_world_token(argv[1],16)||!actor_world_token(argv[2],24)||!actor_world_integer(argv[3],&next.epoch)||!next.epoch||!actor_world_integer(argv[4],&role)||role>2||!actor_world_integer(argv[5],&next.sequence)||!actor_world_integer(argv[6],&pause)||pause>1){control_fail(r,"Invalid authoritative world command");return;}
     for(unsigned i=0;i<3;i++){char *end;errno=0;next.center[i]=strtof(argv[7+i],&end);if(errno||*end||!isfinite(next.center[i])||fabsf(next.center[i])>(i==1?50000.f:100000.f)){control_fail(r,"Invalid world center");return;}}
     next.role=(unsigned)role;next.paused=pause!=0;next.heartbeat=now_ms();snprintf(next.session,17,"%s",argv[1]);snprintf(next.world,25,"%s",argv[2]);
     if(role==2&&(!next.sequence||!actor_world_decode(argv[10],&next))){control_fail(r,"Invalid world actor frame");return;}
