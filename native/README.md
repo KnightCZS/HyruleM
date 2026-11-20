@@ -73,6 +73,8 @@ Vida e inventários dos jogadores continuam pessoais. Uma pose de ataque remota 
 
 O primeiro jogador conectado é a autoridade; ao sair, o servidor elege outro e aumenta a época. Capturas antigas e publicações de seguidores são recusadas/descartadas. Até 64 atores elegíveis em 180 m do host são amostrados a 10 Hz e enviados somente ao outro jogador. A aplicação usa tempo decorrido, interpolação de posição/rotação e referências nativas com geração conferida.
 
+Atores inicializados nos estados 1/2 entram com modelo presente e referência válida; a captura não exige que o culling local esteja ativo como no DemoNPC. Inicialização e remoção ficam excluídas.
+
 São usados os monstros comuns, NPCs, objetos móveis da lista explícita e armas soltas do próprio jogo. Hash de mapa, nome e colocação original identificam o mesmo objeto entre processos. A IA original fica suspensa somente para um ator correspondente com estado recém-aplicado no cliente; o host continua executando sua IA. Expiração, desconexão e troca de host liberam referências e devolvem a autoridade local.
 
 **Atores precisam estar carregados nos dois jogos.** Ausentes são contados, não criados. Extras não são ocultados. Chefes, atores dinâmicos sem identidade de mapa, trajetórias físicas completas, combate contra o Link remoto, alvo mais próximo, agenda/diálogo exato de NPCs e persistência não estão implementados aqui. Animação é o pedido AS, não toda a fase/variáveis da árvore. Pegar/carregar um objeto no cliente pode sofrer correção pelo estado do host. Coleta/descarte anteriores mantêm os limites de Hateno descritos acima.

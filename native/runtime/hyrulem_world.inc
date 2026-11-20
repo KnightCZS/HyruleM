@@ -64,8 +64,13 @@ static bool actor_world_equipped(uint64_t a,unsigned kind){
     // existing ground transaction layer; they must not become a second copy.
     uint64_t b=LD64(a+0x938);uint32_t g=LD32(a+0x940);return range(b,0x50)&&g!=UINT32_MAX&&LD32(b+0x40)==g&&LD64(b+0x48)!=0;
 }
+static bool actor_world_ready(uint64_t a){
+    // Native map actors can be initialized but asleep (2) when culled; Link
+    // proxies use Calc (1). Init (0) and deletion (3) are never writable.
+    return range(a,0x7d0)&&(LD8(a+0x64)==1||LD8(a+0x64)==2)&&range(LD64(a+0x4e0),0xa4);
+}
 static bool actor_world_read(uint64_t a,WorldActor *out){
-    if(!range(a,0x7d0)||LD8(a+0x64)!=1||!actor_world_name(LD64(a+0x10),out->name))return false;
+    if(!actor_world_ready(a)||!actor_world_name(LD64(a+0x10),out->name))return false;
     out->kind=actor_world_kind(out->name);if(actor_world_equipped(a,out->kind))return false;
     uint64_t map=LD64(a+0x7c8);if(!range(map,0x70))return false;out->hash=LD32(map+0x58);if(!out->hash||out->hash==UINT32_MAX)return false;
     for(unsigned i=0;i<3;i++){out->spawn[i]=read_float(map+0x5c+i*4);if(!isfinite(out->spawn[i])||fabsf(out->spawn[i])>(i==1?50000.f:100000.f))return false;}
@@ -84,7 +89,7 @@ static void actor_world_capture_as(uint64_t as,uint64_t request){
 // and retained generation must both agree. No guest call occurs in this hook.
 bool rt_hyrulem_world_ai(Cpu *c){
     if(!supported()||!g_site.hm_world_ai_calc||!range(c->x[0],16))return false;
-    uint64_t root=c->x[0],a=LD64(root+8);if(!range(a,0x560)||LD64(a+0x558)!=root||LD8(a+0x64)!=1)return false;
+    uint64_t root=c->x[0],a=LD64(root+8);if(!actor_world_ready(a)||LD64(a+0x558)!=root)return false;
     bool block=false;pthread_mutex_lock(&actor_world_mutex);
     if(actor_world_mode.role==2&&actor_world_live.role==2&&actor_world_live.epoch==actor_world_mode.epoch&&!strcmp(actor_world_live.world,actor_world_mode.world)&&!strcmp(actor_world_live.session,actor_world_mode.session)&&actor_world_mode.heartbeat&&now_ms()-actor_world_mode.heartbeat<1500)for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){WorldBinding *b=&actor_world_bindings[i];if(b->actor==a&&b->id&&b->applied_at&&now_ms()-b->applied_at<500&&actor_world_index(b)){block=true;actor_world_ai_skipped++;break;}}
     pthread_mutex_unlock(&actor_world_mutex);return block;
@@ -205,7 +210,7 @@ static void actor_world_tick(Cpu *c,uint64_t local,uint64_t vt,bool paused){
     if(mode.role==1&&!scanned)return;
     WorldActor seen[ACTOR_WORLD_MAX];unsigned expected_source=0;for(unsigned i=0;i<ACTOR_WORLD_MAX;i++)if(actor_world_bindings[i].actor)expected_source++;unsigned count=0,matched=0,missing=mode.role==2?mode.count:0;uint64_t interval=actor_world_arrival&&mode.heartbeat>actor_world_arrival?mode.heartbeat-actor_world_arrival:100;if(interval<50)interval=50;if(interval>200)interval=200;
     for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){
-        WorldBinding *b=&actor_world_bindings[i];if(!b->actor||!actor_world_index(b))continue;ActorRef ref=resolve_at(c,b->storage,b->actor);if(!ref.ptr||ref.state!=1){if(ref.ptr)release_at(c,b->storage);continue;}
+        WorldBinding *b=&actor_world_bindings[i];if(!b->actor||!actor_world_index(b))continue;ActorRef ref=resolve_at(c,b->storage,b->actor);if(!ref.ptr||(ref.state!=1&&ref.state!=2)){if(ref.ptr)release_at(c,b->storage);continue;}
         WorldActor current={0};if(!actor_world_read(ref.ptr,&current)||!actor_world_same(&current,&b->state)){release_at(c,b->storage);actor_world_release(c,b);continue;}
         if(mode.role==1){current.id=b->id;pthread_mutex_lock(&actor_world_mutex);for(unsigned j=0;j<128;j++)if(actor_world_as[j].actor==b->actor&&actor_world_weak(b->actor,actor_world_as[j].block,actor_world_as[j].generation)){memcpy(current.tracks,actor_world_as[j].tracks,sizeof current.tracks);break;}pthread_mutex_unlock(&actor_world_mutex);if(count<ACTOR_WORLD_MAX)seen[count++]=current;}
         else{

@@ -79,5 +79,5 @@ try {
     throw
 }
 Write-Output "Runtime experimental instalado. Backup: $backup"
-Write-Output "Executavel atualizado e conferido (ABI 9): $exe"
+Write-Output "Executavel atualizado e conferido (ABI $($build.preview_abi)): $exe"
 Write-Output 'Abra a configuração do Savage Wind e permita reconstruir a biblioteca do jogo. Depois abra Iniciar-Nativo.cmd.'

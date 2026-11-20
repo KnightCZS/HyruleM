@@ -18,6 +18,12 @@ Não há spawn/delete arbitrário neste caminho. Armas equipadas são excluídas
 - Emissão compilada do hook RootAI: retorno condicional, prólogo original e CPU preservada. Funções contendo hooks regeneradas/compiladas nos dois modos de registradores.
 - Módulo privado Switch 1.9.0: 36 assinaturas próprias únicas, 201 sites resolvidos e despacho Actor -> RootAI executado com proprietário sintético. Não é gameplay.
 
+## Primeiro teste no PC
+
+O candidato inicial foi instalado numa pasta separada, com saves/cache próprios e somente referências de leitura aos recursos originais. A biblioteca privada foi regenerada e carregou os 201 sites. Duas instâncias entraram no mundo com GPU. A captura inicial retornou zero: a leitura da lista real encontrou NPCs de mapa no estado 2, enquanto o filtro aceitava apenas o estado 1 usado pelas marionetes. Depois de um teleporte curto, NPCs passaram ao estado 1 e a mesma varredura capturou 10 atores.
+
+A captura/aplicação agora aceita atores inicializados nos estados 1/2 com modelo presente e referência nativa válida. Inicialização (0), remoção (3), modelo ausente, geração antiga e acesso negado continuam excluídos. A regressão sintética inclui NPC no estado 2. A correção ainda precisa repetir o teste GPU completo; não há confirmação visual de movimento de monstros e objetos nesta revisão.
+
 ## Limites e próximo teste
 
 Não estabelece ainda mundo integralmente idêntico: atores ausentes não são criados, extras não são ocultados, atores dinâmicos sem identidade de mapa não entram neste fluxo, e objetos fora do raio/orçamento permanecem locais. IA sincronizada aqui significa suspender a decisão local e reproduzir os pedidos recebidos; não há combate remoto nem seleção do Link remoto como alvo. Não transmite a fase exata de todas as animações, física completa, agenda/diálogo, flags ou persistência.
