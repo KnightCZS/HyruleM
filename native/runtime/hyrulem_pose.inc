@@ -30,6 +30,55 @@ static bool pose_units(uint64_t a,uint64_t *units,unsigned *count){
     if(!range(a,0x4e8))return false;uint64_t comp=LD64(a+0x4e0);if(!range(comp,0x48))return false;
     *count=LD32(comp+0x38);*units=LD64(comp+0x40);return *count>0&&*count<=32&&range(*units,(uint64_t)*count*8);
 }
+
+/* Keep the final SDK palette on the received world root. Native physics can
+ * regenerate bone matrices from its own pose after Actor/ModelGroup setMtx.
+ * This changes visual placement only; it does not grant physics authority. */
+static bool actor_world_delta(const float from[12],const float to[12],float out[12]){
+    if(!actor_world_matrix(from)||!actor_world_matrix(to))return false;
+    float inv[9]={
+        from[5]*from[10]-from[6]*from[9],from[2]*from[9]-from[1]*from[10],from[1]*from[6]-from[2]*from[5],
+        from[6]*from[8]-from[4]*from[10],from[0]*from[10]-from[2]*from[8],from[2]*from[4]-from[0]*from[6],
+        from[4]*from[9]-from[5]*from[8],from[1]*from[8]-from[0]*from[9],from[0]*from[5]-from[1]*from[4]};
+    float det=from[0]*inv[0]+from[1]*inv[3]+from[2]*inv[6];
+    if(!isfinite(det)||fabsf(det)<.000001f)return false;
+    for(unsigned i=0;i<9;i++)inv[i]/=det;
+    for(unsigned r=0;r<3;r++){
+        for(unsigned j=0;j<3;j++){out[r*4+j]=0;for(unsigned k=0;k<3;k++)out[r*4+j]+=to[r*4+k]*inv[k*3+j];}
+        out[r*4+3]=to[r*4+3];for(unsigned k=0;k<3;k++)out[r*4+3]-=out[r*4+k]*from[k*4+3];
+    }
+    return actor_world_matrix(out);
+}
+static void actor_world_rebase(Cpu *c,uint64_t a,uint64_t scratch,const float target[12]){
+    uint64_t units;unsigned n;if(!pose_units(a,&units,&n)||!pose_supported())return;
+    // ponytail: reuse the local AS pose; exact world animation phase/parameters
+    // need a later pose stream. Only validated SDK models and root names enter.
+    float bones[POSE_MAX][12];
+    for(unsigned unit=0;unit<n;unit++){
+        uint64_t link=LD64(units+unit*8);if(!range(link,8))continue;uint64_t model=LD64(link),res,palette;unsigned count;
+        if(!pose_model(model,&res,&palette,&count))continue;
+        uint32_t root=pose_name(res,0);if(root!=pose_hash("Root")&&root!=pose_hash("Model"))continue;
+        bool valid=true;for(unsigned i=0;i<count;i++){
+            for(unsigned row=0;row<3;row++)for(unsigned col=0;col<4;col++)bones[i][row*4+col]=read_float(palette+(uint64_t)i*64+(col*4+row)*4);
+            if(!actor_world_matrix(bones[i])){valid=false;break;}
+        }
+        float delta[12];if(!valid||!actor_world_delta(bones[0],target,delta))continue;
+        float error=0;for(unsigned i=0;i<12;i++)error=fmaxf(error,fabsf(bones[0][i]-target[i]));if(error<.0001f)continue;
+        // Validate every output before writing any bone of this model.
+        for(unsigned i=0;i<count;i++){
+            float m[12];for(unsigned row=0;row<3;row++)for(unsigned col=0;col<4;col++){
+                m[row*4+col]=col==3?delta[row*4+3]:0;
+                for(unsigned k=0;k<3;k++)m[row*4+col]+=delta[row*4+k]*bones[i][k*4+col];
+            }
+            if(!actor_world_matrix(m)){valid=false;break;}memcpy(bones[i],m,48);
+        }
+        if(!valid)continue;
+        for(unsigned i=0;i<count;i++){memcpy((void *)(uintptr_t)(scratch+MATRIX),bones[i],48);call(c,g_site.hm_bone_set,model,scratch+MATRIX,i,0,0,0,0);}
+    }
+    // MATRIX also stores the previous network sample for interpolation.
+    memcpy((void *)(uintptr_t)(scratch+MATRIX),target,48);
+}
+
 static void pose_capture_part(uint64_t a,const float xyz[3],float yaw,PoseFrame *out,unsigned part){
     uint64_t units;unsigned n;if(!pose_units(a,&units,&n))return;pose_probe.reason="sdk-model-unavailable";
     float s=sinf(yaw),co=cosf(yaw);

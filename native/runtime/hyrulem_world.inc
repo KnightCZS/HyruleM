@@ -27,6 +27,7 @@ void rt_hyrulem_capture_zero(Cpu *c){
 // never means death and no unknown native NPC is created or deleted here.
 typedef struct {uint64_t actor,block,at;uint32_t generation;Track tracks[2];} WorldAS;
 typedef struct {uint64_t storage,actor,id,seen,started,duration,applied_at;WorldActor state;float from[12],target[12];Track played[2];} WorldBinding;
+static void actor_world_rebase(Cpu *,uint64_t,uint64_t,const float [12]);
 static pthread_mutex_t actor_world_mutex=PTHREAD_MUTEX_INITIALIZER;
 static ActorWorldMode actor_world_mode,actor_world_live;
 static WorldBinding actor_world_bindings[ACTOR_WORLD_MAX];
@@ -237,7 +238,7 @@ static void actor_world_tick(Cpu *c,uint64_t local,uint64_t vt,bool paused){
                 // frame; keep it with the binding, not the next heartbeat.
                 float distance=0;for(unsigned j=0;j<3;j++){float d=b->from[3+j*4]-b->target[3+j*4];distance+=d*d;}float t=mode.paused||distance>400?1.f:(float)(now-b->started)/(float)b->duration;
                 float m[12];actor_world_interpolate(b->from,b->target,t,m);memcpy((void *)(uintptr_t)(b->storage+MATRIX),m,48);
-                call(c,g_site.hm_set_mtx,ref.ptr,b->storage+MATRIX,0,0,0,0,0);call(c,g_site.hm_set_mtx,ref.ptr,b->storage+MATRIX,1,1,0,0,0);actor_world_animate(c,b,ref.ptr,target,vt);pthread_mutex_lock(&actor_world_mutex);actor_world_applied++;b->applied_at=now;pthread_mutex_unlock(&actor_world_mutex);
+                call(c,g_site.hm_set_mtx,ref.ptr,b->storage+MATRIX,0,0,0,0,0);call(c,g_site.hm_set_mtx,ref.ptr,b->storage+MATRIX,1,0,0,0,0);actor_world_animate(c,b,ref.ptr,target,vt);actor_world_rebase(c,ref.ptr,b->storage,m);pthread_mutex_lock(&actor_world_mutex);actor_world_applied++;b->applied_at=now;pthread_mutex_unlock(&actor_world_mutex);
             }else if(b->id){pthread_mutex_lock(&actor_world_mutex);b->id=0;pthread_mutex_unlock(&actor_world_mutex);}
         }
         release_at(c,b->storage);

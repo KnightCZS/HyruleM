@@ -47,7 +47,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     else if (fn==g_site.actor_index_release) {ST64(c->x[0],0);ST32(c->x[0]+8,UINT32_MAX);ST8(c->x[0]+12,0);}
     else if (fn==g_site.actor_link_release) ST64(c->x[0]+8,0);
     else if (fn==g_site.hm_delete_actor) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);deletes++;ST8(c->x[0]+0x64,3);}
-    else if (fn==g_site.hm_set_mtx) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);assert(c->x[2]<=1);assert(c->x[3]==(world_test?c->x[2]:0));memcpy((void *)(uintptr_t)(c->x[0]+0x398),(void *)(uintptr_t)c->x[1],48);moves++;}
+    else if (fn==g_site.hm_set_mtx) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);assert(c->x[2]<=1);assert(c->x[3]==0);memcpy((void *)(uintptr_t)(c->x[0]+0x398),(void *)(uintptr_t)c->x[1],48);moves++;}
     else if (fn==g_site.hm_play_as) {assert(c->x[0]==HEAP_BASE+0x5000||world_test);plays++;
         if(world_test&&!world_no_as_request){uint64_t request=HEAP_BASE+0xe8000;memset((void *)(uintptr_t)request,0,0x38);ST64(request+0x10,LD64(c->x[1]+8));ST32(request+0x18,(uint32_t)c->x[2]);ST32(request+0x1c,(uint32_t)c->x[3]);ST8(request+0x21,(unsigned char)c->x[4]);Cpu observed=*c;observed.x[1]=request;rt_hyrulem_capture_as(&observed);}
         c->x[0]=world_test&&!world_no_as_request?0:1;}
@@ -289,6 +289,18 @@ int main(void) {
     float origin[3]={100,200,300};for(int i=0;i<2;i++){float matrix[16]={1,0,0,0,0,1,0,0,0,0,1,0,100+i,200,300,0};memcpy((void *)(uintptr_t)(palette+i*64),matrix,sizeof matrix);}
     PoseFrame captured;pose_capture(owner,origin,1.57079632679f,&captured);assert(captured.count==2&&captured.bones[1].name==pose_hash("Weapon_R"));assert(fabsf(captured.bones[1].matrix[3])<.0001f&&fabsf(captured.bones[1].matrix[11]-1)<.0001f);
     Desired skin={0};skin.pose=captured;skin.x=10;skin.y=20;skin.z=30;unsigned before_bones=bone_writes;assert(pose_apply(&cpu,owner,storage,&skin,0)==2&&bone_writes==before_bones+2);assert(fabsf(last_bone_matrix[3]-10)<.0001f&&fabsf(last_bone_matrix[7]-20)<.0001f&&fabsf(last_bone_matrix[11]-31)<.0001f);assert(!memcmp(&cpu,&before,sizeof cpu));
+    // A correct ModelGroup root must not leave the SDK palette at its old
+    // physical location. Preserve the relative bone offset through rotation.
+    float world_target[12]={0,0,1,10,0,1,0,20,-1,0,0,30};
+    before_bones=bone_writes;actor_world_rebase(&cpu,owner,storage,world_target);
+    assert(bone_writes==before_bones+2&&fabsf(last_bone_matrix[3]-10)<.001f&&fabsf(last_bone_matrix[7]-20)<.001f&&fabsf(last_bone_matrix[11]-29)<.001f);
+    assert(!memcmp((void *)(uintptr_t)(storage+MATRIX),world_target,48)&&!memcmp(&cpu,&before,sizeof cpu));
+    // A nonuniform/scaled root requires the affine inverse, not a transpose.
+    float scaled_from[12]={2,0,0,100,0,3,0,200,0,0,4,300},delta[12];
+    assert(actor_world_delta(scaled_from,world_target,delta));float mapped[3]={0};
+    for(unsigned row=0;row<3;row++){mapped[row]=delta[row*4+3];for(unsigned col=0;col<3;col++)mapped[row]+=delta[row*4+col]*scaled_from[col*4+3];assert(fabsf(mapped[row]-world_target[row*4+3])<.001f);}
+    scaled_from[0]=0;assert(!actor_world_delta(scaled_from,world_target,delta));
+    ST64(model_vt+0x70,0);before_bones=bone_writes;actor_world_rebase(&cpu,owner,storage,world_target);assert(bone_writes==before_bones);ST64(model_vt+0x70,g_site.hm_bone_get);
     char encoded[POSE_B64_MAX+1];pose_encode(&captured,encoded);PoseFrame decoded;assert(pose_decode(encoded,&decoded)&&!memcmp(&captured,&decoded,4+captured.count*sizeof(PoseBone)));char save=encoded[4];encoded[4]='!';assert(!pose_decode(encoded,&decoded));encoded[4]=save;
     captured.bones[1].name=captured.bones[0].name;pose_encode(&captured,encoded);assert(!pose_decode(encoded,&decoded));captured.bones[1].name=pose_hash("Weapon_R");pose_encode(&captured,encoded);
     char *skeletal_frame[95];memcpy(skeletal_frame,atomic,sizeof atomic);skeletal_frame[2]="3";skeletal_frame[93]="0";skeletal_frame[94]=encoded;r.failed=false;remote(95,skeletal_frame,&r);assert(!r.failed&&desired.pose.count==2);Desired intact=desired;skeletal_frame[2]="4";skeletal_frame[94]="%%%=";remote(95,skeletal_frame,&r);assert(r.failed&&!memcmp(&intact,&desired,sizeof intact));
