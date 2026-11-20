@@ -243,5 +243,12 @@
     "kind": "code",
     "pattern": "f9407409 13057c2a 52800028 1ac1210c 1200004d b86ad92b 6a0c017f 0a2c016b",
     "at": 0
+  },
+  {
+    "name": "hm_world_ai_calc",
+    "address": "0x70010c8814",
+    "kind": "code",
+    "pattern": "a9bd7bfd f9000bf5 a9024ff4 910003fd aa0003f3 94000000/fc000000 7942da68 37400008/fff8001f",
+    "at": 0
   }
 ]

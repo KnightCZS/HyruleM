@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Native presence and nearby map-enemy health use protocol 9. Full Gen1 combat
+// Native presence and loaded-world authority use protocol 11. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
 	session       string
@@ -37,6 +37,7 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 		AnimationCapture bool   `json:"animation_capture"`
 		ActorJobBarrier  bool   `json:"actor_job_barrier"`
 		VisualEffects    bool   `json:"visual_effect_events"`
+		WorldActors      bool   `json:"world_actor_sync"`
 	}
 	if err := b.command(ctx, "hm_caps", &caps); err != nil {
 		return nil, fmt.Errorf("o runtime não possui o adaptador nativo: %w", err)
@@ -58,6 +59,9 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 	}
 	if !caps.VisualEffects {
 		return nil, fmt.Errorf("faltam os hooks de efeitos visuais; aguarde a recompilação da biblioteca com o gerador novo")
+	}
+	if !caps.WorldActors {
+		return nil, fmt.Errorf("falta o controle de atores do mundo; aguarde a recompilação da biblioteca com o gerador novo")
 	}
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {

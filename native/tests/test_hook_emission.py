@@ -159,3 +159,22 @@ with tempfile.TemporaryDirectory(prefix='hyrulem-fx-created-') as temp:
  subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
  subprocess.run([str(p/'hook')],check=True)
 print('Direct visual descriptor hook: original STR and full CPU preservation passed')
+
+# A follower suppresses only the matched actor's RootAI calculation. The host
+# and every unrelated actor must execute the original prologue unchanged.
+struct.pack_into('<I',image,0x400,0xa9bd7bfd)
+fragment=patches._hm_world_ai_calc(gen,base+0x400)
+source='''#include "cpu.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/mman.h>
+static _Bool skip;
+_Bool rt_hyrulem_world_ai(Cpu *c){assert(c->x[0]==0x7000000400ull);return skip;}
+static void generated(Cpu *c){FRAGMENT}
+int main(void){assert(mmap((void *)0x7000000000ull,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)!=(void *)-1);Cpu c;memset(&c,0xa5,sizeof c);c.x[0]=0x7000000400ull;c.sp=0x7000000f00ull;Cpu before=c;skip=1;generated(&c);assert(!memcmp(&c,&before,sizeof c));skip=0;generated(&c);Cpu expected=before;expected.sp-=0x30;assert(!memcmp(&c,&expected,sizeof c)&&LD64(c.sp)==before.x[29]&&LD64(c.sp+8)==before.x[30]);return 0;}
+'''.replace('FRAGMENT',fragment)
+with tempfile.TemporaryDirectory(prefix='hyrulem-world-ai-') as temp:
+ p=Path(temp);(p/'hook.c').write_text(source)
+ subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
+ subprocess.run([str(p/'hook')],check=True)
+print('World AI authority: conditional return, original STP and CPU preservation passed')

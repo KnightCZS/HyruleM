@@ -24,6 +24,7 @@ type Client struct {
 	frames      []Frame
 	latest      uint64
 	enemies     []EnemyHealth
+	world       WorldView
 	environment EnvironmentView
 	ground      GroundView
 	connected   bool
@@ -198,6 +199,23 @@ func (c *Client) read(r *bufio.Reader) {
 				c.ground = GroundView{Enabled: true, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult, Rejected: append([]uint64(nil), m.GroundRejected...)}
 			} else {
 				c.ground = GroundView{}
+			}
+			if m.WorldState != nil && (!m.WorldState.Valid() || m.WorldState.Epoch != m.Epoch || m.HostID == "" || len(m.WorldID) != 24) {
+				c.mu.Unlock()
+				c.fail("Mundo autoritativo inválido")
+				return
+			}
+			if m.WorldID != "" {
+				raw, err := hex.DecodeString(m.WorldID)
+				if err != nil || len(raw) != 12 {
+					c.mu.Unlock()
+					c.fail("Identidade de mundo inválida")
+					return
+				}
+			}
+			c.world = WorldView{WorldID: m.WorldID, HostID: m.HostID, Epoch: m.Epoch, State: m.WorldState, At: time.Now()}
+			if m.WorldState != nil {
+				c.world.At = c.world.At.Add(-time.Duration(m.WorldState.AgeMS) * time.Millisecond)
 			}
 			c.environment = EnvironmentView{HostID: m.HostID, Epoch: m.Epoch, State: m.Environment, At: time.Now()}
 			for _, p := range m.Players {

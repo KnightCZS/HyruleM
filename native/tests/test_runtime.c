@@ -15,6 +15,7 @@ static uint64_t ground_pouch_item;static unsigned inventory_grants,inventory_deb
 static unsigned create_state=1;
 static unsigned shape_writes,property_writes;
 static unsigned effect_emits,effect_stops;static uint64_t effect_user_expected;
+static bool world_test;static uint64_t invalidate_world_actor;
 static bool empty_inventory;static bool weapon_test;static uint64_t weapon_vt,weapon_pouch;static unsigned weapon_entries;static uint32_t granted_modifier;static int granted_bonus;
 static uint64_t local_equipped[6],gear_handles[32],gear_actors[32];static unsigned gear_allocations,gear_handles_count;static bool reject_equipment;
 void *hle_alloc(uint64_t size) { if(size==FX_MAX*16)return (void *)(uintptr_t)(HLE_HEAP+0x30000);assert(size==BYTES);return (void *)(uintptr_t)(storage?HLE_HEAP+0x1000+0x400*gear_allocations++:HLE_HEAP); }
@@ -41,12 +42,13 @@ void guest_call(Cpu *c,uint64_t fn) {
     } else if (fn==g_site.actor_index_resolve) {
         assert(!LD64(c->x[1]+8)); // Local references cannot escape a callback.
         uint64_t a=LD64(LD64(c->x[0])+0x48);ST64(c->x[1]+8,a);c->x[0]=deny_lease?0:a;
+        if(a==invalidate_world_actor){ST32(LD64(a+0x7c8)+0x58,0);invalidate_world_actor=0;}
     }
     else if (fn==g_site.actor_index_release) {ST64(c->x[0],0);ST32(c->x[0]+8,UINT32_MAX);ST8(c->x[0]+12,0);}
     else if (fn==g_site.actor_link_release) ST64(c->x[0]+8,0);
     else if (fn==g_site.hm_delete_actor) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);deletes++;ST8(c->x[0]+0x64,3);}
     else if (fn==g_site.hm_set_mtx) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);assert(c->x[2]<=1);memcpy((void *)(uintptr_t)(c->x[0]+0x398),(void *)(uintptr_t)c->x[1],48);moves++;}
-    else if (fn==g_site.hm_play_as) {assert(c->x[0]==HEAP_BASE+0x5000);plays++;}
+    else if (fn==g_site.hm_play_as) {assert(c->x[0]==HEAP_BASE+0x5000||world_test);plays++;c->x[0]=1;}
     else if(fn==g_site.hm_bone_set){bone_writes++;memcpy(last_bone_matrix,(void *)(uintptr_t)c->x[1],sizeof last_bone_matrix);assert(c->x[2]<POSE_MAX);}
     else if(fn==g_site.pouch_page_count)c->x[0]=empty_inventory?0:weapon_test?weapon_entries:1;
     else if(fn==g_site.pouch_page_item)c->x[0]=weapon_test?weapon_pouch+c->x[2]*0x100:ground_pouch_item;
@@ -56,7 +58,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     // Deliberately clobber every register: the hook must preserve the caller.
     memset(c->v,0x5a,sizeof c->v);c->x[3]=0xdeadbeef;c->nzcv=0xabcdef;c->fpsr=91;
 }
-void control_register(const ControlCmd *cmds,int n) {assert(n==17);}
+void control_register(const ControlCmd *cmds,int n) {assert(n==18);}
 void control_field_str(ControlReply *r,const char *k,const char *v) {}
 void control_field_int(ControlReply *r,const char *k,int64_t v) {}
 void control_field_num(ControlReply *r,const char *k,double v) {}
@@ -300,6 +302,7 @@ int main(void) {
     #include "test_preview11.inc"
     #include "test_preview12.inc"
     #include "test_preview14.inc"
+    #include "test_world_actors.inc"
     puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");

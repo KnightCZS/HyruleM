@@ -28,10 +28,12 @@ func TestNativeCommandsRejectInvalidTelemetry(t *testing.T) {
 
 type fakeNativeGame struct {
 	*fakeGame
-	active     bool
-	skeleton   string
-	appearance string
-	effects    []VisualEffect
+	active        bool
+	skeleton      string
+	appearance    string
+	worldActors   string
+	worldSequence uint64
+	effects       []VisualEffect
 }
 
 type legacyNativeGame struct{ *fakeNativeGame }
@@ -98,7 +100,7 @@ func TestOldRuntimeRejectionSurvivesDisconnectCleanup(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("old runtime was not rejected")
 	}
-	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 10") {
+	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 11") {
 		t.Fatal("specific native failure replaced by generic disconnection", c.Reason())
 	}
 }
@@ -116,8 +118,13 @@ func (f *fakeNativeGame) Command(ctx context.Context, cmd string) (core.ControlR
 	}
 	var data any = map[string]bool{"queued": true}
 	switch {
+	case strings.HasPrefix(cmd, "hm_world_sample "):
+		if f.worldActors != "" {
+			f.worldSequence++
+			data = map[string]any{"ready": true, "sequence": f.worldSequence, "actors_b64": f.worldActors, "complete": true, "x": f.position.X, "y": f.position.Y, "z": f.position.Z}
+		}
 	case cmd == "hm_caps":
-		data = map[string]any{"runtime": "SavageWind-HyruleM", "game_version": "1.9.0", "preview_abi": 10, "native_preview": true, "shared_enemy_health": true, "animation_capture": true, "actor_job_barrier": true, "visual_effect_events": true}
+		data = map[string]any{"runtime": "SavageWind-HyruleM", "game_version": "1.9.0", "preview_abi": 11, "native_preview": true, "shared_enemy_health": true, "animation_capture": true, "actor_job_barrier": true, "visual_effect_events": true, "world_actor_sync": true}
 	case cmd == "hm_native_status":
 		data = map[string]any{"state": "idle", "game_ticks": 12, "tick_age_ms": 0, "active": f.active, "model_ready": f.active, "animation_ready": f.active}
 	case cmd == "hm_local_state" || sample:

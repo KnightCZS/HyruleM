@@ -11,7 +11,7 @@ import (
 )
 
 func TestControlStreamAllowsBoundedAtomicVisualFrameOnly(t *testing.T) {
-	for _, prefix := range []string{"hm_native_remote ", "hm_native_sample "} {
+	for _, prefix := range []string{"hm_native_remote ", "hm_native_sample ", "hm_world_sample "} {
 		t.Run(strings.TrimSpace(prefix), func(t *testing.T) {
 			l, e := net.Listen("tcp4", "127.0.0.1:0")
 			if e != nil {

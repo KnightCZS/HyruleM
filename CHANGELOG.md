@@ -1,5 +1,13 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.15
+
+- Autoridade de mundo: até 64 atores de mapa em 180 m, transformações interpoladas e pedidos AS em atores reais correspondentes.
+- RootAI local suspensa somente para seguidores frescos com referência válida; timeout/sucessão libera controle.
+- HMW1 limitado, publicação restrita ao host, época/replay e transporte ControlStream de produção testados.
+- Corrige identidade invalidada durante resolução que poderia produzir ID zero persistente.
+- ABI/protocolo 11, gamelib 4; novo hook exige regeneração. Ausentes não são criados; interação e mundo completo ainda pendentes.
+
 ## 0.5.0-preview.14
 
 - Armadura capturada pelas referências nativas retidas pelo jogador, sem exigir parentesco.

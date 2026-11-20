@@ -182,12 +182,15 @@ func (b *Bridge) run(ctx context.Context) {
 	var native *nativePreview
 	var environment environmentSync
 	var ground groundSync
+	var actorWorld worldActorSync
 	var groundIssue time.Time
+	var worldActorIssue time.Time
 	var environmentIssue time.Time
 	defer func() {
 		if native != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
 			defer cancel()
+			b.closeWorldActors(cleanup, &actorWorld)
 			b.closeGround(cleanup, &ground)
 			_ = b.clearNative(cleanup, native)
 			b.restoreEnvironment(cleanup, &environment)
@@ -213,6 +216,7 @@ func (b *Bridge) run(ctx context.Context) {
 		}
 		if e := readErr; e != nil || !pos.Valid() {
 			b.restoreEnvironment(ctx, &environment)
+			b.closeWorldActors(ctx, &actorWorld)
 			b.closeGround(ctx, &ground)
 			if native != nil {
 				_ = b.clearNative(ctx, native)
@@ -332,6 +336,10 @@ func (b *Bridge) run(ctx context.Context) {
 			if err := b.updateNative(ctx, native, now); err != nil {
 				b.fail("Integração nativa interrompida: " + err.Error())
 				return
+			}
+			if err := b.updateWorldActors(ctx, &actorWorld, now); err != nil && now.Sub(worldActorIssue) > 15*time.Second {
+				b.say("Mundo do anfitrião aguardando: " + err.Error())
+				worldActorIssue = now
 			}
 			if err := b.updateWorldHealth(ctx, native, now); err != nil {
 				b.fail("Sincronização do mundo interrompida: " + err.Error())

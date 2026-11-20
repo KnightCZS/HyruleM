@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 10
+const Protocol = 11
 const MaxLine = 256 * 1024
 const MaxPlayers = 2
 
@@ -98,6 +98,8 @@ type Player struct {
 	Pose Pose   `json:"pose"`
 }
 type Message struct {
+	WorldID          string            `json:"world_id,omitempty"`
+	WorldState       *WorldState       `json:"world_state,omitempty"`
 	GroundDestroyed  []uint64          `json:"ground_destroyed,omitempty"`
 	GroundRejected   []uint64          `json:"ground_rejected,omitempty"`
 	WorldOrigin      string            `json:"world_origin,omitempty"`

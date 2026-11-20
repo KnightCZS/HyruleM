@@ -1,3 +1,9 @@
+# Prévia 15 - atores de mapa sob autoridade do host
+
+Captura limitada, correspondência por identidade de mapa, matrizes/pedidos AS e suspensão condicional da RootAI do seguidor. 36 assinaturas próprias, 201 sites, ABI/protocolo 11. Novo hook exige regeneração privada. Sem spawn/delete neste caminho; rendering em dois jogos ainda pendente. [Auditoria](../docs/AUDITORIA_0.5.0-preview.15.md) e [limites](README.md).
+
+---
+
 # Atualização de 15/11 — preview 14
 
 A análise privada do vídeo e do módulo identificou referências de armadura que não dependem de Actor::parent, máscaras separadas de visibilidade por osso/material e o caminho comum de criação ELink por descritor. Implementação original baseada em layouts conferidos no módulo do próprio usuário; nenhum código de decompilação copiado.

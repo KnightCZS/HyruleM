@@ -18,6 +18,13 @@ typedef struct {
 enum { GEAR_COUNT=6,POSE_MAX=512,POSE_B64_MAX=((8+POSE_MAX*56+2)/3)*4 };
 typedef struct {uint32_t name,part;float matrix[12];} PoseBone;
 typedef struct {unsigned count;PoseBone bones[POSE_MAX];} PoseFrame;
+enum {ACTOR_WORLD_MAX=64, ACTOR_WORLD_STRIDE=300, ACTOR_WORLD_B64=((8+ACTOR_WORLD_MAX*ACTOR_WORLD_STRIDE+2)/3)*4};
+typedef struct {uint64_t id;uint32_t hash,kind;char name[64];float spawn[3],matrix[12];Track tracks[2];} WorldActor;
+typedef struct {char session[17],world[25];uint64_t epoch,sequence,heartbeat;unsigned role,count;bool paused,complete;float center[3];WorldActor actors[ACTOR_WORLD_MAX];} ActorWorldMode;
+static void actor_world_capture_as(uint64_t,uint64_t);
+static void actor_world_tick(Cpu *,uint64_t,uint64_t,bool);
+static void actor_world_reset(void);
+static void actor_world_close(void);
 enum {FX_MAX=16, VIS_MAX=512, PROP_MAX=256, APPEARANCE_B64_MAX=((8+16*(VIS_MAX+PROP_MAX)+2)/3)*4};
 typedef struct {uint32_t part,name,visible,kind;} VisibilityState;
 typedef struct {uint32_t slot,name,type,value;} FxProperty;
@@ -122,6 +129,7 @@ void rt_hyrulem_capture_as(Cpu *c) {
     if(!supported()||!g_site.hm_as_play_entry||!range(g_site.player_info,8))return;
     uint64_t info=LD64(g_site.player_info),as=c->x[0],request=c->x[1];
     if(!range(info,0x68)||!range(as,0xe0)||!range(request,0x38)||LD32(request+0x18)>1||LD32(request+0x1c)>1)return;
+    actor_world_capture_as(as,request);
     uint64_t local=LD64(info+0x60),ptr=LD64(request+0x10);
     if(!local||LD64(as+0xd8)!=local||!range(ptr,64))return;
     char name[64];memcpy(name,(void *)(uintptr_t)ptr,64);if(!memchr(name,0,64))return;
@@ -473,7 +481,9 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     pthread_mutex_unlock(&mutex);
     Desired d;
     pthread_mutex_lock(&mutex); d=desired; pthread_mutex_unlock(&mutex);
-    if(range(g_site.pause_state,4)&&LD32(g_site.pause_state)) {
+    bool is_paused=range(g_site.pause_state,4)&&LD32(g_site.pause_state);
+    actor_world_tick(c,local,safe_string_vtable,is_paused);
+    if(is_paused) {
         ground_pause();
         if(spawning_at)spawning_at=now_ms();
         if(activation_waiting)activation_wait_at=now_ms();
@@ -594,6 +604,7 @@ RT_ON_RESET(hyrulem_reset) {
     fx_reset();
     memset(&desired,0,sizeof desired); memset(&published,0,sizeof published);
     memset(local_tracks,0,sizeof local_tracks);memset(remote_tracks,0,sizeof remote_tracks);capture_count=0;local_yaw=0;
+    actor_world_reset();
     memset(&local_appearance,0,sizeof local_appearance);pose_storage=0;
     memset(&local_pose,0,sizeof local_pose);pose_applied=body_pose_applied=0;visual_log_at=0;memset(&pose_probe,0,sizeof pose_probe);memset(local_armor,0,sizeof local_armor);armor_read_at=0;armor_from_pouch=false;memset(local_gear,0,sizeof local_gear);memset(local_position,0,sizeof local_position);local_ready=false;
     world_count=health_count=world_history_count=world_zero_count=0;world_history_reset=false;last_world_scan=0;
@@ -622,7 +633,7 @@ static bool number(const char *s, float *out, float limit) {
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",10);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",11);control_field_bool(r,"world_actor_sync",world_supported()&&g_site.hm_world_ai_calc);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
     control_field_bool(r,"skeletal_pose",supported()&&pose_supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());
@@ -700,6 +711,9 @@ static void clear_remote(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"queued_sequence",seq);
 }
 static void status(int argc,char **argv,ControlReply *r) {
+    pthread_mutex_lock(&actor_world_mutex);unsigned world_role=actor_world_live.role,world_count_live=actor_world_seen_count,world_matched_live=actor_world_matched,world_missing_live=actor_world_missing,world_applied_live=actor_world_applied,world_ai_live=actor_world_ai_skipped,world_as_live=actor_world_as_applied;uint64_t world_epoch_live=actor_world_live.epoch;pthread_mutex_unlock(&actor_world_mutex);
+    control_field_int(r,"world_role",world_role);control_field_int(r,"world_epoch",world_epoch_live);control_field_int(r,"world_captured",world_count_live);control_field_int(r,"world_matched",world_matched_live);control_field_int(r,"world_missing",world_missing_live);control_field_int(r,"world_applied",world_applied_live);control_field_int(r,"world_ai_skipped",world_ai_live);control_field_int(r,"world_animations_applied",world_as_live);
+
     pthread_mutex_lock(&mutex); Published p=published; pthread_mutex_unlock(&mutex);
     control_field_str(r,"state",p.state[0]?p.state:"idle"); control_field_str(r,"error",p.error);
     control_field_int(r,"applied_sequence",p.applied); control_field_int(r,"received_sequence",p.received);
@@ -774,6 +788,7 @@ static void receive_health(int argc,char **argv,ControlReply *r) {
 }
 void control_hyrulem_init(void) {
     static const ControlCmd cmds[]={
+        {"hm_world_sample","<session> <world> <epoch> <role> <seq> <paused> <x> <y> <z> <HMW1-or-dash>","Host-authoritative loaded map actors",actor_world_sample,0},
         {"hm_native_drop_local","<session> <world> <local>","Return an unenrolled native drop to local play",ground_native_local,0},
         {"hm_item_drop","<session> <world> <id> <request>","Queue a server-prepared one-apple drop",ground_drop_command,0},
         {"hm_items_open","<session> <world> <x> <y> <z>","Enable bounded experimental material sharing",ground_open,0},

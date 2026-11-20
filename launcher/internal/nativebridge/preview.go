@@ -9,6 +9,14 @@ import (
 // Preview readiness is separate from complete Gen1 combat/AI capabilities.
 // A running older adapter must be diagnosed before interpreting actor state.
 type PreviewDiagnostic struct {
+	WorldRole                int    `json:"world_role"`
+	WorldEpoch               uint64 `json:"world_epoch"`
+	WorldCaptured            int    `json:"world_captured"`
+	WorldMatched             int    `json:"world_matched"`
+	WorldMissing             int    `json:"world_missing"`
+	WorldApplied             int    `json:"world_applied"`
+	WorldAISkipped           int    `json:"world_ai_skipped"`
+	WorldAnimationsApplied   int    `json:"world_animations_applied"`
 	VisibilityCaptured       int    `json:"visibility_captured"`
 	VisibilityApplied        int    `json:"visibility_applied"`
 	EffectPropertiesCaptured int    `json:"effect_properties_captured"`
@@ -81,6 +89,14 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 	}
 	p.Compatible = true
 	var s struct {
+		WorldRole                int    `json:"world_role"`
+		WorldEpoch               uint64 `json:"world_epoch"`
+		WorldCaptured            int    `json:"world_captured"`
+		WorldMatched             int    `json:"world_matched"`
+		WorldMissing             int    `json:"world_missing"`
+		WorldApplied             int    `json:"world_applied"`
+		WorldAISkipped           int    `json:"world_ai_skipped"`
+		WorldAnimationsApplied   int    `json:"world_animations_applied"`
 		VisibilityCaptured       int    `json:"visibility_captured"`
 		VisibilityApplied        int    `json:"visibility_applied"`
 		EffectPropertiesCaptured int    `json:"effect_properties_captured"`
@@ -119,6 +135,7 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		p.Status, p.Message = "status_unavailable", "O runtime não respondeu ao estado nativo. Gere o relatório mantendo o mundo carregado."
 		return p
 	}
+	p.WorldRole, p.WorldEpoch, p.WorldCaptured, p.WorldMatched, p.WorldMissing, p.WorldApplied, p.WorldAISkipped, p.WorldAnimationsApplied = s.WorldRole, s.WorldEpoch, s.WorldCaptured, s.WorldMatched, s.WorldMissing, s.WorldApplied, s.WorldAISkipped, s.WorldAnimationsApplied
 	p.VisibilityCaptured, p.VisibilityApplied, p.EffectPropertiesCaptured, p.EffectPropertiesApplied, p.ArmorReferences = s.VisibilityCaptured, s.VisibilityApplied, s.EffectPropertiesCaptured, s.EffectPropertiesApplied, s.ArmorReferences
 	p.ArmorHeadBones, p.ArmorUpperBones, p.ArmorLowerBones = s.ArmorHeadBones, s.ArmorUpperBones, s.ArmorLowerBones
 	p.EffectsSourceUsers, p.EffectsCaptured, p.EffectsApplied, p.EffectsStopped, p.EffectsMissingUser, p.EffectLastKey = s.EffectsSourceUsers, s.EffectsCaptured, s.EffectsApplied, s.EffectsStopped, s.EffectsMissingUser, s.EffectLastKey

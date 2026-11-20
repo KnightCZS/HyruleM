@@ -34,6 +34,8 @@ type serverPeer struct {
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
 
 type Server struct {
+	worldState       *WorldState
+	worldAt          time.Time
 	mu               sync.Mutex
 	cfg              ServerConfig
 	peers            map[string]*serverPeer
@@ -234,6 +236,14 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				s.log(name + ": " + err.Error())
 				return
 			}
+		case "world_actors":
+			s.mu.Lock()
+			err := s.acceptWorldLocked(p, m.WorldState, time.Now())
+			s.mu.Unlock()
+			if err != nil {
+				s.log(name + ": " + err.Error())
+				return
+			}
 		case "environment":
 			if m.Environment == nil || !m.Environment.Valid() || m.Environment.AgeMS != 0 {
 				return
@@ -316,6 +326,12 @@ func (s *Server) broadcast(ctx context.Context) {
 		for _, e := range s.enemies {
 			enemies = append(enemies, e)
 		}
+		var world *WorldState
+		if s.worldState != nil && time.Since(s.worldAt) < 1500*time.Millisecond {
+			copy := *s.worldState
+			copy.AgeMS = uint64(time.Since(s.worldAt) / time.Millisecond)
+			world = &copy
+		}
 		players := make([]Player, 0, len(s.peers))
 		targets := make([]*serverPeer, 0, len(s.peers))
 		for _, p := range s.peers {
@@ -326,12 +342,15 @@ func (s *Server) broadcast(ctx context.Context) {
 		sort.Slice(players, func(i, j int) bool { return players[i].Slot < players[j].Slot })
 		sequence++
 		sort.Slice(enemies, func(i, j int) bool { return enemies[i].key() < enemies[j].key() })
-		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence, Enemies: enemies, HostID: host, Epoch: epoch, Environment: environment}
+		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence, Enemies: enemies, HostID: host, Epoch: epoch, Environment: environment, WorldID: s.groundWorld, WorldState: world}
 		for _, p := range targets {
 			packet := m
 			// The receiver renders its own Link locally. Echoing its complete
 			// bone/effect payload consumes bandwidth without adding a frame.
 			packet.Players = recipientPlayers(m.Players, p.player.ID)
+			if p.player.ID == m.HostID {
+				packet.WorldState = nil
+			}
 			if s.cfg.SharedItems {
 				s.mu.Lock()
 				packet.GroundItems, packet.GroundClaims = s.groundSnapshot(p)

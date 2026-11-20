@@ -1,6 +1,6 @@
 # HyruleM
 
-Prévia [0.5.0-preview.14](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.14): captura de armadura pelas referências nativas do jogador, máscaras de visibilidade de corpo/roupa e pedidos diretos/condições numéricas de efeitos. Correções motivadas pelo vídeo de chapéu rígido, sobreposição e efeitos ausentes. **ABI 10/protocolo 10; recompilação da biblioteca privada obrigatória.** Testes nativos e de transporte passaram; resultado desta versão ainda sem validação em duas instâncias/GPU. [Instalação e limites](native/README.md) · [Auditoria](docs/AUDITORIA_0.5.0-preview.14.md).
+Prévia [0.5.0-preview.15](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.15): primeira camada de mundo autoritativo, com posição/rotação e pedidos AS de até 64 atores de mapa próximos já carregados nos dois jogos. IA local suspensa apenas nos atores correspondentes do seguidor. **ABI 11/protocolo 11; regeneração privada obrigatória.** Não cria ausentes nem completa combate/IA/interações. [Instalação e limites](native/README.md) · [Auditoria](docs/AUDITORIA_0.5.0-preview.15.md).
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 

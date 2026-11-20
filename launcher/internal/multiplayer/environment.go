@@ -70,6 +70,8 @@ func (s *Server) chooseEnvironmentHostLocked() {
 	}
 	s.environmentEpoch++
 	s.environment = nil
+	s.worldState = nil
+	s.worldAt = time.Time{}
 	s.environmentAt = time.Time{}
 }
 
@@ -144,9 +146,9 @@ func (b *Bridge) updateEnvironment(ctx context.Context, n *environmentSync, now 
 	if v.HostID != "" && v.HostID != n.announcedHost {
 		n.announcedHost = v.HostID
 		if v.HostID == b.Client.Welcome().ID {
-			b.say("Você é o anfitrião de horário e clima")
+			b.say("Você é o anfitrião do mundo, horário e clima")
 		} else {
-			b.say("Anfitrião de horário e clima: " + v.HostName)
+			b.say("Anfitrião do mundo: " + v.HostName)
 		}
 	}
 	if v.Epoch != n.epoch {

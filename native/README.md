@@ -1,15 +1,15 @@
-# HyruleM 0.5.0-preview.14
+# HyruleM 0.5.0-preview.15
 
-Correções motivadas pelo vídeo de 15/11: chapéu rígido, cabelo/roupa atravessando o corpo e efeitos de golpes ausentes no outro cliente. A captura de roupa da prévia anterior dependia de um parentesco que o jogador não precisa preencher; agora consulta suas referências nativas de armadura, com geração e acesso temporário conferidos. Também transmite máscaras de visibilidade e condições numéricas de efeitos, e captura pedidos ELink feitos diretamente por descritor, inclusive sem identificador de saída.
+Primeira camada de mundo sob autoridade do anfitrião: posição, rotação e pedidos de animação dos atores de mapa já carregados nos dois jogos. Usa os atores nativos correspondentes, com IA local suspensa apenas no seguidor que recebeu estado recente. Até 64 atores em 180 m; veja os limites abaixo.
 
-Os testes de memória, instruções nativas e transporte passaram. **O vídeo mostra a versão anterior; não houve execução desta versão com duas instâncias/GPU.** Não declara todas as deformações de tecido nem todos os rastros de espada visualmente confirmados.
+Os testes nativos e de transporte passaram; o resultado desta camada ainda precisa de validação em dois jogos com GPU. O último relato confirma evolução das marionetes, mas efeitos de espada/impacto e algumas roupas continuam pendentes.
 
 ## Atualizar e usar
 
 1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, incluindo `runtime-update`.
 2. Execute **Iniciar-Nativo.cmd**, que instala o runtime com backup.
-3. **Aguarde a recompilação da biblioteca privada do jogo com o gerador novo.** Há um hook novo; bibliotecas das prévias 12/13 precisam ser regeneradas. A gamelib ABI continua 4, mas a ABI do adaptador mudou. Não altere `.id`.
-4. Atualize os dois clientes e o servidor: **ABI 10 / protocolo 10**. O overlay de recursos da prévia 12 permanece compatível; é gerado localmente quando necessário. O ZIP não contém arquivos do jogo.
+3. **Aguarde a recompilação da biblioteca privada do jogo com o gerador novo.** Há um hook novo; bibliotecas das prévias anteriores precisam ser regeneradas. A gamelib ABI continua 4, mas a ABI do adaptador mudou. Não altere `.id`.
+4. Atualize os dois clientes e o servidor: **ABI 11 / protocolo 11**. O overlay de recursos da prévia 12 permanece compatível; é gerado localmente quando necessário. O ZIP não contém arquivos do jogo.
 5. Hospede e conecte pelo IP/porta escolhidos. Na primeira abertura desta versão, **Itens do mundo: ligados** é ativado no painel de hospedagem. Depois disso a escolha é preservada; pode desligá-la antes de hospedar. O servidor separado usa `--shared-items=true` por padrão, ou `--shared-items=false` para desligar.
 6. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.
 
@@ -65,19 +65,28 @@ A identidade é hash do mapa + nome + posição original. Cada instância calcul
 
 O hook de remoção conserva evidência de vida realmente zerada antes que o ator desapareça. A captura admite monstros de mapa e árvores em pé com getter nativo de vida compatível; exclui raízes, galhos, tocos e troncos. **Zerar vida ainda não comprova a transição da IA de árvore para árvore caída/tronco**, e essa sequência não foi validada em gameplay. Não é correto anunciar o corte de árvores como resolvido somente por este mecanismo. Confirmações de vida zero podem ser reenviadas uma vez por segundo, respeitando o orçamento rotativo de quatro comandos, para liberar evidência capturada depois de uma escrita anterior. O registro de dano comporta 128 entidades; observações são limitadas a 64 próximas por amostra.
 
-Horário/clima continuam sob autoridade do anfitrião, com sucessão e descarte de amostras antigas. Dia, Blood Moon, missões, flags gerais, posição/IA dos monstros, runas, projéteis, dano entre Links e todos os eventos do mundo ainda não estão integrados. O servidor coordena estado; não executa BOTW.
+Horário/clima continuam sob autoridade do anfitrião, com sucessão e descarte de amostras antigas. Dia, Blood Moon, missões, flags gerais, runas, projéteis, dano entre Links e todos os eventos do mundo ainda não estão integrados. O servidor coordena estado; não executa BOTW.
 
 Vida e inventários dos jogadores continuam pessoais. Uma pose de ataque remota não aplica um golpe no outro mundo por si só. A integração nativa roda após os jobs dos atores; hooks de coleta/descarte/remoção apenas capturam ou enfileiram dados, sem chamar funções guest a partir dos workers.
 
+## Atores do mundo - novo na prévia 15
+
+O primeiro jogador conectado é a autoridade; ao sair, o servidor elege outro e aumenta a época. Capturas antigas e publicações de seguidores são recusadas/descartadas. Até 64 atores elegíveis em 180 m do host são amostrados a 10 Hz e enviados somente ao outro jogador. A aplicação usa tempo decorrido, interpolação de posição/rotação e referências nativas com geração conferida.
+
+São usados os monstros comuns, NPCs, objetos móveis da lista explícita e armas soltas do próprio jogo. Hash de mapa, nome e colocação original identificam o mesmo objeto entre processos. A IA original fica suspensa somente para um ator correspondente com estado recém-aplicado no cliente; o host continua executando sua IA. Expiração, desconexão e troca de host liberam referências e devolvem a autoridade local.
+
+**Atores precisam estar carregados nos dois jogos.** Ausentes são contados, não criados. Extras não são ocultados. Chefes, atores dinâmicos sem identidade de mapa, trajetórias físicas completas, combate contra o Link remoto, alvo mais próximo, agenda/diálogo exato de NPCs e persistência não estão implementados aqui. Animação é o pedido AS, não toda a fase/variáveis da árvore. Pegar/carregar um objeto no cliente pode sofrer correção pelo estado do host. Coleta/descarte anteriores mantêm os limites de Hateno descritos acima.
+
 ## Diagnóstico e validação
 
-O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativos dos dois clientes e os inclui no próprio `diagnostico.txt`, sem congelar a janela. A coleta leve não lê memória privada de atores nem calcula hash das bibliotecas grandes. Há também telemetria `[hyrulem]` no log de cada processo enquanto a sessão está ativa. **Diagnosticar.cmd** gera `native-preview-diag.14`, incluindo:
+O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativos dos dois clientes e os inclui no próprio `diagnostico.txt`, sem congelar a janela. A coleta leve não lê memória privada de atores nem calcula hash das bibliotecas grandes. Há também telemetria `[hyrulem]` no log de cada processo enquanto a sessão está ativa. **Diagnosticar.cmd** gera `native-preview-diag.15`, incluindo:
 
 - `armor_references`, `armor_head_bones`, `armor_upper_bones`, `armor_lower_bones`: peças encontradas nas referências reais e ossos próprios capturados.
 - `visibility_captured`, `visibility_applied`, `effect_properties_captured`, `effect_properties_applied`: máscaras/condições capturadas e aplicações acumuladas.
 - `skeleton_captured`, `skeleton_received`, `body_pose_applied`, `skeleton_applied`, `armor_source`: captura, chegada pela rede, aplicação ao corpo, aplicação total e origem das roupas.
 - `pose_capture_status`, `pose_bones_skipped`: motivo da captura incompleta. A captura exige matrizes válidas e não publica um quadro corrompido.
 - `drop_error`, `drop_inventory_before`, `drop_inventory_after`: motivo nativo e quantidades conferidas do descarte de maçã. Não confundir ausência de maçã com erro de rede.
+- `world_role`, `world_epoch`, `world_captured`, `world_matched`, `world_missing`, `world_applied`, `world_ai_skipped`, `world_animations_applied`: papel (1 host/2 seguidor), época, captura, correspondência, ausentes, aplicações, decisões locais suspensas e pedidos AS aplicados. Ausente não é destruído.
 - `pending_zero_events`: evidências de vida zero aguardando confirmação.
 - `world_items_active`, `heartbeat_age_ms`, `source_materials`: modo ativo e observações.
 - `native_drop_count`, `native_drops_active`, `native_drop_local_recovery`: descartes normais e recuperação local.
@@ -85,6 +94,6 @@ O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativ
 - `enemies_json` com `damage`: vida e contador cumulativo observado.
 - `replica_failures`, `pending_inventory_checks`: criação recusada e resultado de inventário ainda incerto.
 
-Testes Go/TCP e race, testes C com memória sintética, emissão compilada dos hooks, 35 assinaturas únicas privadas e roundtrips do setter nativo foram executados. Builds/instalação Windows são verificados no CI. Isso não substitui jogar com dois clientes. `native_ready` permanece reservado à geração completa; não anuncia combate/IA/interação geral prontos.
+Testes Go/TCP e race, testes C com memória sintética, emissão compilada dos hooks, 36 assinaturas únicas privadas e roundtrips do setter nativo foram executados. Builds/instalação Windows são verificados no CI. Isso não substitui jogar com dois clientes. `native_ready` permanece reservado à geração completa; não anuncia combate/IA/interação geral prontos.
 
-[Auditoria](../docs/AUDITORIA_0.5.0-preview.14.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.
+[Auditoria](../docs/AUDITORIA_0.5.0-preview.15.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.
