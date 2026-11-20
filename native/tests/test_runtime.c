@@ -47,7 +47,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     else if (fn==g_site.actor_index_release) {ST64(c->x[0],0);ST32(c->x[0]+8,UINT32_MAX);ST8(c->x[0]+12,0);}
     else if (fn==g_site.actor_link_release) ST64(c->x[0]+8,0);
     else if (fn==g_site.hm_delete_actor) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);deletes++;ST8(c->x[0]+0x64,3);}
-    else if (fn==g_site.hm_set_mtx) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);assert(c->x[2]<=1);memcpy((void *)(uintptr_t)(c->x[0]+0x398),(void *)(uintptr_t)c->x[1],48);moves++;}
+    else if (fn==g_site.hm_set_mtx) {assert(c->x[0]==mock_actor||c->x[0]>=HEAP_BASE+0x20000);assert(c->x[2]<=1);assert(c->x[3]==(world_test?c->x[2]:0));memcpy((void *)(uintptr_t)(c->x[0]+0x398),(void *)(uintptr_t)c->x[1],48);moves++;}
     else if (fn==g_site.hm_play_as) {assert(c->x[0]==HEAP_BASE+0x5000||world_test);plays++;
         if(world_test&&!world_no_as_request){uint64_t request=HEAP_BASE+0xe8000;memset((void *)(uintptr_t)request,0,0x38);ST64(request+0x10,LD64(c->x[1]+8));ST32(request+0x18,(uint32_t)c->x[2]);ST32(request+0x1c,(uint32_t)c->x[3]);ST8(request+0x21,(unsigned char)c->x[4]);Cpu observed=*c;observed.x[1]=request;rt_hyrulem_capture_as(&observed);}
         c->x[0]=world_test&&!world_no_as_request?0:1;}

@@ -43,3 +43,13 @@ A nova interpolação continua da última matriz aplicada pela rede, armazenada 
 Os pedidos AS já chegavam com nomes como Walk, Run e Face_C_Default, mas o receptor interpretava o registrador de retorno do wrapper nativo como sucesso. Esse wrapper não oferece um retorno booleano confiável; a nova confirmação usa o hook de entrada do pedido, após lookup de recurso, e não reinicia repetidamente uma animação já aceita. A captura normaliza índices de grupo/slot como o motor antes de limitar os dois canais transmitidos. Testes incluem índices padrão, retorno zero com pedido aceito e retorno não zero sem pedido.
 
 Estas correções ainda aguardam novo teste GPU. Reconhecimento, pedido aceito e modelo desenhado continuam evidências diferentes.
+
+## GPU: revisão 0a0b644d e experimento seguinte
+
+A revisão 0a0b644d passou no CI Linux/Windows e na construção/instalação do runtime. No PC com duas instâncias, a continuação da trajetória de rede manteve as raízes dos modelos próximas das capturas do host, e o hook confirmou pedidos AS (41 na rua de Hateno; 116 no acampamento). O timeout devolveu world_role a zero. Esses números não comprovam física nem todos os ossos desenhados.
+
+O primeiro teste no acampamento foi inválido para correspondência: o segundo teleporte não terminou e o cliente permaneceu em Hateno. Os relatórios desse teste foram conservados. O teste seguinte exigiu estado done do teleporte e conferiu as coordenadas reais nos dois processos antes de abrir a sessão. Nesse teste, os últimos quadros encontraram 23/23 e 20/20 atores; quatro leituras independentes compararam 23/23, sem duplicatas, com erro máximo de raiz de modelo de 0,323 m. O máximo de posição interna chegou a 58,92 m em NPCs inativos: simulation_ok permaneceu false e ok global continuou false.
+
+A inspeção adicional leu a paleta de ossos usada no desenho. Algumas raízes de Bokoblins estavam próximas do ator e outras ainda divergiam, apesar da raiz do ModelGroup correta. As imagens não foram aceitas como prova completa: vegetação/ângulo dificultaram observar todos os inimigos. Portanto visual_ok do instrumento antigo significa somente raiz do ModelGroup; não certifica a paleta nem o rendering.
+
+O experimento seguinte ativa a notificação nativa de física na segunda chamada de hm_set_mtx (a atualização imediata), mantendo a primeira chamada pendente e todos os controles de referências/autoridade. A análise privada anterior mostrou que esse argumento aciona os caminhos adicionais do PhysicsSystem; não altera estado/sleep flags por escrita bruta. O teste sintético exige o contrato do argumento somente nas transformações do seguidor e mantém CPU/isolamento. Ainda é hipótese a validar com GPU e paleta, não correção comprovada. Nenhuma preview.15 foi publicada.
