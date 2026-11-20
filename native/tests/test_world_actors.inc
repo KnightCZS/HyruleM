@@ -4,9 +4,9 @@
     uint64_t wa=HEAP_BASE+0x50000,wn=HEAP_BASE+0x52000,wm=wa+0x1000,nm=wn+0x1000,was=wa+0xa00,waroot=wa+0xe00;
     float host_root[12]={1,0,0,3430,0,1,0,236,0,0,1,2100};memcpy((void *)(uintptr_t)(owner+0x398),host_root,48);
     for(unsigned i=0;i<2;i++){uint64_t a=i?wn:wa,map=i?nm:wm;ST8(a+0x64,i?2:1);ST64(a+0x4e0,a+0x1700);ST64(a+0x10,a+0x900);strcpy((char *)(uintptr_t)(a+0x900),i?"Npc_Test":"Enemy_Bokoblin_Junior");ST64(a+0x7c8,map);ST32(map+0x58,100+i);for(unsigned j=0;j<3;j++){float f=host_root[3+j*4];memcpy((void *)(uintptr_t)(map+0x5c+j*4),&f,4);}memcpy((void *)(uintptr_t)(a+0x398),host_root,48);ST64(a+0x68,a+0x800);ST32(a+0x840,7);ST64(a+0x848,a);}
-    ST64(wa+0x560,was);ST64(was+0xd8,wa);ST32(was+0xb8,1);ST64(was+0xc0,wa+0xc00);ST64(wa+0x558,waroot);ST64(waroot+8,wa);
+    ST64(wa+0x560,was);ST64(was+0xd8,wa);ST32(was+0xb8,1);ST64(was+0xc0,wa+0xc00);ST32(wa+0xc20,1);ST64(wa+0xc28,wa+0x1b00);ST64(wa+0x558,waroot);ST64(waroot+8,wa);
     ST32(creator+0x4c,0x7b8);ST32(creator+0x48,2);ST64(head,wa+0x7b8);ST64(wa+0x7b8,wn+0x7b8);ST64(wn+0x7b8,head);
-    uint64_t wr=wa+0x1500,wkey=wa+0x1600;ST64(wr+0x10,wkey);strcpy((char *)(uintptr_t)wkey,"Walk");ST32(wr+0x18,0);ST32(wr+0x1c,0);ST8(wr+0x21,1);Cpu world_cpu=before;world_cpu.x[0]=was;world_cpu.x[1]=wr;Cpu world_saved=world_cpu;uint64_t saved_world_info=LD64(g_site.player_info);ST64(g_site.player_info,0);rt_hyrulem_capture_as(&world_cpu);ST64(g_site.player_info,saved_world_info);assert(!memcmp(&world_cpu,&world_saved,sizeof world_cpu));
+    uint64_t wr=wa+0x1500,wkey=wa+0x1600;ST64(wr+0x10,wkey);strcpy((char *)(uintptr_t)wkey,"Walk");ST32(wr+0x18,1);ST32(wr+0x1c,UINT32_MAX);ST8(wr+0x21,1);Cpu world_cpu=before;world_cpu.x[0]=was;world_cpu.x[1]=wr;Cpu world_saved=world_cpu;uint64_t saved_world_info=LD64(g_site.player_info);ST64(g_site.player_info,0);rt_hyrulem_capture_as(&world_cpu);ST64(g_site.player_info,saved_world_info);assert(!memcmp(&world_cpu,&world_saved,sizeof world_cpu));
     char *wcmd[]={"hm_world_sample","0123456789abcdef","0123456789abcdef01234567","1","1","0","0","0","0","0","-"};unsigned world_calls=calls,world_creates=creates,world_deletes=deletes,world_grants=inventory_grants,world_debits=inventory_debits;actor_world_sample(11,wcmd,&r);assert(!r.failed&&calls==world_calls);
     WorldActor dormant={0};assert(actor_world_read(wn,&dormant));ST8(wn+0x64,0);assert(!actor_world_read(wn,&dormant));ST8(wn+0x64,3);assert(!actor_world_read(wn,&dormant));ST8(wn+0x64,2);ST64(wn+0x4e0,0);assert(!actor_world_read(wn,&dormant));ST64(wn+0x4e0,wn+0x1700);
     actor_world_tick(&cpu,owner,0x7000001000,false);assert(actor_world_seen_count==2&&actor_world_frame_seq==1&&actor_world_seen[0].tracks[0].sequence>0&&!memcmp(&cpu,&before,sizeof cpu));
@@ -26,6 +26,16 @@
     assert(rt_hyrulem_world_ai(&world_cpu)&&!memcmp(&world_cpu,&world_saved,sizeof world_cpu));
     for(unsigned i=0;i<ACTOR_WORLD_MAX;i++)if(actor_world_bindings[i].actor)actor_world_bindings[i].started=now_ms()-300;
     actor_world_tick(&cpu,owner,0x7000001000,false);assert(fabsf(read_float(wa+0x3a4)-3440)<.001f&&read_float(owner+0x3a4)==3430&&!memcmp(&cpu,&before,sizeof cpu));
+    // A later native movement pass must not reset the next network blend.
+    for(unsigned i=0;i<2;i++)rows[i].matrix[3]+=10;
+    actor_world_encode(rows,2,world_encoded);wcmd[5]="2";actor_world_sample(11,wcmd,&r);assert(!r.failed);
+    float local_override=3400;memcpy((void *)(uintptr_t)(wa+0x3a4),&local_override,4);
+    actor_world_tick(&cpu,owner,0x7000001000,false);assert(read_float(wa+0x3a4)>=3439.9f&&read_float(wa+0x3a4)<3441.f);
+    // A nonzero leftover return is not proof that an AS request was accepted.
+    unsigned confirmed_as=actor_world_as_applied;world_no_as_request=true;strcpy(rows[0].tracks[0].name,"Missing");rows[0].tracks[0].sequence++;
+    actor_world_encode(rows,2,world_encoded);wcmd[5]="3";actor_world_sample(11,wcmd,&r);actor_world_tick(&cpu,owner,0x7000001000,false);assert(actor_world_as_applied==confirmed_as);
+    world_no_as_request=false;strcpy(rows[0].tracks[0].name,"Walk");rows[0].tracks[0].sequence++;
+    actor_world_encode(rows,2,world_encoded);wcmd[5]="4";actor_world_sample(11,wcmd,&r);actor_world_tick(&cpu,owner,0x7000001000,false);assert(actor_world_as_applied==confirmed_as+1);
     ST32(wa+0x840,8);assert(!rt_hyrulem_world_ai(&world_cpu));ST32(wa+0x840,7);
     // An actor absent from the follower's loaded list is counted, not created
     // through an unsafe guessed NPC constructor or interpreted as destroyed.

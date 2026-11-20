@@ -79,11 +79,17 @@ static bool actor_world_read(uint64_t a,WorldActor *out){
 static bool actor_world_weak(uint64_t a,uint64_t block,uint32_t generation){return range(a,0x70)&&range(block,0x50)&&generation!=UINT32_MAX&&LD32(block+0x40)==generation&&LD64(block+0x48)==a&&LD8(a+0x64)!=3;}
 static bool actor_world_index(const WorldBinding *b){return b->storage&&LD8(b->storage+INDEX+12)&&actor_world_weak(b->actor,LD64(b->storage+INDEX),LD32(b->storage+INDEX+8));}
 static void actor_world_capture_as(uint64_t as,uint64_t request){
+    // The native request clamps out-of-range/default indices to group/slot 0.
+    // NPCs need that normalization before the bounded two-track wire format.
+    unsigned groups=LD32(as+0xb8),group=LD32(request+0x18);uint64_t list=LD64(as+0xc0);
+    if(!groups||groups>8||!range(list,groups*0x50))return;if(group>=groups)group=0;if(group>1)return;
+    unsigned slots=LD32(list+group*0x50+0x20),slot=LD32(request+0x1c);uint64_t controllers=LD64(list+group*0x50+0x28);
+    if(!slots||slots>8||!range(controllers,slots*0x98))return;if(slot>=slots)slot=0;if(slot>1)return;
     uint64_t a=LD64(as+0xd8),p=LD64(request+0x10);char name[64];if(!range(a,0x7d0)||!actor_world_name(LD64(a+0x10),name)||!range(p,64)||!memchr((void *)(uintptr_t)p,0,64)||!clip_name((char *)(uintptr_t)p))return;
     uint64_t block=LD64(a+0x68);if(!range(block,0x50))return;uint32_t generation=LD32(block+0x40);if(!actor_world_weak(a,block,generation))return;
     pthread_mutex_lock(&actor_world_mutex);unsigned at=128,oldest=0;for(unsigned i=0;i<128;i++){if(actor_world_as[i].actor==a&&actor_world_as[i].block==block&&actor_world_as[i].generation==generation){at=i;break;}if(actor_world_as[i].at<actor_world_as[oldest].at)oldest=i;}
     if(at==128){at=oldest;memset(&actor_world_as[at],0,sizeof actor_world_as[at]);}WorldAS *cache=&actor_world_as[at];cache->actor=a;cache->block=block;cache->generation=generation;cache->at=now_ms();
-    Track *t=&cache->tracks[LD32(request+0x18)];memset(t,0,sizeof *t);snprintf(t->name,64,"%s",(char *)(uintptr_t)p);t->sequence=++actor_world_capture_seq;t->force=(LD8(request+0x21)&1)!=0;t->slot=LD32(request+0x1c);pthread_mutex_unlock(&actor_world_mutex);
+    Track *t=&cache->tracks[group];memset(t,0,sizeof *t);snprintf(t->name,64,"%s",(char *)(uintptr_t)p);t->sequence=++actor_world_capture_seq;t->force=(LD8(request+0x21)&1)!=0;t->slot=slot;pthread_mutex_unlock(&actor_world_mutex);
 }
 // Gate the Actor dispatcher before its virtual RootAI call, including overrides.
 // The owner backlink
@@ -194,8 +200,13 @@ static void actor_world_animate(Cpu *c,WorldBinding *b,uint64_t a,const WorldAct
     for(unsigned i=0;i<2&&i<count;i++){
         const Track *t=&state->tracks[i];Track *old=&b->played[i];if(!t->name[0]||(!strcmp(t->name,old->name)&&t->slot==old->slot&&(!t->force||t->sequence==old->sequence)))continue;
         snprintf((char *)(uintptr_t)(b->storage+ASNAME),64,"%s",t->name);ST64(b->storage+SSTR,vt);ST64(b->storage+SSTR+8,b->storage+ASNAME);
+        pthread_mutex_lock(&actor_world_mutex);uint64_t before=actor_world_capture_seq;pthread_mutex_unlock(&actor_world_mutex);
         Cpu scratch=*c;scratch.x[0]=as;scratch.x[1]=b->storage+SSTR;scratch.x[2]=i;scratch.x[3]=t->slot;scratch.x[4]=t->force||strcmp(t->name,old->name);scratch.x[5]=1;scratch.x[6]=0;float blend=-1.f;scratch.v[0]=scratch.v[1]=0;memcpy(&scratch.v[0],&blend,4);memcpy(&scratch.v[1],&blend,4);guest_call(&scratch,g_site.hm_play_as);
-        if(scratch.x[0]){*old=*t;pthread_mutex_lock(&actor_world_mutex);actor_world_as_applied++;pthread_mutex_unlock(&actor_world_mutex);}
+        // This native wrapper has no success return. Its request-entry hook is
+        // reached after resource lookup; acknowledge that observation instead.
+        bool accepted=false;pthread_mutex_lock(&actor_world_mutex);
+        for(unsigned j=0;j<128;j++){WorldAS *observed=&actor_world_as[j];Track *track=&observed->tracks[i];if(observed->actor==a&&actor_world_weak(a,observed->block,observed->generation)&&track->sequence>before&&track->slot==t->slot&&!strcmp(track->name,t->name)){accepted=true;break;}}
+        if(accepted){*old=*t;actor_world_as_applied++;}pthread_mutex_unlock(&actor_world_mutex);
     }
 }
 static void actor_world_tick(Cpu *c,uint64_t local,uint64_t vt,bool paused){
@@ -216,7 +227,12 @@ static void actor_world_tick(Cpu *c,uint64_t local,uint64_t vt,bool paused){
         if(mode.role==1){current.id=b->id;pthread_mutex_lock(&actor_world_mutex);for(unsigned j=0;j<128;j++)if(actor_world_as[j].actor==b->actor&&actor_world_weak(b->actor,actor_world_as[j].block,actor_world_as[j].generation)){memcpy(current.tracks,actor_world_as[j].tracks,sizeof current.tracks);break;}pthread_mutex_unlock(&actor_world_mutex);if(count<ACTOR_WORLD_MAX)seen[count++]=current;}
         else{
             const WorldActor *target=NULL;for(unsigned j=0;j<mode.count;j++)if(actor_world_same(&current,&mode.actors[j])){target=&mode.actors[j];break;}
-            if(target){matched++;missing--;if(new_frame||b->id!=target->id||!b->started){b->duration=interval;memcpy(b->from,current.matrix,48);memcpy(b->target,target->matrix,48);b->started=now;pthread_mutex_lock(&actor_world_mutex);b->id=target->id;pthread_mutex_unlock(&actor_world_mutex);}
+            if(target){matched++;missing--;if(new_frame||b->id!=target->id||!b->started){b->duration=interval;
+                    // Background/culled NPC movement can rewrite the actor's
+                    // matrix between barriers. Continue the network trajectory,
+                    // not that local simulation, after the first binding.
+                    const void *from=b->id==target->id&&b->started&&b->applied_at?(void *)(uintptr_t)(b->storage+MATRIX):(const void *)current.matrix;
+                    memcpy(b->from,from,48);memcpy(b->target,target->matrix,48);b->started=now;pthread_mutex_lock(&actor_world_mutex);b->id=target->id;pthread_mutex_unlock(&actor_world_mutex);}
                 // All actors use one interpolation duration for this received
                 // frame; keep it with the binding, not the next heartbeat.
                 float distance=0;for(unsigned j=0;j<3;j++){float d=b->from[3+j*4]-b->target[3+j*4];distance+=d*d;}float t=mode.paused||distance>400?1.f:(float)(now-b->started)/(float)b->duration;

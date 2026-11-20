@@ -33,3 +33,13 @@ Não estabelece ainda mundo integralmente idêntico: atores ausentes não são c
 O próximo teste deve usar cópias dos saves em dois processos Windows com GPU: observar NPCs/monstros/props correspondentes, confirmar contadores de captura/correspondência/aplicação e IA suspensa apenas no seguidor, provocar movimento no host e verificar perda/retorno do host e carregamento. Contador crescente não substitui observação do movimento desenhado. Até esse teste ser concluído, rendering desta camada permanece não verificado.
 
 ABI 11, protocolo 11, gamelib ABI 4. Há um novo hook: regeneração privada obrigatória. Nada do módulo, recursos, saves, código de jogo gerado ou disassembly integra a publicação.
+
+## Retomada: teste da revisão com despacho virtual
+
+A revisão 462f5178 foi instalada e a biblioteca privada regenerada no PC. Foram novamente encontrados 26/26 atores, sem identidades duplicadas. Leituras independentes observaram até 25,16 m de diferença no ator e 16,41 m na raiz do modelo. Outros instantes ficaram abaixo de 0,13 m: a aplicação alternava com transformações locais entre fases, sem estabilidade suficiente para aprovação.
+
+A nova interpolação continua da última matriz aplicada pela rede, armazenada no próprio binding, em vez de recomeçar da matriz que a simulação local sobrescreve. A regressão injeta essa sobrescrita entre pacotes e exige continuidade.
+
+Os pedidos AS já chegavam com nomes como Walk, Run e Face_C_Default, mas o receptor interpretava o registrador de retorno do wrapper nativo como sucesso. Esse wrapper não oferece um retorno booleano confiável; a nova confirmação usa o hook de entrada do pedido, após lookup de recurso, e não reinicia repetidamente uma animação já aceita. A captura normaliza índices de grupo/slot como o motor antes de limitar os dois canais transmitidos. Testes incluem índices padrão, retorno zero com pedido aceito e retorno não zero sem pedido.
+
+Estas correções ainda aguardam novo teste GPU. Reconhecimento, pedido aceito e modelo desenhado continuam evidências diferentes.

@@ -2,6 +2,9 @@
 
 ## 0.5.0-preview.15
 
+- Mantém a interpolação sobre a última matriz da rede, evitando contaminação por movimento local entre pacotes.
+- Confirma AS pelo pedido nativo observado, sem inferir sucesso de retorno booleano; normaliza grupo/slot como o motor.
+
 - Corrige o filtro exclusivo de estado 1 que omitia NPCs de mapa no estado inicializado/inativo 2, encontrado no teste com GPU.
 - Autoridade de mundo: até 64 atores de mapa em 180 m, transformações interpoladas e pedidos AS em atores reais correspondentes.
 - RootAI local suspensa somente para seguidores frescos com referência válida; timeout/sucessão libera controle.

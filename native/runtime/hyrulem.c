@@ -128,8 +128,9 @@ static bool clip_name(const char *s) {
 void rt_hyrulem_capture_as(Cpu *c) {
     if(!supported()||!g_site.hm_as_play_entry)return;
     uint64_t as=c->x[0],request=c->x[1];
-    if(!range(as,0xe0)||!range(request,0x38)||LD32(request+0x18)>1||LD32(request+0x1c)>1)return;
+    if(!range(as,0xe0)||!range(request,0x38))return;
     actor_world_capture_as(as,request);
+    if(LD32(request+0x18)>1||LD32(request+0x1c)>1)return;
     // NPCs can request their first AS before PlayerInfo exists.
     if(!range(g_site.player_info,8))return;uint64_t info=LD64(g_site.player_info);if(!range(info,0x68))return;
     uint64_t local=LD64(info+0x60),ptr=LD64(request+0x10);
