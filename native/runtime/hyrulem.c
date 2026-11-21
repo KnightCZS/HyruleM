@@ -523,10 +523,18 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     }
     if (failed) { if(actor)remove_remote(c);return; } // Preserve the fatal result during deferred cleanup.
     bool stale=d.received && now_ms()-d.received>2500;
-    if (!d.visible || stale) {
-        if(!remove_remote(c)){publish("cleaning-up","",applied,false);return;}
+    float remote_distance=0;
+    for(int i=0;i<3;i++){
+        float target=i==0?d.x:i==1?d.y:d.z;
+        float delta=target-read_float(local+0x3a4+i*16);
+        remote_distance+=delta*delta;
+    }
+    bool distant=d.visible&&(!isfinite(remote_distance)||remote_distance>200.f*200.f);
+    if (!d.visible || stale || distant) {
+        if(!remove_remote(c)){publish(distant?"out-of-range":"cleaning-up","",applied,false);return;}
+        activation_waiting=false;
         applied=d.seq;
-        publish(stale?"expired":"idle","",applied,false); return;
+        publish(distant?"out-of-range":stale?"expired":"idle","",applied,false); return;
     }
     if (spawning) {
         if (call(c,g_site.hm_handle_failed,storage+HANDLE,0,0,0,0,0,0)) {
@@ -564,7 +572,10 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     snprintf(published.reference_status,sizeof published.reference_status,"%s",ref.status);
     published.actor_state=ref.state;
     pthread_mutex_unlock(&mutex);
-    if(ref.invalid){fatal(c,ref.status);return;}
+    if(ref.invalid){
+        if(applied){if(remove_remote(c)){activation_waiting=false;}publish("streaming","",applied,false);return;}
+        fatal(c,ref.status);return;
+    }
     if(!ref.ptr||ref.state!=1) {
         if(ref.ptr)release_local(c);
         if(!activation_waiting){activation_waiting=true;activation_wait_at=now_ms();}
@@ -573,9 +584,22 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
         // and a temporarily unavailable lease are not an unload notification.
         // Preserve the retained index and wait for a later game callback.
         if(now_ms()-activation_wait_at<15000){publish("activating","",applied,false);return;}
+        if(applied){publish("streaming","",applied,false);return;}
         const char *reason=ref.ptr?"native-activation-timeout":"native-access-timeout";
         if(retry_fallback(c,reason))return;
         fatal(c,reason);return;
+    }
+    if(applied){
+        float delta=0;
+        for(int i=0;i<3;i++){
+            float target=i==0?d.x:i==1?d.y:d.z;
+            float v=target-read_float(ref.ptr+0x3a4+i*16);delta+=v*v;
+        }
+        if(isfinite(delta)&&delta>180.f*180.f){
+            release_local(c);
+            if(!remove_remote(c)){publish("streaming","",applied,false);return;}
+            activation_waiting=false;publish("streaming","",applied,false);return;
+        }
     }
     activation_waiting=false;
     uint64_t a=ref.ptr;

@@ -1,4 +1,4 @@
-# HyruleM 0.5.0-preview.17.1 — multiplayer experimental
+# HyruleM 0.5.0-preview.17.2 — multiplayer experimental
 
 Primeira camada de mundo sob autoridade do anfitrião: posição, rotação e pedidos de animação dos atores de mapa já carregados nos dois jogos. Usa os atores nativos correspondentes, com IA local suspensa apenas no seguidor que recebeu estado recente. Até 64 atores em 180 m; veja os limites abaixo.
 

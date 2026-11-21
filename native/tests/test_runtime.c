@@ -79,6 +79,7 @@ int main(void) {
     g_site.player_info=HEAP_BASE;g_site.hm_creator=HEAP_BASE+8;g_site.hm_heap_mgr=HEAP_BASE+16;
     ST64(g_site.player_info,HEAP_BASE+0x100);ST64(HEAP_BASE+0x160,HEAP_BASE+0x1000);
     ST8(HEAP_BASE+0x1064,1);
+    float initial_local[12]={1,0,0,3434,0,1,0,236,0,0,1,2101};memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),initial_local,sizeof initial_local);
     g_site.hm_actor_mgr=HEAP_BASE+0x28;uint64_t manager=HEAP_BASE+0xd000;
     ST64(g_site.hm_actor_mgr,manager);ST8(manager+0x29,7);ST8(manager+0x2a,8);
     ST64(g_site.hm_creator,HEAP_BASE+0x200);ST64(g_site.hm_heap_mgr,HEAP_BASE+0x300);
@@ -133,7 +134,7 @@ int main(void) {
     // A stale generation is not an activation delay: never move/dereference it.
     hyrulem_reset();create_state=1;open_session(2,start,&r);remote(16,pose,&r);rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);
     old_moves=moves;ST32(retained+0x40,8);rt_hyrulem_tick(&cpu,0);
-    assert(failed&&moves==old_moves&&!actor&&!strcmp(published.first_error,"index-mismatch"));
+    assert(!failed&&moves==old_moves&&!actor&&!strcmp(published.state,"streaming"));
     // Activation has a bounded fallback, not a rapid create/delete loop.
     hyrulem_reset();create_state=2;open_session(2,start,&r);remote(16,pose,&r);rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);
     activation_wait_at=now_ms()-16000;rt_hyrulem_tick(&cpu,0);
@@ -144,9 +145,14 @@ int main(void) {
     // Denied cleanup keeps ownership until a later permitted callback.
     hyrulem_reset();create_state=1;open_session(2,start,&r);remote(16,pose,&r);rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);
     deny_lease=true;rt_hyrulem_tick(&cpu,0);activation_wait_at=now_ms()-16000;rt_hyrulem_tick(&cpu,0);
-    assert(failed&&actor&&LD8(storage+INDEX+12)&&!strcmp(published.error,"native-access-timeout"));
+    assert(!failed&&actor&&LD8(storage+INDEX+12)&&!strcmp(published.state,"streaming"));
     old_creates=creates;rt_hyrulem_tick(&cpu,0);assert(creates==old_creates);
-    deny_lease=false;rt_hyrulem_tick(&cpu,0);assert(!actor&&!LD8(storage+INDEX+12)&&!strcmp(published.error,"native-access-timeout"));
+    deny_lease=false;rt_hyrulem_tick(&cpu,0);assert(actor&&published.active&&!failed);
+    float distant_local[12]={1,0,0,-3607,0,1,0,286,0,0,1,-1805};
+    memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),distant_local,sizeof distant_local);
+    rt_hyrulem_tick(&cpu,0);assert(!actor&&!failed&&!strcmp(published.state,"out-of-range"));
+    memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),initial_local,sizeof initial_local);
+    rt_hyrulem_tick(&cpu,0);rt_hyrulem_tick(&cpu,0);assert(actor&&published.active&&!failed);
     hyrulem_reset();create_state=1;
     // A rejected native creation is reported once, without an allocation/retry loop.
     reject=true;r.failed=false;open_session(2,start,&r);remote(16,pose,&r);
@@ -167,6 +173,7 @@ int main(void) {
     uint64_t enemy=HEAP_BASE+0x7000,map=HEAP_BASE+0x8000,vt=HEAP_BASE+0xa000;
     strcpy((char *)(uintptr_t)(HEAP_BASE+0x9000),"Enemy_Bokoblin_Junior");
     ST64(enemy,vt);ST64(vt+0x2b8,MAIN_BASE+0x100);ST64(enemy+0x10,HEAP_BASE+0x9000);
+    memcpy((void *)(uintptr_t)(enemy+0x398),initial_local,sizeof initial_local);
     ST8(enemy+0x64,1);ST64(enemy+0x7c8,map);ST32(map+0x58,42);ST32(enemy+0x900,100);
     uint64_t creator=HEAP_BASE+0x200,head=creator+0x38;
     ST32(creator+0x4c,0x7b8);ST32(creator+0x48,1);ST64(head,enemy+0x7b8);ST64(enemy+0x7b8,head);
@@ -217,6 +224,7 @@ int main(void) {
     capture_gear(&cpu,HEAP_BASE+0x1000);assert(!strcmp(local_gear[1].name,"Weapon_Bow_001")&&!strcmp(local_gear[2].name,"Weapon_Shield_001"));local_equipped[1]=local_equipped[2]=0;
     ownerMatrix[3]=NAN;memcpy((void *)(uintptr_t)(source+0x958),ownerMatrix,sizeof ownerMatrix);
     capture_gear(&cpu,HEAP_BASE+0x1000);assert(!local_gear[0].name[0]&&local_gear[0].matrix[0]==1&&isfinite(local_gear[0].matrix[3])&&local_ready);
+    memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),initial_local,sizeof initial_local);
     // Parse one atomic six-slot frame and reject a late invalid matrix without
     // changing the already queued pose or any slot.
     Desired previous_visuals=desired;char *atomic[94];memcpy(atomic,pose,sizeof pose);atomic[2]="2";

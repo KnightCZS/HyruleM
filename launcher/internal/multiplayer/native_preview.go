@@ -305,7 +305,7 @@ func (b *Bridge) updateNative(ctx context.Context, n *nativePreview, now time.Ti
 		n.spawnAttempts = status.SpawnAttempts
 		n.waitingSince = now
 	}
-	if status.Active {
+	if status.Active || status.State == "out-of-range" || status.State == "streaming" {
 		n.waitingSince = now
 	}
 	if len(remotes) > 0 && !status.Active && now.Sub(n.waitingSince) > 18*time.Second {

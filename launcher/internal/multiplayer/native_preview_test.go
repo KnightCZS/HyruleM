@@ -79,6 +79,14 @@ func TestNativeActivationWaitAndFallbackDeadline(t *testing.T) {
 	if err := b.updateNative(context.Background(), n, now); err != nil {
 		t.Fatal("brief reactivation used original session deadline", err)
 	}
+	for _, state := range []string{"streaming", "out-of-range"} {
+		game.status = json.RawMessage(`{"state":"` + state + `","tick_age_ms":0}`)
+		n.waitingSince = now.Add(-time.Minute)
+		n.lastStatus = time.Time{}
+		if err := b.updateNative(context.Background(), n, now); err != nil {
+			t.Fatalf("%s disconnected world: %v", state, err)
+		}
+	}
 }
 
 func (f *legacyNativeGame) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
