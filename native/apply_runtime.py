@@ -120,6 +120,10 @@ def apply(root):
         "    assert _word(gen, a) == 0xa9bc7bfd, hex(_word(gen, a))\n"
         "    return '{ extern _Bool rt_hyrulem_item_pickup(Cpu *); if (rt_hyrulem_item_pickup(c)) return; c->sp -= 0x40; ST64(c->sp, c->x[29]); ST64(c->sp + 8, c->x[30]); }'\n\n"
         "PATCHES['hm_item_pickup'] = _hm_item_pickup\n\n\n")
+    addition+=("def _hm_capture_birth(gen, a):\n"
+        "    assert _word(gen, a) == 0xf942e2c8, hex(_word(gen, a))\n"
+        "    return '{ extern void rt_hyrulem_capture_birth(Cpu *); rt_hyrulem_capture_birth(c); c->x[8] = LD64(c->x[22] + 0x5c0); }'\n\n"
+        "PATCHES['hm_birth_capture'] = _hm_capture_birth\n\n")
     addition+=("def _hm_capture_zero(gen, a):\n"
         "    assert _word(gen, a) == 0xa9bb7bfd, hex(_word(gen, a))\n"
         "    return '{ extern void rt_hyrulem_capture_zero(Cpu *); rt_hyrulem_capture_zero(c); c->sp -= 0x50; ST64(c->sp, c->x[29]); ST64(c->sp + 8, c->x[30]); }'\n\n"
@@ -156,9 +160,10 @@ def apply(root):
     shutil.copyfile(HERE / "runtime/hyrulem_effects.inc", root / "runtime/hyrulem_effects.inc")
     replace_once(root / "runtime/control.c", "MAX_LINE = 4096,", "MAX_LINE = 65536,")
     shutil.copyfile(HERE / "runtime/hyrulem_world.inc", root / "runtime/hyrulem_world.inc")
+    shutil.copyfile(HERE / "runtime/hyrulem_birth.inc", root / "runtime/hyrulem_birth.inc")
     shutil.copyfile(HERE / "runtime/hyrulem_lifecycle.inc", root / "runtime/hyrulem_lifecycle.inc")
     shutil.copyfile(HERE / "runtime/hyrulem_weapons.inc", root / "runtime/hyrulem_weapons.inc")
-    stamp = {"lifecycle_sha256": hashlib.sha256((HERE / "runtime/hyrulem_lifecycle.inc").read_bytes()).hexdigest(), "scene_sha256": hashlib.sha256((HERE / "runtime/hyrulem_scene.inc").read_bytes()).hexdigest(), "upstream": UPSTREAM, "preview_abi": 13, "effects_sha256": hashlib.sha256((HERE / "runtime/hyrulem_effects.inc").read_bytes()).hexdigest(), "weapons_sha256": hashlib.sha256((HERE / "runtime/hyrulem_weapons.inc").read_bytes()).hexdigest(), "world_sha256": hashlib.sha256((HERE / "runtime/hyrulem_world.inc").read_bytes()).hexdigest(), "pose_sha256": hashlib.sha256((HERE / "runtime/hyrulem_pose.inc").read_bytes()).hexdigest(), "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
+    stamp = {"birth_sha256": hashlib.sha256((HERE / "runtime/hyrulem_birth.inc").read_bytes()).hexdigest(), "lifecycle_sha256": hashlib.sha256((HERE / "runtime/hyrulem_lifecycle.inc").read_bytes()).hexdigest(), "scene_sha256": hashlib.sha256((HERE / "runtime/hyrulem_scene.inc").read_bytes()).hexdigest(), "upstream": UPSTREAM, "preview_abi": 13, "effects_sha256": hashlib.sha256((HERE / "runtime/hyrulem_effects.inc").read_bytes()).hexdigest(), "weapons_sha256": hashlib.sha256((HERE / "runtime/hyrulem_weapons.inc").read_bytes()).hexdigest(), "world_sha256": hashlib.sha256((HERE / "runtime/hyrulem_world.inc").read_bytes()).hexdigest(), "pose_sha256": hashlib.sha256((HERE / "runtime/hyrulem_pose.inc").read_bytes()).hexdigest(), "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
     (root / "hyrulem-build.json").write_text(json.dumps(stamp, indent=2) + "\n")
 
 

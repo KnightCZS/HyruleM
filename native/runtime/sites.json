@@ -264,5 +264,12 @@
     "kind": "ref",
     "pattern": "910f6000 94000000/fc000000 aa1303e1 f9400bf3 90000000/9f00001f 91000000/ffc003ff a8c27bfd 14000000/fc000000",
     "at": 5
+  },
+  {
+    "name": "hm_birth_capture",
+    "address": "0x70015354e8",
+    "kind": "code",
+    "pattern": "f942e2c8 f90006a8 b5000068 f942dec8 f90006a8 9102a295 aa1503e0 94000000/fc000000 b9804e88 9100e280 8b160101",
+    "at": 0
   }
 ]

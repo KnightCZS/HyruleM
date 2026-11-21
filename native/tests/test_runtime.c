@@ -60,7 +60,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     // Deliberately clobber every register: the hook must preserve the caller.
     memset(c->v,0x5a,sizeof c->v);c->x[3]=0xdeadbeef;c->nzcv=0xabcdef;c->fpsr=91;
 }
-void control_register(const ControlCmd *cmds,int n) {assert(n==19);}
+void control_register(const ControlCmd *cmds,int n) {assert(n==20);}
 void control_field_str(ControlReply *r,const char *k,const char *v) {}
 void control_field_int(ControlReply *r,const char *k,int64_t v) {}
 void control_field_num(ControlReply *r,const char *k,double v) {}
@@ -386,6 +386,21 @@ int main(void) {
     assert(!r.failed&&!memcmp(&before_scene_mode,&actor_world_mode,sizeof before_scene_mode));
     scoped_world[11]="CDungeon/Dungeon001";actor_world_sample(12,scoped_world,&r);
     assert(!r.failed&&!strcmp(actor_world_mode.scene,"CDungeon/Dungeon001"));
+    // Factory observation is opt-in and never calls native functions in a job.
+    birth_reset();uint64_t born=HEAP_BASE+0xf6000,parent=HEAP_BASE+0xf7000,task=HEAP_BASE+0xf8000,birth_weak=HEAP_BASE+0xf9000;
+    memset((void *)(uintptr_t)born,0,0x4000);
+    ST64(born+0x10,born+0x800);strcpy((char *)(uintptr_t)(born+0x800),"Item_Enemy_00");
+    ST64(born+0x68,birth_weak);ST32(born+0x60,9);ST32(birth_weak+0x40,9);ST64(birth_weak+0x48,born);
+    ST64(task+0x40,parent);ST64(parent+0x10,parent+0x800);strcpy((char *)(uintptr_t)(parent+0x800),"Enemy_Bokoblin_Junior");
+    ST64(parent+0x7c8,parent+0x900);ST32(parent+0x958,123);ST64(task+0x30,task+0x100);ST16(task+0x100,4);
+    Cpu job=cpu;job.x[21]=task;job.x[22]=born;Cpu job_before=job;unsigned calls_before_birth=calls;
+    rt_hyrulem_capture_birth(&job);assert(birth_sequence==0);
+    setenv("HYRULEM_NATIVE_BIRTH_TRACE","1",1);rt_hyrulem_capture_birth(&job);
+    assert(birth_sequence==1&&birth_events[0].parent_hash==123&&birth_events[0].parameters==4&&!strcmp(birth_events[0].parent_name,"Enemy_Bokoblin_Junior"));
+    ST32(birth_weak+0x40,10);rt_hyrulem_capture_birth(&job);assert(birth_sequence==1);
+    ST32(birth_weak+0x40,9);for(unsigned i=0;i<BIRTH_MAX+4;i++)rt_hyrulem_capture_birth(&job);
+    assert(birth_sequence==BIRTH_MAX+5&&calls==calls_before_birth&&!memcmp(&job,&job_before,sizeof job));
+    birth_status(0,NULL,&r);birth_reset();assert(birth_sequence==0);unsetenv("HYRULEM_NATIVE_BIRTH_TRACE");
     puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");

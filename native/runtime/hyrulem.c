@@ -631,7 +631,9 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
     applied=d.seq; publish(resource_variant?"fallback-active":animation_ready?"active":"active-no-animation","",applied,true);
 }
 
+static void birth_reset(void);
 RT_ON_RESET(hyrulem_reset) {
+    birth_reset();
     ground_reset();
     pthread_mutex_lock(&mutex);
     fx_reset();
@@ -663,6 +665,7 @@ static bool number(const char *s, float *out, float limit) {
     return *s && !errno && !*end && isfinite(*out) && fabsf(*out)<=limit;
 }
 #include "hyrulem_items.inc"
+#include "hyrulem_birth.inc"
 
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
@@ -849,6 +852,7 @@ void control_hyrulem_init(void) {
         {"hm_item_state","<session> <world> <id> <actor> <hash> <sx> <sy> <sz> <x> <y> <z> <local> <own> <state> <request>","Queue material visibility/reservation",ground_update,0},
         {"hm_item_deny","<session> <world> <request>","Acknowledge completed material request",ground_deny,0},
         {"hm_items_status","","Material observations, pickup requests and verified receipts",ground_status,CONTROL_PLAYER},
+        {"hm_birth_status","","Inspect opt-in native actor creation diagnostics",birth_status,0},
         {"hm_caps","","HyruleM native capabilities and preview availability",caps,CONTROL_PLAYER},
         {"hm_native_status","","Native actor game-thread acknowledgement",status,CONTROL_PLAYER},
         {"hm_native_open","<session>","Open an experimental native actor session",open_session,0},

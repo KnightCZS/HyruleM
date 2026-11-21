@@ -178,3 +178,20 @@ with tempfile.TemporaryDirectory(prefix='hyrulem-world-ai-') as temp:
  subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
  subprocess.run([str(p/'hook')],check=True)
 print('World AI authority: virtual dispatch skip, original LDR, continuation and CPU preservation passed')
+
+struct.pack_into('<I',image,0x440,0xf942e2c8)
+fragment=patches._hm_capture_birth(gen,base+0x440)
+source='''#include "cpu.h"
+#include <assert.h>
+#include <string.h>
+#include <sys/mman.h>
+static unsigned calls;
+void rt_hyrulem_capture_birth(Cpu *c){assert(c->x[21]==21&&c->x[22]==0x7000000100ull);calls++;}
+static void generated(Cpu *c){FRAGMENT}
+int main(void){assert(mmap((void *)0x7000000000ull,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)!=(void *)-1);Cpu c;memset(&c,0xa5,sizeof c);c.x[21]=21;c.x[22]=0x7000000100ull;ST64(c.x[22]+0x5c0,0x1234);Cpu expected=c;expected.x[8]=0x1234;generated(&c);assert(calls==1&&!memcmp(&c,&expected,sizeof c));return 0;}
+'''.replace('FRAGMENT',fragment)
+with tempfile.TemporaryDirectory(prefix='hyrulem-birth-hook-') as temp:
+ p=Path(temp);(p/'hook.c').write_text(source)
+ subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
+ subprocess.run([str(p/'hook')],check=True)
+print('Birth observer: successful initialization continuation, original LDR and CPU preservation passed')
