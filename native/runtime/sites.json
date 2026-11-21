@@ -250,5 +250,19 @@
     "kind": "code",
     "pattern": "f942ae60 b4000080 f9400008 f9405108 d63f0100 f9400268 aa1303e0 f9415d08",
     "at": 0
+  },
+  {
+    "name": "hm_scene_name",
+    "address": "0x7001dae3d8",
+    "kind": "ref",
+    "pattern": "aa0003f3 90000000/9f00001f 91000000/ffc003ff 94000000/fc000000 aa1303e1 f9400bf3 90000000/9f00001f 91000000/ffc003ff",
+    "at": 2
+  },
+  {
+    "name": "hm_scene_type",
+    "address": "0x7001dae3a0",
+    "kind": "ref",
+    "pattern": "910f6000 94000000/fc000000 aa1303e1 f9400bf3 90000000/9f00001f 91000000/ffc003ff a8c27bfd 14000000/fc000000",
+    "at": 5
   }
 ]

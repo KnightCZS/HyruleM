@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Native presence and loaded-world authority use protocol 11. Full Gen1 combat
+// Native presence and loaded-world authority use protocol 13. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
 	session       string
@@ -37,6 +37,7 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 		AnimationCapture bool   `json:"animation_capture"`
 		ActorJobBarrier  bool   `json:"actor_job_barrier"`
 		VisualEffects    bool   `json:"visual_effect_events"`
+		DistributedWorld bool   `json:"distributed_world"`
 		RoamingGround    bool   `json:"roaming_ground_items"`
 		WorldActors      bool   `json:"world_actor_sync"`
 	}
@@ -65,6 +66,7 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 		return nil, fmt.Errorf("falta o controle de atores do mundo; aguarde a recompilação da biblioteca com o gerador novo")
 	}
 	b.roamingGround = caps.RoamingGround
+	b.distributedWorld = caps.DistributedWorld
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, err
@@ -185,6 +187,7 @@ func (b *Bridge) capturePoseCommand(ctx context.Context, p *Pose, command string
 		UpperSlot     int    `json:"upper_slot"`
 		LowerSlot     int    `json:"lower_slot"`
 		Ready         bool   `json:"ready"`
+		Scene         string `json:"scene"`
 		X, Y, Z       float64
 		Equipment     string `json:"equipment_json"`
 		Skeleton      string `json:"skeleton_b64"`
@@ -204,6 +207,7 @@ func (b *Bridge) capturePoseCommand(ctx context.Context, p *Pose, command string
 	p.Yaw = s.Yaw
 	p.Position = Vec3{s.X, s.Y, s.Z}
 	p.Ready = s.Ready
+	p.Scene = s.Scene
 	p.Upper = AnimationTrack{s.Upper, s.UpperSequence, s.UpperForce, s.UpperSlot}
 	p.Lower = AnimationTrack{s.Lower, s.LowerSequence, s.LowerForce, s.LowerSlot}
 	if s.Equipment != "" {
@@ -405,6 +409,9 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 			break
 		}
 		cmd := fmt.Sprintf("hm_enemy_health %s %d %s %.3f %.3f %.3f %d", n.session, e.Hash, e.Actor, e.Spawn.X, e.Spawn.Y, e.Spawn.Z, shared.Health)
+		if e.Scene != "" {
+			cmd += " " + e.Scene
+		}
 		if err := b.command(ctx, cmd, nil); err != nil {
 			return err
 		}

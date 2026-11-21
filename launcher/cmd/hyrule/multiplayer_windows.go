@@ -325,7 +325,7 @@ func (u *multiplayerUI) host() {
 		u.set(mpHostStatus, err.Error())
 		return
 	}
-	s, err := mp.Listen(address, mp.ServerConfig{SharedItems: u.settings.ShareItems && os.Getenv(core.NativePreviewEnv) == "1", Spawn: mp.Vec3{X: 3437.5, Y: 235.9, Z: 2101.5}, Log: func(s string) { core.AppendLog(filepath.Join(u.a.root, "logs", "servidor.log"), s) }})
+	s, err := mp.Listen(address, mp.ServerConfig{DedicatedWorld: os.Getenv(core.NativePreviewEnv) == "1", StatePath: filepath.Join(u.a.root, "world", "world.json"), SharedItems: u.settings.ShareItems && os.Getenv(core.NativePreviewEnv) == "1", Spawn: mp.Vec3{X: 3437.5, Y: 235.9, Z: 2101.5}, Log: func(s string) { core.AppendLog(filepath.Join(u.a.root, "logs", "servidor.log"), s) }})
 	if err != nil {
 		u.set(mpHostStatus, "Não foi possível hospedar: "+err.Error())
 		return

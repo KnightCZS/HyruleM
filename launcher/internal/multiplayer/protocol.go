@@ -15,11 +15,11 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 11
+const Protocol = 13
 
-// Hello and welcome stay on 11. A ping advertising 12 opts this connection
-// into world references. Preview 15 already accepts and ignores that ping.
-const WorldReferenceProtocol = 12
+// Protocol 13 carries scene and entity authority. Ping 14 enables references
+// to full world frames already delivered on the same TCP connection.
+const WorldReferenceProtocol = 14
 const MaxLine = 256 * 1024
 const MaxPlayers = 2
 
@@ -46,6 +46,7 @@ func (a Vec3) Valid() bool {
 }
 
 type Pose struct {
+	Scene      string         `json:"scene,omitempty"`
 	Appearance string         `json:"appearance,omitempty"`
 	Effects    []VisualEffect `json:"effects,omitempty"`
 	Position   Vec3           `json:"position"`
@@ -78,6 +79,9 @@ func (a AnimationTrack) Valid() bool {
 }
 
 func (p Pose) Valid() bool {
+	if p.Scene != "" && !validScene(p.Scene) {
+		return false
+	}
 	if _, err := decodeSkeleton(p.Skeleton); err != nil {
 		return false
 	}
@@ -101,6 +105,9 @@ type Player struct {
 	Pose Pose   `json:"pose"`
 }
 type Message struct {
+	GroundScene      string            `json:"ground_scene,omitempty"`
+	GroundAck        uint64            `json:"ground_ack,omitempty"`
+	DedicatedWorld   bool              `json:"dedicated_world,omitempty"`
 	WorldRef         uint64            `json:"world_ref,omitempty"`
 	WorldID          string            `json:"world_id,omitempty"`
 	WorldState       *WorldState       `json:"world_state,omitempty"`

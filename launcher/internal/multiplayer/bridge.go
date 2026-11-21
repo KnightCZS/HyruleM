@@ -19,21 +19,22 @@ type GameControl interface {
 	Close()
 }
 type Bridge struct {
-	Client        *Client
-	control       GameControl
-	cancel        context.CancelFunc
-	done          chan struct{}
-	mu            sync.Mutex
-	camera        Camera
-	fov           float64
-	status        func(string)
-	spawnRequest  chan struct{}
-	native        bool
-	nativeSession string
-	roamingGround bool
-	dropRequests  chan struct{}
-	dropBusy      atomic.Bool
-	dropReady     atomic.Bool
+	Client           *Client
+	control          GameControl
+	cancel           context.CancelFunc
+	done             chan struct{}
+	mu               sync.Mutex
+	camera           Camera
+	fov              float64
+	status           func(string)
+	spawnRequest     chan struct{}
+	native           bool
+	nativeSession    string
+	roamingGround    bool
+	distributedWorld bool
+	dropRequests     chan struct{}
+	dropBusy         atomic.Bool
+	dropReady        atomic.Bool
 }
 
 func NewBridge(parent context.Context, c *Client, game GameControl, fov float64, status func(string)) *Bridge {

@@ -57,6 +57,10 @@ func (c *Client) PublishEnvironment(e Environment) error {
 	return c.send(Message{Type: "environment", Environment: &e})
 }
 func (s *Server) chooseEnvironmentHostLocked() {
+	if s.cfg.DedicatedWorld {
+		s.environmentHost = serverAuthority
+		return
+	}
 	if _, ok := s.peers[s.environmentHost]; ok {
 		return
 	}
@@ -149,7 +153,9 @@ func (b *Bridge) updateEnvironment(ctx context.Context, n *environmentSync, now 
 	v := b.Client.Environment()
 	if v.HostID != "" && v.HostID != n.announcedHost {
 		n.announcedHost = v.HostID
-		if v.HostID == b.Client.Welcome().ID {
+		if v.HostID == serverAuthority {
+			b.say("Conectado ao mundo do servidor dedicado")
+		} else if v.HostID == b.Client.Welcome().ID {
 			b.say("Você é o anfitrião do mundo, horário e clima")
 		} else {
 			b.say("Anfitrião do mundo: " + v.HostName)
@@ -214,7 +220,7 @@ func (b *Bridge) updateEnvironment(ctx context.Context, n *environmentSync, now 
 		n.lastFrozen = c.Held
 		n.lastWeather = w.Policy
 		n.following = true
-		b.say("Horário e clima seguindo o anfitrião")
+		b.say("Horário e clima sincronizados com a sessão")
 	}
 	if c.Held && !e.Frozen {
 		if err = b.command(ctx, "time unfreeze", nil); err != nil {

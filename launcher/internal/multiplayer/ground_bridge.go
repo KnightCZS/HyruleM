@@ -9,6 +9,8 @@ import (
 )
 
 type groundSync struct {
+	slots                           map[uint64]uint64
+	retiring                        map[uint64]bool
 	last, heartbeat                 time.Time
 	world                           string
 	sent                            map[uint64]string
@@ -32,6 +34,22 @@ func (b *Bridge) closeGround(ctx context.Context, n *groundSync) bool {
 	default:
 	}
 	if n.world != "" {
+		var status struct {
+			Receipts string `json:"receipts_json"`
+		}
+		if b.command(ctx, "hm_items_status", &status) == nil {
+			var receipts []GroundReceipt
+			if json.Unmarshal([]byte(status.Receipts), &receipts) == nil {
+				for _, receipt := range receipts {
+					if id := n.globalItem(receipt.Item); id != 0 {
+						receipt.Item = id
+						if err := b.Client.ReceiptGround(receipt); err != nil {
+							return false
+						}
+					}
+				}
+			}
+		}
 		if b.command(ctx, "hm_items_close "+b.nativeSession+" "+n.world, nil) != nil {
 			return false
 		}
@@ -81,6 +99,8 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		if !b.closeGround(ctx, n) {
 			return fmt.Errorf("limpeza dos materiais pendente")
 		}
+		n.retiring = map[uint64]bool{}
+		n.slots = map[uint64]uint64{}
 		n.sent = map[uint64]string{}
 		n.closed = map[uint64]bool{}
 		n.receiptAt = map[uint64]time.Time{}
@@ -93,6 +113,9 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 				return fmt.Errorf("a coleta fora de Hateno exige o runtime da prévia 17. Feche os jogos e abra Iniciar-Nativo.cmd do pacote novo")
 			}
 			open += " player"
+			if v.Scene != "" {
+				open += " " + v.Scene
+			}
 		}
 		if err := b.command(ctx, open, nil); err != nil {
 			return err
@@ -101,6 +124,7 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		n.heartbeat = now
 	}
 	var status struct {
+		Scene        string `json:"scene"`
 		Items        string `json:"items_json"`
 		Destroyed    string `json:"destroyed_json"`
 		Events       string `json:"events_json"`
@@ -115,6 +139,10 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 	}
 	if err := b.command(ctx, "hm_items_status", &status); err != nil {
 		return err
+	}
+	if status.Scene != v.Scene {
+		b.closeGround(ctx, n)
+		return nil
 	}
 	b.dropReady.Store(validOrigin(status.DropOrigin))
 	var observations []GroundSource
@@ -132,6 +160,24 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 	if len(events) > MaxGroundItems || len(receipts) > MaxGroundItems {
 		return fmt.Errorf("fila nativa de materiais excessiva")
 	}
+	for i := range events {
+		if events[i].Item != 0 {
+			id := n.globalItem(events[i].Item)
+			if id == 0 {
+				return fmt.Errorf("coleta de slot sem identidade global")
+			}
+			events[i].Item = id
+		}
+	}
+	validReceipts := receipts[:0]
+	for _, receipt := range receipts {
+		if id := n.globalItem(receipt.Item); id != 0 {
+			receipt.Item = id
+			validReceipts = append(validReceipts, receipt)
+		}
+	}
+	receipts = validReceipts
+	status.DropItem = n.globalItem(status.DropItem)
 	if status.DropRequest == n.dropRequest {
 		n.dropError = status.DropError
 	}
@@ -146,8 +192,14 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		if err := json.Unmarshal([]byte(status.Destroyed), &ids); err != nil {
 			return err
 		}
-		if len(ids) > 0 {
-			if err := b.Client.DestroyGround(ids); err != nil {
+		globalIDs := ids[:0]
+		for _, slot := range ids {
+			if id := n.globalItem(slot); id != 0 {
+				globalIDs = append(globalIDs, id)
+			}
+		}
+		if len(globalIDs) > 0 {
+			if err := b.Client.DestroyGround(globalIDs); err != nil {
 				return err
 			}
 		}
@@ -196,6 +248,14 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 			n.closed[claim.Request] = true
 			budget--
 		}
+		if n.closed[claim.Request] {
+			if err := b.Client.send(Message{Type: "ground_ack", GroundAck: claim.Request}); err != nil {
+				return err
+			}
+		}
+	}
+	if err := b.updateGroundSlots(ctx, n, v); err != nil {
+		return err
 	}
 	items := append([]GroundItem(nil), v.Items...)
 	self := b.Client.Welcome().ID
@@ -203,7 +263,13 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		return (items[i].Claimant == self || items[i].State == "spawning" && items[i].Owner == self) && !(items[j].Claimant == self || items[j].State == "spawning" && items[j].Owner == self)
 	})
 	for _, item := range items {
-		cmd, err := groundCommand(session, v.World, self, item)
+		slot := n.slots[item.ID]
+		if slot == 0 {
+			continue
+		}
+		localItem := item
+		localItem.ID = slot
+		cmd, err := groundCommand(session, v.World, self, localItem)
 		if err != nil {
 			return err
 		}
@@ -222,12 +288,17 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 	if n.dropRequest != 0 && n.dropItem != 0 {
 		for _, item := range items {
 			if item.ID == n.dropItem && item.State == "spawning" {
-				cmd, err := groundCommand(session, v.World, self, item)
+				localItem := item
+				localItem.ID = n.slots[item.ID]
+				if localItem.ID == 0 {
+					continue
+				}
+				cmd, err := groundCommand(session, v.World, self, localItem)
 				if err != nil {
 					return err
 				}
 				if n.sent[item.ID] == cmd {
-					if err = b.command(ctx, fmt.Sprintf("hm_item_drop %s %s %d %d", session, v.World, n.dropItem, n.dropRequest), nil); err != nil {
+					if err = b.command(ctx, fmt.Sprintf("hm_item_drop %s %s %d %d", session, v.World, n.slots[n.dropItem], n.dropRequest), nil); err != nil {
 						return err
 					}
 				}

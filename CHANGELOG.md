@@ -1,5 +1,11 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.18
+
+- Servidor dedicado, autoridade por entidade e armazenamento persistente.
+- Identidade de cenário nativa, paginação de itens e relógio do servidor.
+- Pacotes de servidor Windows/Linux. Protocolo 13 e ABI 12.
+
 ## 0.5.0-preview.17.2
 
 A marionete remota agora acompanha o carregamento da região. Um ator que já estava ativo pode aguardar novamente acesso ao motor sem derrubar a sincronização do mundo. Quando os jogadores se afastam mais de 200 m, o runtime suspende sua representação local e continua recebendo o estado da sessão. A representação é recriada ao se aproximarem.

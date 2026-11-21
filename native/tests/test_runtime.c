@@ -301,6 +301,18 @@ int main(void) {
     assert(ground_seen_count==1&&ground_seen[0].hash==124&&ground_mode.zone[0]==-3607);
     ST64(accessor+8,untouched);ST64(safe+8,untouched+0x900);
     assert(rt_hyrulem_item_pickup(&pickup));
+    char *retirable[22];memcpy(retirable,material,sizeof retirable);retirable[14]="0";retirable[15]="0";
+    ground_update(22,retirable,&r);
+    char *forget[]={"hm_item_forget","0123456789abcdef","0123456789abcdef01234567","1"};
+    ground_forget(4,forget,&r);assert(!r.failed&&ground_retire[0]==1&&ground_state[0].id==1);
+    ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    for(int j=0;j<GROUND_EVENTS;j++)if(ground_events[j].request&&!ground_events[j].done){
+        char reqtext[32];snprintf(reqtext,sizeof reqtext,"%llu",(unsigned long long)ground_events[j].request);
+        char *deny[]={"hm_item_deny","0123456789abcdef","0123456789abcdef01234567",reqtext};ground_deny(4,deny,&r);
+    }
+    ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    assert(ground_retire[0]==2&&!ground_state[0].id&&!ground_replica[0].granted);
+    ground_forget(4,forget,&r);assert(!ground_retire[0]&&!memcmp(&cpu,&before,sizeof cpu));
     ground_close(3,material_close,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
     memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),previous_link,sizeof previous_link);
     memcpy((void *)(uintptr_t)(untouched+0x398),player_root,sizeof player_root);
@@ -356,6 +368,23 @@ int main(void) {
     assert(replacement.stump.spawning&&deletes==dt);
     tree_tick(&cpu,0x7000001000,true);
     assert(!replacement.original&&deletes==dt+1&&LD8(standing+0x64)==3&&!memcmp(&cpu,&before,sizeof cpu));
+    // Distinct interiors can share coordinates, names and hashes.
+    uint64_t scene_type=HEAP_BASE+0xf5000,scene_name=HEAP_BASE+0xf5100;
+    g_site.hm_scene_type=scene_type;g_site.hm_scene_name=scene_name;
+    ST64(scene_type+8,scene_type+0x20);ST64(scene_name+8,scene_name+0x20);
+    strcpy((char *)(uintptr_t)(scene_type+0x20),"MainField");strcpy((char *)(uintptr_t)(scene_name+0x20),"F-5");
+    char scene_result[65];assert(actor_scene_read(scene_result)&&!strcmp(scene_result,"MainField"));
+    strcpy((char *)(uintptr_t)(scene_type+0x20),"CDungeon");strcpy((char *)(uintptr_t)(scene_name+0x20),"Dungeon000");
+    assert(actor_scene_read(scene_result)&&!strcmp(scene_result,"CDungeon/Dungeon000"));
+    strcpy((char *)(uintptr_t)(scene_name+0x20),"Dungeon001");
+    assert(actor_scene_read(scene_result)&&!strcmp(scene_result,"CDungeon/Dungeon001"));
+    snprintf(local_scene,sizeof local_scene,"%s",scene_result);
+    WorldActor empty_rows[1]={0};char empty_world[ACTOR_WORLD_B64+1];actor_world_encode(empty_rows,0,empty_world);
+    char *scoped_world[]={"hm_world_sample","0123456789abcdef","0123456789abcdef01234567","10","3","1","0","0","0","0",empty_world,"CDungeon/Dungeon000"};
+    ActorWorldMode before_scene_mode=actor_world_mode;r.failed=false;actor_world_sample(12,scoped_world,&r);
+    assert(!r.failed&&!memcmp(&before_scene_mode,&actor_world_mode,sizeof before_scene_mode));
+    scoped_world[11]="CDungeon/Dungeon001";actor_world_sample(12,scoped_world,&r);
+    assert(!r.failed&&!strcmp(actor_world_mode.scene,"CDungeon/Dungeon001"));
     puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");

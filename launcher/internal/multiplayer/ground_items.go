@@ -5,10 +5,20 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
 const MaxGroundItems = 32
+const MaxWorldItems = 32768
+
+func (s *Server) groundLimit() int {
+	if s.cfg.DedicatedWorld {
+		return MaxWorldItems
+	}
+	return MaxGroundItems
+}
+
 const GroundRadius = 90.0
 
 func GroundWeapon(s string) bool {
@@ -22,14 +32,24 @@ func GroundActor(s string) bool {
 	if GroundWeapon(s) {
 		return true
 	}
-	switch s {
-	case "Item_Fruit_A", "Item_Fruit_B", "Item_Fruit_F", "Item_Mushroom_A", "Item_PlantGet_A":
-		return true
+	if len(s) > 47 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
+			return false
+		}
+	}
+	for _, prefix := range []string{"Item_Fruit_", "Item_Mushroom_", "Item_PlantGet_", "Item_Ore_", "Item_Enemy_", "Item_Meat_", "Item_Roast_", "Item_Chilled_", "Item_FishGet_", "Animal_Insect_", "Animal_Fish_"} {
+		if strings.HasPrefix(s, prefix) && len(s) > len(prefix) {
+			return true
+		}
 	}
 	return false
 }
 
 type GroundSource struct {
+	Scene         string `json:"scene,omitempty"`
 	Local         uint64 `json:"local"`
 	NativeDrop    bool   `json:"native_drop,omitempty"`
 	Value         int    `json:"value,omitempty"`
@@ -55,6 +75,9 @@ func validOrigin(s string) bool {
 	return true
 }
 func (g GroundSource) Valid() bool {
+	if g.Scene != "" && !validScene(g.Scene) {
+		return false
+	}
 	if GroundWeapon(g.Actor) {
 		if g.Value <= 0 || g.Value > 1000000 || g.ModifierValue < -100000 || g.ModifierValue > 100000 {
 			return false
@@ -69,9 +92,9 @@ func (g GroundSource) Valid() bool {
 }
 func (g GroundSource) key(owner string) string {
 	if g.Hash == 0 {
-		return fmt.Sprintf("d:%s:%d", g.Origin, g.Local)
+		return g.Scene + ":" + fmt.Sprintf("d:%s:%d", g.Origin, g.Local)
 	}
-	return fmt.Sprintf("m:%08x:%s:%.3f:%.3f:%.3f", g.Hash, g.Actor, g.Spawn.X, g.Spawn.Y, g.Spawn.Z)
+	return g.Scene + ":" + fmt.Sprintf("m:%08x:%s:%.3f:%.3f:%.3f", g.Hash, g.Actor, g.Spawn.X, g.Spawn.Y, g.Spawn.Z)
 }
 
 type GroundItem struct {
@@ -84,7 +107,7 @@ type GroundItem struct {
 }
 
 func (i GroundItem) Valid() bool {
-	if i.ID == 0 || i.ID > MaxGroundItems || !i.Source.Valid() || i.Owner == "" {
+	if i.ID == 0 || i.ID > MaxWorldItems || !i.Source.Valid() || i.Owner == "" {
 		return false
 	}
 	switch i.State {
@@ -125,6 +148,7 @@ type GroundReceipt struct {
 	Applied bool   `json:"applied"`
 }
 type GroundView struct {
+	Scene      string
 	Roaming    bool
 	Enabled    bool
 	World      string
@@ -184,6 +208,9 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 		return nil
 	}
 	for _, g := range obs {
+		if s.cfg.DedicatedWorld && g.Scene != p.player.Pose.Scene {
+			continue
+		}
 		center := s.cfg.Spawn
 		if s.groundRoaming {
 			center = p.player.Pose.Position
@@ -203,7 +230,7 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 			if g.Drop && !g.NativeDrop {
 				continue
 			}
-			if len(s.groundItems) >= MaxGroundItems {
+			if len(s.groundItems) >= s.groundLimit() {
 				if g.NativeDrop {
 					if p.groundRejected == nil {
 						p.groundRejected = map[uint64]bool{}
@@ -238,7 +265,14 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 	return nil
 }
 func (s *Server) claimGround(p *serverPeer, req GroundClaim, now time.Time) error {
-	if req.Request == 0 || req.Request > math.MaxInt64 || !req.Source.Valid() || req.Item > MaxGroundItems {
+	if req.Request > 0 && req.Request <= p.groundAck {
+		if _, ok := p.groundClaims[req.Request]; !ok {
+			req.Status = "denied"
+			p.groundClaims[req.Request] = req
+			return nil
+		}
+	}
+	if req.Request == 0 || req.Request > math.MaxInt64 || !req.Source.Valid() || req.Item > MaxWorldItems {
 		return fmt.Errorf("pedido de coleta inválido")
 	}
 	if old, ok := p.groundClaims[req.Request]; ok {
@@ -268,7 +302,7 @@ func (s *Server) claimGround(p *serverPeer, req GroundClaim, now time.Time) erro
 		}
 	}
 	req.Status = "denied"
-	if !s.groundFresh(p, now) || req.Source.Position.Sub(p.player.Pose.Position).Len() > 3.5 {
+	if !s.groundFresh(p, now) || (s.cfg.DedicatedWorld && req.Source.Scene != p.player.Pose.Scene) || req.Source.Position.Sub(p.player.Pose.Position).Len() > 3.5 {
 		p.groundClaims[req.Request] = req
 		return nil
 	}
@@ -284,7 +318,7 @@ func (s *Server) claimGround(p *serverPeer, req GroundClaim, now time.Time) erro
 	}
 	item, ok := s.groundItems[id]
 	if !ok {
-		if len(s.groundItems) >= MaxGroundItems {
+		if len(s.groundItems) >= s.groundLimit() {
 			p.groundClaims[req.Request] = req
 			return nil
 		}
@@ -337,10 +371,30 @@ func (s *Server) receiptGround(p *serverPeer, receipt GroundReceipt) error {
 }
 func (s *Server) groundSnapshot(p *serverPeer) ([]GroundItem, []GroundClaim) {
 	items := make([]GroundItem, 0, len(s.groundItems))
-	for _, i := range s.groundItems {
-		items = append(items, i)
+	for _, item := range s.groundItems {
+		ownPending := item.Claimant == p.player.ID && (item.State == "reserved" || item.State == "uncertain") ||
+			item.Owner == p.player.ID && item.State == "spawning"
+		if !s.cfg.DedicatedWorld || ownPending || item.Source.Scene == p.player.Pose.Scene && item.Source.Position.Sub(p.player.Pose.Position).Len() <= GroundRadius {
+			items = append(items, item)
+		}
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	sort.Slice(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		pendingA := a.Claimant == p.player.ID && (a.State == "reserved" || a.State == "uncertain") || a.Owner == p.player.ID && a.State == "spawning"
+		pendingB := b.Claimant == p.player.ID && (b.State == "reserved" || b.State == "uncertain") || b.Owner == p.player.ID && b.State == "spawning"
+		if pendingA != pendingB {
+			return pendingA
+		}
+		if !s.cfg.DedicatedWorld {
+			return a.ID < b.ID
+		}
+		x := a.Source.Position.Sub(p.player.Pose.Position).Len()
+		y := b.Source.Position.Sub(p.player.Pose.Position).Len()
+		return x < y || x == y && a.ID < b.ID
+	})
+	if len(items) > MaxGroundItems {
+		items = items[:MaxGroundItems]
+	}
 	var pending, terminal []GroundClaim
 	for _, c := range p.groundClaims {
 		if c.Status == "granted" || c.Status == "waiting" {

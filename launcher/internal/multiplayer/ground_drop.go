@@ -48,7 +48,7 @@ func (s *Server) prepareGroundDrop(p *serverPeer, req GroundDropFinish, now time
 		return fmt.Errorf("outro drop ainda está pendente")
 	}
 	result := &GroundDropResult{Request: req.Request, Status: "rejected"}
-	if s.groundFresh(p, now) && req.Source.Position.Sub(p.player.Pose.Position).Len() <= 3.5 && (s.groundRoaming || req.Source.Position.Sub(s.cfg.Spawn).Len() <= GroundRadius) && len(s.groundItems) < MaxGroundItems {
+	if s.groundFresh(p, now) && (!s.cfg.DedicatedWorld || req.Source.Scene == p.player.Pose.Scene) && req.Source.Position.Sub(p.player.Pose.Position).Len() <= 3.5 && (s.groundRoaming || req.Source.Position.Sub(s.cfg.Spawn).Len() <= GroundRadius) && len(s.groundItems) < s.groundLimit() {
 		key := req.Source.key(p.player.ID)
 		if id := s.groundKeys[key]; id != 0 {
 			if s.groundItems[id].Owner == p.player.ID && s.groundItems[id].State == "spawning" {
@@ -70,7 +70,7 @@ func (s *Server) prepareGroundDrop(p *serverPeer, req GroundDropFinish, now time
 	return nil
 }
 func (s *Server) finishGroundDrop(p *serverPeer, req GroundDropFinish) error {
-	if req.Request == 0 || req.Item == 0 || req.Item > MaxGroundItems || req.Result < -1 || req.Result > 2 || req.Result == 0 {
+	if req.Request == 0 || req.Item == 0 || req.Item > MaxWorldItems || req.Result < -1 || req.Result > 2 || req.Result == 0 {
 		return fmt.Errorf("recibo de drop inválido")
 	}
 	result := p.groundDrop

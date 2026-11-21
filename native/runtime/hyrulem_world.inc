@@ -25,7 +25,7 @@ static EnemyHealth *world_note(EnemyHealth *e){
 // a confirmed native life==0 and map identity; do not call game code here.
 void rt_hyrulem_capture_zero(Cpu *c){
     ground_capture_destroy(c);
-    if(!world_supported())return;uint64_t a=c->x[0];if(!range(a,0x7d0))return;EnemyHealth e={0};
+    if(!world_supported())return;uint64_t a=c->x[0];if(!range(a,0x7d0))return;EnemyHealth e={0};snprintf(e.scene,sizeof e.scene,"%s",local_scene);
     if(!enemy_name(LD64(a+0x10),e.name))return;uint64_t life=enemy_life(a),map=LD64(a+0x7c8);if(!life||LD32(life)||!range(map,0x70))return;
     e.hash=LD32(map+0x58);if(!e.hash||e.hash==UINT32_MAX)return;
     for(int i=0;i<3;i++){e.spawn[i]=read_float(map+0x5c+i*4);e.position[i]=read_float(a+0x3a4+i*16);if(!isfinite(e.spawn[i])||!isfinite(e.position[i])||fabsf(e.spawn[i])>100000||fabsf(e.position[i])>100000)return;}
@@ -110,7 +110,7 @@ bool rt_hyrulem_world_ai(Cpu *c){
     if(!supported()||!g_site.hm_world_ai_dispatch||!actor_world_ready(c->x[19]))return false;
     uint64_t a=c->x[19],root=LD64(a+0x558);if(!range(root,16)||LD64(root+8)!=a)return false;
     bool block=false;pthread_mutex_lock(&actor_world_mutex);
-    if(actor_world_mode.role==2&&actor_world_live.role==2&&actor_world_live.epoch==actor_world_mode.epoch&&!strcmp(actor_world_live.world,actor_world_mode.world)&&!strcmp(actor_world_live.session,actor_world_mode.session)&&actor_world_mode.heartbeat&&now_ms()-actor_world_mode.heartbeat<1500)for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){WorldBinding *b=&actor_world_bindings[i];if(b->actor==a&&b->id&&b->applied_at&&now_ms()-b->applied_at<500&&actor_world_index(b)){block=true;actor_world_ai_skipped++;break;}}
+    if(actor_world_mode.role>=2&&actor_world_live.role==actor_world_mode.role&&actor_world_live.epoch==actor_world_mode.epoch&&!strcmp(actor_world_live.world,actor_world_mode.world)&&!strcmp(actor_world_live.session,actor_world_mode.session)&&actor_world_mode.heartbeat&&now_ms()-actor_world_mode.heartbeat<1500)for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){WorldBinding *b=&actor_world_bindings[i];if(b->actor==a&&b->id&&b->applied_at&&now_ms()-b->applied_at<500&&actor_world_index(b)){block=true;actor_world_ai_skipped++;break;}}
     pthread_mutex_unlock(&actor_world_mutex);return block;
 }
 static uint32_t world_get32(const unsigned char *p){return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
@@ -149,18 +149,20 @@ static bool actor_world_integer(const char *p,uint64_t *n){if(!strcmp(p,"0")){*n
 static bool actor_world_token(const char *s,unsigned length){if(strlen(s)!=length)return false;for(unsigned i=0;i<length;i++)if(!((s[i]>='0'&&s[i]<='9')||(s[i]>='a'&&s[i]<='f')))return false;return true;}
 static void actor_world_sample(int argc,char **argv,ControlReply *r){
     ActorWorldMode next={0};uint64_t role,pause;
-    if(argc!=11||!world_supported()||!g_site.hm_world_ai_dispatch||!actor_world_token(argv[1],16)||!actor_world_token(argv[2],24)||!actor_world_integer(argv[3],&next.epoch)||!next.epoch||!actor_world_integer(argv[4],&role)||role>2||!actor_world_integer(argv[5],&next.sequence)||!actor_world_integer(argv[6],&pause)||pause>1){control_fail(r,"Invalid authoritative world command");return;}
+    if((argc!=11&&argc!=12)||!world_supported()||!g_site.hm_world_ai_dispatch||!actor_world_token(argv[1],16)||!actor_world_token(argv[2],24)||!actor_world_integer(argv[3],&next.epoch)||!next.epoch||!actor_world_integer(argv[4],&role)||role>3||!actor_world_integer(argv[5],&next.sequence)||!actor_world_integer(argv[6],&pause)||pause>1){control_fail(r,"Invalid authoritative world command");return;}
     for(unsigned i=0;i<3;i++){char *end;errno=0;next.center[i]=strtof(argv[7+i],&end);if(errno||*end||!isfinite(next.center[i])||fabsf(next.center[i])>(i==1?50000.f:100000.f)){control_fail(r,"Invalid world center");return;}}
+    if(argc==12){if(!actor_scene_valid(argv[11])){control_fail(r,"Invalid world scene");return;}snprintf(next.scene,sizeof next.scene,"%s",argv[11]);}
     next.role=(unsigned)role;next.paused=pause!=0;next.heartbeat=now_ms();snprintf(next.session,17,"%s",argv[1]);snprintf(next.world,25,"%s",argv[2]);
-    if(role==2&&(!next.sequence||!actor_world_decode(argv[10],&next))){control_fail(r,"Invalid world actor frame");return;}
-    if(role!=2&&strcmp(argv[10],"-")){control_fail(r,"Unexpected world payload");return;}
-    pthread_mutex_lock(&mutex);bool session_ok=!strcmp(desired.session,next.session);pthread_mutex_unlock(&mutex);
+    if(role>=2&&(!next.sequence||!actor_world_decode(argv[10],&next))){control_fail(r,"Invalid world actor frame");return;}
+    if(role<2&&strcmp(argv[10],"-")){control_fail(r,"Unexpected world payload");return;}
+    pthread_mutex_lock(&mutex);bool session_ok=!strcmp(desired.session,next.session);bool scene_ok=!next.scene[0]||!strcmp(next.scene,local_scene);pthread_mutex_unlock(&mutex);
+    if(!scene_ok){control_field_bool(r,"ready",false);return;}
     pthread_mutex_lock(&actor_world_mutex);
-    bool same=!strcmp(actor_world_mode.session,next.session)&&!strcmp(actor_world_mode.world,next.world)&&actor_world_mode.epoch==next.epoch;
+    bool same=!strcmp(actor_world_mode.scene,next.scene)&&!strcmp(actor_world_mode.session,next.session)&&!strcmp(actor_world_mode.world,next.world)&&actor_world_mode.epoch==next.epoch;
     bool ok=session_ok&&(!actor_world_mode.epoch||strcmp(actor_world_mode.session,next.session)||strcmp(actor_world_mode.world,next.world)||next.epoch>=actor_world_mode.epoch);
-    if(ok&&same&&role==2&&actor_world_mode.role==2&&next.sequence<actor_world_mode.sequence)ok=false;
-    if(ok){if(same&&role==2&&actor_world_mode.role==2&&next.sequence==actor_world_mode.sequence)actor_world_mode.heartbeat=next.heartbeat;else actor_world_mode=next;}
-    WorldActor copy[ACTOR_WORLD_MAX];unsigned count=actor_world_seen_count;memcpy(copy,actor_world_seen,sizeof *copy*count);uint64_t seq=actor_world_frame_seq;float center[3];memcpy(center,actor_world_center,sizeof center);bool complete=actor_world_complete;unsigned matched=actor_world_matched,missing=actor_world_missing,applied=actor_world_applied,ai=actor_world_ai_skipped,as=actor_world_as_applied;bool ready=ok&&role==1&&actor_world_live.role==1&&actor_world_live.epoch==next.epoch&&!strcmp(actor_world_live.world,next.world)&&!strcmp(actor_world_live.session,next.session)&&actor_world_live.heartbeat&&now_ms()-actor_world_live.heartbeat<1500;bool paused=actor_world_live.paused;
+    if(ok&&same&&role>=2&&actor_world_mode.role==role&&next.sequence<actor_world_mode.sequence)ok=false;
+    if(ok){if(same&&role>=2&&actor_world_mode.role==role&&next.sequence==actor_world_mode.sequence)actor_world_mode.heartbeat=next.heartbeat;else actor_world_mode=next;}
+    WorldActor copy[ACTOR_WORLD_MAX];unsigned count=actor_world_seen_count;memcpy(copy,actor_world_seen,sizeof *copy*count);uint64_t seq=actor_world_frame_seq;float center[3];memcpy(center,actor_world_center,sizeof center);bool complete=actor_world_complete;unsigned matched=actor_world_matched,missing=actor_world_missing,applied=actor_world_applied,ai=actor_world_ai_skipped,as=actor_world_as_applied;bool ready=ok&&(role==1||role==3)&&actor_world_live.role==role&&actor_world_live.epoch==next.epoch&&!strcmp(actor_world_live.scene,next.scene)&&!strcmp(actor_world_live.world,next.world)&&!strcmp(actor_world_live.session,next.session)&&actor_world_live.heartbeat&&now_ms()-actor_world_live.heartbeat<1500;bool paused=actor_world_live.paused;
     pthread_mutex_unlock(&actor_world_mutex);if(!ok){control_fail(r,"Wrong session, epoch or stale world frame");return;}
     char encoded[ACTOR_WORLD_B64+1];actor_world_encode(copy,count,encoded);control_field_str(r,"actors_b64",encoded);control_field_int(r,"sequence",seq);control_field_bool(r,"ready",ready);control_field_bool(r,"paused",paused);control_field_bool(r,"complete",complete);control_field_num(r,"x",center[0]);control_field_num(r,"y",center[1]);control_field_num(r,"z",center[2]);control_field_int(r,"captured",count);control_field_int(r,"matched",matched);control_field_int(r,"missing",missing);control_field_int(r,"applied",applied);control_field_int(r,"ai_skipped",ai);control_field_int(r,"animations_applied",as);
 }
@@ -173,7 +175,7 @@ static void actor_world_scan(Cpu *c,const ActorWorldMode *mode,uint64_t local){
     for(unsigned step=0;node!=head&&step<limit;step++){
         if(!range(node,16)||node<0x7b8)break;uint64_t a=node-0x7b8;node=LD64(node);if(a==local)continue;WorldCandidate candidate={.actor=a};if(!actor_world_read(a,&candidate.state))continue;
         for(unsigned i=0;i<3;i++){float d=candidate.state.matrix[3+i*4]-mode->center[i];candidate.distance+=d*d;}
-        if(mode->role==1){if(candidate.distance>180.f*180.f)continue;}else{bool wanted=false;for(unsigned i=0;i<mode->count;i++)if(actor_world_same(&candidate.state,&mode->actors[i])){wanted=true;break;}if(!wanted)continue;}
+        if(mode->role==1||mode->role==3){if(candidate.distance>180.f*180.f)continue;}else{bool wanted=false;for(unsigned i=0;i<mode->count;i++)if(actor_world_same(&candidate.state,&mode->actors[i])){wanted=true;break;}if(!wanted)continue;}
         bool duplicate=false;for(unsigned i=0;i<count;i++)if(actor_world_same(&candidate.state,&candidates[i].state)){duplicate=true;break;}if(duplicate)continue;total++;
         unsigned at=count;if(at==ACTOR_WORLD_MAX){at=0;for(unsigned i=1;i<count;i++)if(candidates[i].distance>candidates[at].distance)at=i;if(candidate.distance>=candidates[at].distance)continue;}else count++;candidates[at]=candidate;
     }
@@ -223,21 +225,21 @@ static void actor_world_animate(Cpu *c,WorldBinding *b,uint64_t a,const WorldAct
 }
 static void actor_world_tick(Cpu *c,uint64_t local,uint64_t vt,bool paused){
     ActorWorldMode mode;pthread_mutex_lock(&actor_world_mutex);mode=actor_world_mode;pthread_mutex_unlock(&actor_world_mutex);uint64_t now=now_ms();
-    bool fresh=mode.role&&mode.heartbeat&&now-mode.heartbeat<1500;bool changed=mode.role!=actor_world_live.role||mode.epoch!=actor_world_live.epoch||strcmp(mode.session,actor_world_live.session)||strcmp(mode.world,actor_world_live.world);
+    bool fresh=mode.role&&mode.heartbeat&&now-mode.heartbeat<1500&&(!mode.scene[0]||!strcmp(mode.scene,local_scene));bool changed=strcmp(mode.scene,actor_world_live.scene)||mode.role!=actor_world_live.role||mode.epoch!=actor_world_live.epoch||strcmp(mode.session,actor_world_live.session)||strcmp(mode.world,actor_world_live.world);
     if(!fresh||changed){for(unsigned i=0;i<ACTOR_WORLD_MAX;i++)if(actor_world_bindings[i].actor)actor_world_release(c,&actor_world_bindings[i]);actor_world_scan_at=actor_world_applied_seq=actor_world_arrival=0;pthread_mutex_lock(&actor_world_mutex);actor_world_seen_count=actor_world_matched=actor_world_missing=0;pthread_mutex_unlock(&actor_world_mutex);}
     if(!fresh){pthread_mutex_lock(&actor_world_mutex);memset(&actor_world_live,0,sizeof actor_world_live);pthread_mutex_unlock(&actor_world_mutex);return;}
-    if(mode.role==1){for(unsigned i=0;i<3;i++)mode.center[i]=read_float(local+0x3a4+i*16);mode.paused=paused;}
+    if(mode.role==1||mode.role==3){for(unsigned i=0;i<3;i++)mode.center[i]=read_float(local+0x3a4+i*16);mode.paused=paused;}
     pthread_mutex_lock(&actor_world_mutex);actor_world_live=mode;pthread_mutex_unlock(&actor_world_mutex);
-    if(paused&&mode.role==2)return;
-    bool new_frame=mode.role==2&&mode.sequence!=actor_world_applied_seq;
+    if(paused&&mode.role>=2)return;
+    bool new_frame=mode.role>=2&&mode.sequence!=actor_world_applied_seq;
     bool scanned=!actor_world_scan_at||now-actor_world_scan_at>=100;if(scanned){actor_world_scan(c,&mode,local);actor_world_scan_at=now;}
     if(mode.role==1&&!scanned)return;
-    WorldActor seen[ACTOR_WORLD_MAX];unsigned expected_source=0;for(unsigned i=0;i<ACTOR_WORLD_MAX;i++)if(actor_world_bindings[i].actor)expected_source++;unsigned count=0,matched=0,missing=mode.role==2?mode.count:0;uint64_t interval=actor_world_arrival&&mode.heartbeat>actor_world_arrival?mode.heartbeat-actor_world_arrival:100;if(interval<50)interval=50;if(interval>200)interval=200;
+    WorldActor seen[ACTOR_WORLD_MAX];unsigned expected_source=0;for(unsigned i=0;i<ACTOR_WORLD_MAX;i++)if(actor_world_bindings[i].actor)expected_source++;unsigned count=0,matched=0,missing=mode.role>=2?mode.count:0;uint64_t interval=actor_world_arrival&&mode.heartbeat>actor_world_arrival?mode.heartbeat-actor_world_arrival:100;if(interval<50)interval=50;if(interval>200)interval=200;
     for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){
         WorldBinding *b=&actor_world_bindings[i];if(!b->actor||!actor_world_index(b))continue;ActorRef ref=resolve_at(c,b->storage,b->actor);if(!ref.ptr||(ref.state!=1&&ref.state!=2)){if(ref.ptr)release_at(c,b->storage);continue;}
         WorldActor current={0};if(!actor_world_read(ref.ptr,&current)||!actor_world_same(&current,&b->state)){release_at(c,b->storage);actor_world_release(c,b);continue;}
-        if(mode.role==1){current.id=b->id;pthread_mutex_lock(&actor_world_mutex);for(unsigned j=0;j<128;j++)if(actor_world_as[j].actor==b->actor&&actor_world_weak(b->actor,actor_world_as[j].block,actor_world_as[j].generation)){memcpy(current.tracks,actor_world_as[j].tracks,sizeof current.tracks);break;}pthread_mutex_unlock(&actor_world_mutex);if(count<ACTOR_WORLD_MAX)seen[count++]=current;}
-        else{
+        if(mode.role==1||mode.role==3){current.id=mode.role==3?i+1:b->id;pthread_mutex_lock(&actor_world_mutex);for(unsigned j=0;j<128;j++)if(actor_world_as[j].actor==b->actor&&actor_world_weak(b->actor,actor_world_as[j].block,actor_world_as[j].generation)){memcpy(current.tracks,actor_world_as[j].tracks,sizeof current.tracks);break;}pthread_mutex_unlock(&actor_world_mutex);if(count<ACTOR_WORLD_MAX)seen[count++]=current;}
+        if(mode.role>=2){
             const WorldActor *target=NULL;for(unsigned j=0;j<mode.count;j++)if(actor_world_same(&current,&mode.actors[j])){target=&mode.actors[j];break;}
             if(target){matched++;missing--;if(new_frame||b->id!=target->id||!b->started){b->duration=interval;
                     // Background/culled NPC movement can rewrite the actor's
@@ -256,7 +258,7 @@ static void actor_world_tick(Cpu *c,uint64_t local,uint64_t vt,bool paused){
     }
     if(new_frame){actor_world_applied_seq=mode.sequence;actor_world_arrival=mode.heartbeat;}
     pthread_mutex_lock(&actor_world_mutex);actor_world_matched=matched;actor_world_missing=missing;
-    if(mode.role==1&&now==actor_world_scan_at){if(count!=expected_source)actor_world_complete=false;memcpy(actor_world_seen,seen,sizeof *seen*count);actor_world_seen_count=count;actor_world_frame_seq++;memcpy(actor_world_center,mode.center,sizeof actor_world_center);}
+    if((mode.role==1||mode.role==3)&&now==actor_world_scan_at){if(count!=expected_source)actor_world_complete=false;memcpy(actor_world_seen,seen,sizeof *seen*count);actor_world_seen_count=count;actor_world_frame_seq++;memcpy(actor_world_center,mode.center,sizeof actor_world_center);}
     pthread_mutex_unlock(&actor_world_mutex);
 }
 static void actor_world_reset(void){

@@ -54,7 +54,7 @@ func Connect(ctx context.Context, address, name string, onStatus func(string)) (
 	c.SetDeadline(deadline)
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
-	if e = WriteMessage(c, Message{Type: "hello", Protocol: Protocol, Name: name, GroundEnabled: true}); e != nil {
+	if e = WriteMessage(c, Message{Type: "hello", Protocol: Protocol, Name: name, GroundEnabled: true, DedicatedWorld: true}); e != nil {
 		return fail(e)
 	}
 	reader := bufio.NewReaderSize(c, MaxLine)
@@ -164,7 +164,7 @@ func (c *Client) read(r *bufio.Reader) {
 				return
 			}
 		}
-		if m.HostID != "" && (!ids[m.HostID] || m.Epoch == 0) {
+		if m.HostID != "" && ((!ids[m.HostID] && !(m.DedicatedWorld && m.HostID == serverAuthority)) || m.Epoch == 0) {
 			c.fail("Autoridade de ambiente inválida")
 			return
 		}
@@ -206,7 +206,7 @@ func (c *Client) read(r *bufio.Reader) {
 					}
 					seen[i.ID] = true
 				}
-				c.ground = GroundView{Enabled: true, Roaming: m.GroundRoaming, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult, Rejected: append([]uint64(nil), m.GroundRejected...)}
+				c.ground = GroundView{Scene: m.GroundScene, Enabled: true, Roaming: m.GroundRoaming, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult, Rejected: append([]uint64(nil), m.GroundRejected...)}
 			} else {
 				c.ground = GroundView{}
 			}
@@ -282,13 +282,19 @@ func (c *Client) Remote(now time.Time) []Player {
 			alpha = 1
 		}
 	}
+	var localScene string
+	for _, p := range last.Players {
+		if p.ID == c.welcome.ID {
+			localScene = p.Pose.Scene
+		}
+	}
 	var out []Player
 	for _, p := range b.Players {
-		if p.ID == c.welcome.ID || !p.Pose.Ready {
+		if p.ID == c.welcome.ID || !p.Pose.Ready || p.Pose.Scene != localScene {
 			continue
 		}
 		for _, old := range a.Players {
-			if old.ID == p.ID && old.Pose.Ready && p.Pose.Position.Sub(old.Pose.Position).Len() < 20 {
+			if old.ID == p.ID && old.Pose.Ready && old.Pose.Scene == p.Pose.Scene && p.Pose.Position.Sub(old.Pose.Position).Len() < 20 {
 				p.Pose.Position = old.Pose.Position.Mul(1 - alpha).Add(p.Pose.Position.Mul(alpha))
 				p.Pose.Yaw = old.Pose.Yaw + math.Remainder(p.Pose.Yaw-old.Pose.Yaw, 2*math.Pi)*alpha
 				if old.Pose.Skeleton != "" && p.Pose.Skeleton != "" {

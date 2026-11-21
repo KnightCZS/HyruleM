@@ -21,6 +21,7 @@ func TestGroundPickupSingleWinnerAndReceiptReplay(t *testing.T) {
 	p := Pose{Ready: true, Position: s.cfg.Spawn}
 	_ = a.Publish(p)
 	_ = b.Publish(p)
+	eventually(t, func() bool { return len(a.Remote(time.Now())) == 1 && len(b.Remote(time.Now())) == 1 })
 	g := GroundSource{Local: 1, Hash: 123, Actor: "Item_Fruit_A", Position: p.Position, Spawn: p.Position}
 	_ = b.PublishGround([]GroundSource{g})
 	time.Sleep(40 * time.Millisecond)

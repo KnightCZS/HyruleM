@@ -52,5 +52,18 @@
     for(unsigned rate=30;rate<=120;rate+=30)for(unsigned tick=0;tick<=rate;tick++){actor_world_interpolate(spin_from,spin_to,(float)tick/rate,spin_mid);assert(actor_world_matrix(spin_mid));for(unsigned row=0;row<3;row++){float norm=0;for(unsigned col=0;col<3;col++)norm+=spin_mid[row*4+col]*spin_mid[row*4+col];assert(fabsf(norm-1)<.001f);}}
     // An equipped weapon is never reclassified as a loose map actor.
     strcpy((char *)(uintptr_t)(wn+0x900),"Weapon_Sword_001");ST64(wn+0x938,wa+0x800);ST32(wn+0x940,7);WorldActor loose={0};assert(!actor_world_read(wn,&loose));ST64(wn+0x938,0);assert(actor_world_read(wn,&loose));
+    // Dedicated mode captures the local area while controlling only the
+    // foreign entities included by the coordinator. A new lease releases AI.
+    strcpy((char *)(uintptr_t)(wn+0x900),"Npc_Test");
+    ST64(wa+0x7b8,wn+0x7b8);ST64(wn+0x7b8,head);ST32(creator+0x48,2);
+    actor_world_encode(rows,1,world_encoded);wcmd[3]="3";wcmd[4]="3";wcmd[5]="10";r.failed=false;
+    actor_world_sample(11,wcmd,&r);assert(!r.failed);
+    actor_world_tick(&cpu,owner,0x7000001000,false);
+    assert(actor_world_seen_count==2&&actor_world_matched==1&&rt_hyrulem_world_ai(&world_cpu));
+    assert(actor_world_seen[0].id&&actor_world_seen[1].id&&actor_world_seen[0].id!=actor_world_seen[1].id);
+    actor_world_encode(rows,0,world_encoded);wcmd[3]="4";wcmd[5]="11";
+    actor_world_sample(11,wcmd,&r);actor_world_tick(&cpu,owner,0x7000001000,false);
+    assert(actor_world_seen_count==2&&actor_world_matched==0&&!rt_hyrulem_world_ai(&world_cpu));
+    assert(!memcmp(&cpu,&before,sizeof cpu));
     actor_world_reset();world_test=false;ST64(head,head);ST32(creator+0x48,0);
     puts("world actors: host capture, map identity, native follower transforms/AI gate, AS, missing actors, lease/epoch/timeout isolation and 30/60/90/120 Hz rotation passed");

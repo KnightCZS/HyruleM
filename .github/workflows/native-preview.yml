@@ -100,7 +100,7 @@ jobs:
         run: |
           $version = [regex]::Match((Get-Content launcher/internal/launcher/config.go -Raw), 'const Version = "([^"]+)"').Groups[1].Value
           if (-not $version) { throw 'Launcher version missing' }
-          @{ schema = 1; version = $version; preview_abi = 11; runtime_sha256 = (Get-FileHash preview/runtime-update/savagewind.exe -Algorithm SHA256).Hash.ToLower() } | ConvertTo-Json | Set-Content -Encoding utf8NoBOM preview/hyrulem-preview.json
+          @{ schema = 1; version = $version; preview_abi = 12; runtime_sha256 = (Get-FileHash preview/runtime-update/savagewind.exe -Algorithm SHA256).Hash.ToLower() } | ConvertTo-Json | Set-Content -Encoding utf8NoBOM preview/hyrulem-preview.json
       - name: Verify installer with the existing official runtime dependencies
         shell: pwsh
         run: |
@@ -171,8 +171,37 @@ jobs:
             HyruleM-NativePreview-Windows-x64.zip
             SHA256.txt
           if-no-files-found: error
+  dedicated-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: launcher/go.mod
+          cache: false
+      - name: Build standalone dedicated servers
+        run: |
+          set -euo pipefail
+          mkdir -p dedicated/linux dedicated/windows release-servers
+          cd launcher
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '-s -w' -o ../dedicated/linux/HyruleM-Server ./cmd/hyrulem-server
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags '-s -w' -o ../dedicated/windows/HyruleM-Server.exe ./cmd/hyrulem-server
+          cd ..
+          for dir in dedicated/linux dedicated/windows; do
+            cp docs/DEDICATED_SERVER.md "$dir/README.md"
+            cp launcher/LICENSE launcher/GO_LICENSE.txt "$dir/"
+          done
+          ./dedicated/linux/HyruleM-Server --help
+          tar -C dedicated/linux -czf release-servers/HyruleM-DedicatedServer-Linux-x64.tar.gz .
+          (cd dedicated/windows && zip ../../release-servers/HyruleM-DedicatedServer-Windows-x64.zip *)
+          (cd release-servers && sha256sum HyruleM-DedicatedServer-* > HyruleM-Dedicated-SHA256.txt)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: HyruleM-Dedicated-Servers
+          path: release-servers/*
+          if-no-files-found: error
   publish-preview:
-    needs: windows-runtime
+    needs: [windows-runtime, dedicated-server]
     if: github.event_name == 'push' && github.ref == 'refs/heads/feature/native-world-gen1' && contains(github.event.head_commit.message, '[publish-preview]')
     permissions:
       contents: write
@@ -183,6 +212,10 @@ jobs:
         with:
           name: HyruleM-NativePreview-Windows-x64
           path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: HyruleM-Dedicated-Servers
+          path: release-assets
       - name: Publish explicitly experimental prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -190,14 +223,14 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          tag=v0.5.0-preview.17.2
+          tag=v0.5.0-preview.18
           existing=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish 2>/dev/null || true)
           if [ -n "$existing" ] && [ "$existing" != "$RELEASE_SHA" ]; then
             echo 'This preview tag already points at another commit; bump the version for another release.'
             exit 0
           fi
           if [ -z "$existing" ]; then
-            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.17.2 — recuperação ao viajar pelo mundo' --notes-file releases/v0.5.0-preview.17.2.md --prerelease --latest=false --draft
+            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.18 — servidor dedicado e autoridade por entidade' --notes-file releases/v0.5.0-preview.18.md --prerelease --latest=false --draft
           fi
-          gh release upload "$tag" release-assets/HyruleM-NativePreview-Windows-x64.zip release-assets/SHA256.txt --clobber
+          gh release upload "$tag" release-assets/* --clobber
           gh release edit "$tag" --draft=false --prerelease --latest=false

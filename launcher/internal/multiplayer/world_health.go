@@ -13,6 +13,7 @@ const maxSessionDamageActors = 32768
 // Map hash + actor + original placement identify the same loaded enemy across
 // processes. Native pointers and per-process actor IDs never cross the network.
 type EnemyHealth struct {
+	Scene    string `json:"scene,omitempty"`
 	Hash     uint32 `json:"hash"`
 	Actor    string `json:"actor"`
 	Spawn    Vec3   `json:"spawn"`
@@ -22,6 +23,9 @@ type EnemyHealth struct {
 }
 
 func (e EnemyHealth) Valid() bool {
+	if e.Scene != "" && !validScene(e.Scene) {
+		return false
+	}
 	if e.Hash == 0 || e.Hash == 0xffffffff || !mapDamageActor(e.Actor) || len(e.Actor) > 63 || !e.Spawn.Valid() || !e.Position.Valid() || e.Health < 0 || e.Health > 1000000 || e.Damage > math.MaxInt64 {
 		return false
 	}
@@ -33,7 +37,7 @@ func (e EnemyHealth) Valid() bool {
 	return true
 }
 func (e EnemyHealth) key() string {
-	return fmt.Sprintf("%08x:%s:%.2f:%.2f:%.2f", e.Hash, e.Actor, e.Spawn.X, e.Spawn.Y, e.Spawn.Z)
+	return e.Scene + ":" + fmt.Sprintf("%08x:%s:%.2f:%.2f:%.2f", e.Hash, e.Actor, e.Spawn.X, e.Spawn.Y, e.Spawn.Z)
 }
 func mergeEnemyHealth(registry map[string]EnemyHealth, records []EnemyHealth, local Pose) error {
 	if len(records) > MaxEnemyObservations || !local.Ready {
@@ -113,7 +117,7 @@ func mergeMapDamage(registry map[string]EnemyHealth, ledger map[string]uint64, o
 		before, known := ledger[event]
 		// Final zero evidence may be awaiting acknowledgement after fast travel.
 		// Accept a distant terminal report only for an identity this peer already observed.
-		if e.Position.Sub(local.Position).Len() > 160 && !(known && e.Health == 0) {
+		if (e.Scene != local.Scene || e.Position.Sub(local.Position).Len() > 160) && !(known && e.Health == 0) {
 			continue
 		}
 		old, exists := registry[key]

@@ -17,6 +17,7 @@ const WorldRadius = 180
 const worldActorStride = 300
 
 type WorldActor struct {
+	Scene  string `json:"scene,omitempty"`
 	ID     uint64
 	Hash   uint32
 	Kind   uint32 // enemy, NPC, movable prop, loose map equipment
@@ -26,6 +27,8 @@ type WorldActor struct {
 	Tracks [2]AnimationTrack
 }
 type WorldState struct {
+	Scene    string `json:"scene,omitempty"`
+	Lease    uint64 `json:"lease,omitempty"`
 	Epoch    uint64 `json:"epoch"`
 	Sequence uint64 `json:"sequence"`
 	Center   Vec3   `json:"center"`
@@ -35,6 +38,7 @@ type WorldState struct {
 	AgeMS    uint64 `json:"age_ms"`
 }
 type WorldView struct {
+	Dedicated       bool
 	WorldID, HostID string
 	Epoch           uint64
 	State           *WorldState
@@ -54,7 +58,7 @@ func referenceWorld(m Message, previous *WorldView) Message {
 }
 
 func receivedWorld(m Message, previous WorldView, now time.Time) (WorldView, error) {
-	view := WorldView{WorldID: m.WorldID, HostID: m.HostID, Epoch: m.Epoch, State: m.WorldState, At: now}
+	view := WorldView{WorldID: m.WorldID, HostID: m.HostID, Dedicated: m.DedicatedWorld, Epoch: m.Epoch, State: m.WorldState, At: now}
 	if m.WorldID != "" {
 		raw, err := hex.DecodeString(m.WorldID)
 		if err != nil || len(raw) != 12 {
@@ -101,9 +105,12 @@ func worldActorKind(s string) uint32 {
 	return 0
 }
 func (a WorldActor) key() string {
-	return fmt.Sprintf("%08x:%s:%.3f:%.3f:%.3f", a.Hash, a.Actor, a.Spawn.X, a.Spawn.Y, a.Spawn.Z)
+	return a.Scene + ":" + fmt.Sprintf("%08x:%s:%.3f:%.3f:%.3f", a.Hash, a.Actor, a.Spawn.X, a.Spawn.Y, a.Spawn.Z)
 }
 func (a WorldActor) valid() bool {
+	if a.Scene != "" && !validScene(a.Scene) {
+		return false
+	}
 	if a.ID == 0 || a.ID > math.MaxInt64 || a.Hash == 0 || a.Hash == math.MaxUint32 || len(a.Actor) > 63 || worldActorKind(a.Actor) != a.Kind || a.Kind == 0 || !a.Spawn.Valid() {
 		return false
 	}
@@ -234,6 +241,9 @@ func encodeWorldActors(rows []WorldActor) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 func (w WorldState) Valid() bool {
+	if w.Scene != "" && !validScene(w.Scene) {
+		return false
+	}
 	if w.Epoch == 0 || w.Sequence == 0 || w.Epoch > math.MaxInt64 || w.Sequence > math.MaxInt64 || !w.Center.Valid() || w.AgeMS > 60000 {
 		return false
 	}
@@ -265,6 +275,9 @@ func (c *Client) PublishWorldActors(w WorldState) error {
 	return c.send(Message{Type: "world_actors", WorldState: &w})
 }
 func (s *Server) acceptWorldLocked(p *serverPeer, w *WorldState, now time.Time) error {
+	if s.cfg.DedicatedWorld {
+		return s.acceptDedicatedWorldLocked(p, w, now)
+	}
 	if p.player.ID != s.environmentHost {
 		return fmt.Errorf("somente o anfitrião pode publicar o mundo")
 	}

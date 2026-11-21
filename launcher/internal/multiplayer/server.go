@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -14,12 +15,21 @@ import (
 )
 
 type ServerConfig struct {
-	Spawn       Vec3
-	Tick        time.Duration
-	Log         func(string)
-	SharedItems bool
+	DedicatedWorld bool
+	StatePath      string
+	DayLength      time.Duration
+	Spawn          Vec3
+	Tick           time.Duration
+	Log            func(string)
+	SharedItems    bool
 }
 type serverPeer struct {
+	groundAck       uint64
+	worldObserved   map[string]worldObservation
+	worldSequence   uint64
+	worldPaused     bool
+	worldOutput     *WorldState
+	worldOutputAt   time.Time
 	worldReferences atomic.Bool
 	conn            net.Conn
 	player          Player
@@ -37,6 +47,13 @@ type serverPeer struct {
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
 
 type Server struct {
+	worldFile                       *os.File
+	savedAt                         time.Time
+	persistenceError                error
+	failures                        chan error
+	entities                        map[string]*worldEntity
+	entityCounter, worldLease       uint64
+	clockAt                         time.Time
 	worldState                      *WorldState
 	worldAt                         time.Time
 	mu                              sync.Mutex
@@ -63,6 +80,9 @@ func Listen(address string, cfg ServerConfig) (*Server, error) {
 	if !cfg.Spawn.Valid() {
 		return nil, fmt.Errorf("posição inicial inválida")
 	}
+	if cfg.DayLength <= 0 {
+		cfg.DayLength = 24 * time.Minute
+	}
 	if cfg.Tick <= 0 {
 		cfg.Tick = 20 * time.Millisecond
 	}
@@ -84,6 +104,23 @@ func Listen(address string, cfg ServerConfig) (*Server, error) {
 	s.groundWorld = hex.EncodeToString(world[:])
 	s.groundItems = map[uint64]GroundItem{}
 	s.groundKeys = map[string]uint64{}
+	s.failures = make(chan error, 1)
+	s.entities = map[string]*worldEntity{}
+	s.worldLease = 1
+	if cfg.DedicatedWorld {
+		s.environmentHost = serverAuthority
+		s.environmentEpoch = 1
+		s.groundConfigured = true
+		s.groundRoaming = true
+	}
+	if err := s.openWorld(); err != nil {
+		if s.worldFile != nil {
+			s.worldFile.Close()
+		}
+		l.Close()
+		cancel()
+		return nil, err
+	}
 	s.wg.Add(2)
 	go s.accept(ctx)
 	go s.broadcast(ctx)
@@ -128,6 +165,10 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 	if e != nil || hello.Type != "hello" || hello.Protocol != Protocol {
 		c.SetWriteDeadline(time.Now().Add(time.Second))
 		WriteMessage(c, Message{Type: "error", Error: "Cliente e servidor incompatíveis. Atualize ambos para o mesmo pacote e confira o nome do jogador."})
+		return
+	}
+	if s.cfg.DedicatedWorld && !hello.DedicatedWorld {
+		WriteMessage(c, Message{Type: "error", Error: "Este servidor dedicado exige a prévia 18."})
 		return
 	}
 	s.mu.Lock()
@@ -180,6 +221,9 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 		}
 		delete(s.peers, id)
 		s.chooseEnvironmentHostLocked()
+		if s.cfg.DedicatedWorld {
+			_ = s.checkpointWorldLocked(true)
+		}
 		s.mu.Unlock()
 		s.log(name + " saiu")
 	}()
@@ -228,7 +272,7 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				return
 			}
 			s.mu.Lock()
-			if id == s.environmentHost {
+			if id == s.environmentHost && !s.cfg.DedicatedWorld {
 				if p.player.Pose.Ready && !m.Pose.Ready {
 					// A reloaded native world can restart its own capture sequence.
 					s.resetAuthorityLocked()
@@ -285,6 +329,10 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				return
 			}
 			s.mu.Lock()
+			if s.cfg.DedicatedWorld {
+				s.mu.Unlock()
+				continue
+			}
 			if id != s.environmentHost {
 				s.mu.Unlock()
 				return
@@ -327,10 +375,22 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 					err = s.receiptGround(p, *m.GroundReceipt)
 				}
 			}
+			if err == nil && m.Type != "ground_observe" {
+				err = s.checkpointWorldLocked(true)
+			}
 			s.mu.Unlock()
 			if err != nil {
 				return
 			}
+		case "ground_ack":
+			s.mu.Lock()
+			if claim, ok := p.groundClaims[m.GroundAck]; ok && claim.Status != "waiting" && claim.Status != "granted" {
+				delete(p.groundClaims, m.GroundAck)
+				if m.GroundAck > p.groundAck {
+					p.groundAck = m.GroundAck
+				}
+			}
+			s.mu.Unlock()
 		case "ping":
 			if m.Protocol == WorldReferenceProtocol {
 				p.worldReferences.Store(true)
@@ -354,6 +414,14 @@ func (s *Server) broadcast(ctx context.Context) {
 		case <-ticker.C:
 		}
 		s.mu.Lock()
+		if s.cfg.DedicatedWorld {
+			s.reconcileWorldLocked(time.Now())
+			s.advanceEnvironmentLocked(time.Now())
+		}
+		if err := s.checkpointWorldLocked(false); err != nil {
+			s.mu.Unlock()
+			return
+		}
 		host, epoch := s.environmentHost, s.environmentEpoch
 		var environment *Environment
 		if s.environment != nil && time.Since(s.environmentAt) < 3*time.Second {
@@ -399,10 +467,16 @@ func (s *Server) broadcast(ctx context.Context) {
 		m := Message{Type: "snapshot", Protocol: Protocol, Players: players, Sequence: sequence, Enemies: enemies, HostID: host, Epoch: epoch, Environment: environment, WorldID: s.groundWorld, WorldState: world}
 		for _, p := range targets {
 			packet := m
+			if s.cfg.DedicatedWorld {
+				s.mu.Lock()
+				packet.WorldState = s.dedicatedWorldSnapshot(p, sequence, time.Now())
+				s.mu.Unlock()
+				packet.DedicatedWorld = true
+			}
 			// The receiver renders its own Link locally. Echoing its complete
 			// bone/effect payload consumes bandwidth without adding a frame.
 			packet.Players = recipientPlayers(m.Players, p.player.ID)
-			if p.player.ID == m.HostID {
+			if p.player.ID == m.HostID && !s.cfg.DedicatedWorld {
 				packet.WorldState = nil
 			}
 			if s.cfg.SharedItems {
@@ -421,9 +495,10 @@ func (s *Server) broadcast(ctx context.Context) {
 				}
 				packet.GroundZone = &zone
 				packet.GroundRoaming = s.groundRoaming
+				packet.GroundWorld = sceneWorld(s.groundWorld, p.player.Pose.Scene)
+				packet.GroundScene = p.player.Pose.Scene
 				s.mu.Unlock()
 				packet.GroundEnabled = true
-				packet.GroundWorld = s.groundWorld
 			}
 			select {
 			case <-p.done:
@@ -462,13 +537,29 @@ func (s *Server) Close() error {
 	}
 	s.mu.Unlock()
 	s.wg.Wait()
+	s.mu.Lock()
+	saveErr := s.checkpointWorldLocked(true)
+	if s.worldFile != nil {
+		s.worldFile.Close()
+		s.worldFile = nil
+	}
+	s.mu.Unlock()
+	if saveErr != nil {
+		return saveErr
+	}
 	return e
 }
 
 func recipientPlayers(players []Player, recipient string) []Player {
+	var local Pose
+	for _, p := range players {
+		if p.ID == recipient {
+			local = p.Pose
+		}
+	}
 	out := append([]Player(nil), players...)
 	for i := range out {
-		if out[i].ID == recipient {
+		if out[i].ID == recipient || out[i].Pose.Scene != local.Scene || out[i].Pose.Position.Sub(local.Position).Len() > 250 {
 			out[i].Pose.Skeleton = ""
 			out[i].Pose.Appearance = ""
 			out[i].Pose.Equipment = nil

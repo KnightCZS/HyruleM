@@ -37,7 +37,7 @@ func (b *Bridge) prepareDropFromUI(n *groundSync, origin string, sequence uint64
 		n.dropNext++
 		n.dropRequest = n.dropNext
 		n.dropError = ""
-		n.dropSource = GroundSource{Local: n.dropRequest, Drop: true, Origin: origin, Actor: "Item_Fruit_A", Position: pose.Position.Add(Vec3{math.Sin(pose.Yaw) * 2, .4, math.Cos(pose.Yaw) * 2})}
+		n.dropSource = GroundSource{Scene: pose.Scene, Local: n.dropRequest, Drop: true, Origin: origin, Actor: "Item_Fruit_A", Position: pose.Position.Add(Vec3{math.Sin(pose.Yaw) * 2, .4, math.Cos(pose.Yaw) * 2})}
 		n.dropSource.Spawn = n.dropSource.Position
 		b.say("Reservando um lugar para largar 1 maçã…")
 	default:

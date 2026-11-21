@@ -11,6 +11,7 @@ import (
 )
 
 type groundGame struct {
+	scene                 string
 	observations          []GroundSource
 	events                []GroundClaim
 	receipts              []GroundReceipt
@@ -24,7 +25,7 @@ type groundGame struct {
 func (g *groundGame) Close() {}
 func (g *groundGame) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
 	g.commands = append(g.commands, cmd)
-	data := map[string]any{"queued": true}
+	data := map[string]any{"queued": true, "ready": true}
 	if cmd == "hm_items_status" {
 		a, _ := json.Marshal(g.observations)
 		e, _ := json.Marshal(g.events)
@@ -38,7 +39,7 @@ func (g *groundGame) Command(ctx context.Context, cmd string) (core.ControlReply
 		if g.receipts == nil {
 			r = []byte("[]")
 		}
-		data = map[string]any{"items_json": string(a), "events_json": string(e), "receipts_json": string(r), "drop_origin": g.dropOrigin, "drop_request": g.dropRequest, "drop_item": g.dropItem, "drop_result": g.dropResult, "drop_source_json": g.dropSource}
+		data = map[string]any{"scene": g.scene, "items_json": string(a), "events_json": string(e), "receipts_json": string(r), "drop_origin": g.dropOrigin, "drop_request": g.dropRequest, "drop_item": g.dropItem, "drop_result": g.dropResult, "drop_source_json": g.dropSource}
 	}
 	b, _ := json.Marshal(data)
 	return core.ControlReply{OK: true, Data: b}, nil

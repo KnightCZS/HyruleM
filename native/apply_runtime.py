@@ -130,6 +130,7 @@ def apply(root):
         "PATCHES['hm_weapon_drop'] = _hm_weapon_drop\nPATCHES['hm_weapon_throw'] = _hm_weapon_drop\n\n")
     text=text.replace("def table(sites):",addition+"def table(sites):")
     patch.write_text(text)
+    shutil.copyfile(HERE / "runtime/hyrulem_scene.inc", root / "runtime/hyrulem_scene.inc")
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
     shutil.copyfile(HERE / "runtime/hyrulem_items.inc", root / "runtime/hyrulem_items.inc")
     shutil.copyfile(HERE / "runtime/hyrulem_pose.inc", root / "runtime/hyrulem_pose.inc")
@@ -137,7 +138,7 @@ def apply(root):
     replace_once(root / "runtime/control.c", "MAX_LINE = 4096,", "MAX_LINE = 65536,")
     shutil.copyfile(HERE / "runtime/hyrulem_world.inc", root / "runtime/hyrulem_world.inc")
     shutil.copyfile(HERE / "runtime/hyrulem_weapons.inc", root / "runtime/hyrulem_weapons.inc")
-    stamp = {"upstream": UPSTREAM, "preview_abi": 11, "effects_sha256": hashlib.sha256((HERE / "runtime/hyrulem_effects.inc").read_bytes()).hexdigest(), "weapons_sha256": hashlib.sha256((HERE / "runtime/hyrulem_weapons.inc").read_bytes()).hexdigest(), "world_sha256": hashlib.sha256((HERE / "runtime/hyrulem_world.inc").read_bytes()).hexdigest(), "pose_sha256": hashlib.sha256((HERE / "runtime/hyrulem_pose.inc").read_bytes()).hexdigest(), "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
+    stamp = {"scene_sha256": hashlib.sha256((HERE / "runtime/hyrulem_scene.inc").read_bytes()).hexdigest(), "upstream": UPSTREAM, "preview_abi": 12, "effects_sha256": hashlib.sha256((HERE / "runtime/hyrulem_effects.inc").read_bytes()).hexdigest(), "weapons_sha256": hashlib.sha256((HERE / "runtime/hyrulem_weapons.inc").read_bytes()).hexdigest(), "world_sha256": hashlib.sha256((HERE / "runtime/hyrulem_world.inc").read_bytes()).hexdigest(), "pose_sha256": hashlib.sha256((HERE / "runtime/hyrulem_pose.inc").read_bytes()).hexdigest(), "items_sha256": hashlib.sha256((HERE / "runtime/hyrulem_items.inc").read_bytes()).hexdigest(), "adapter_sha256": hashlib.sha256((HERE / "runtime/hyrulem.c").read_bytes()).hexdigest()}
     (root / "hyrulem-build.json").write_text(json.dumps(stamp, indent=2) + "\n")
 
 

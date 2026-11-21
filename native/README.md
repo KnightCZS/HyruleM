@@ -1,6 +1,6 @@
-# HyruleM 0.5.0-preview.17.2 — multiplayer experimental
+# HyruleM 0.5.0-preview.18 — multiplayer experimental
 
-Primeira camada de mundo sob autoridade do anfitrião: posição, rotação e pedidos de animação dos atores de mapa já carregados nos dois jogos. Usa os atores nativos correspondentes, com IA local suspensa apenas no seguidor que recebeu estado recente. Até 64 atores em 180 m; veja os limites abaixo.
+O servidor dedicado mantém o registro persistente do mundo e decide o responsável por cada entidade carregada. Ambos os clientes capturam seus arredores. Os demais recebem o estado correspondente e suspendem a decisão local de IA enquanto aplicam dados recentes. O modo pode ser hospedado pelo launcher ou pelo executável independente. Veja [como executar o servidor](../docs/DEDICATED_SERVER.md).
 
 A revisão c64d0fc7 foi testada em dois jogos Windows com GPU. Em Hateno, encontrou 28/28 atores e passou nas sete comparações das raízes dos esqueletos ativos, com diferença máxima observada de 1,36 m em relação ao anfitrião. As imagens também foram conferidas. No acampamento de Bokoblins, as últimas seis amostras ficaram abaixo de 1 m; a primeira chegou a 2,01 m. A correção mantém a trajetória de rede, confirma os pedidos AS e reposiciona a paleta final de ossos, que antes podia permanecer longe da raiz do modelo.
 
@@ -10,7 +10,7 @@ A revisão c64d0fc7 foi testada em dois jogos Windows com GPU. Em Hateno, encont
 
 1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, incluindo `runtime-update`.
 2. Execute **Iniciar-Nativo.cmd**, que instala o runtime com backup.
-3. Se o runtime iniciar uma recompilação privada, aguarde o término. A prévia 16 usa a mesma ABI 11 e os mesmos hooks da 15.
+3. Se o runtime iniciar uma recompilação privada, aguarde o término. A prévia 18 exige ABI 12 e acrescenta as raízes de identidade do cenário. Atualize os dois clientes e o servidor.
 4. Conecte pelo IP ou DNS do anfitrião e pela porta TCP escolhida. Clientes e servidores das prévias 15 e 16 podem jogar juntos. Com cliente receptor e servidor 16, o primeiro quadro dos atores vai completo e repetições usam uma referência curta. Cada nova captura continua levando a lista completa. A idade da captura continua contando durante as repetições.
 5. Hospede e conecte pelo IP/porta escolhidos. Na primeira abertura desta versão, **Itens do mundo: ligados** é ativado no painel de hospedagem. Depois disso a escolha é preservada; pode desligá-la antes de hospedar. O servidor separado usa `--shared-items=true` por padrão, ou `--shared-items=false` para desligar.
 6. Para hospedar uma sessão privada local, escolha **Somente este PC**. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.
@@ -43,9 +43,9 @@ Até 16 eventos são acompanhados, com encerramento e proteção de geração/se
 
 ## Itens e armas no mundo aberto
 
-Com servidor e clientes da prévia 17 e itens compartilhados ligados, cada instância observa **até 90 m ao redor do próprio Link**, inclusive longe do anfitrião. A reserva exige proximidade de 3,5 m. Há **32 identidades por sessão**, incluindo itens coletados ou cancelados. Quando o primeiro participante usa uma versão anterior, a sessão mantém a zona fixa de encontro. Há até 16 descartes nativos próprios acompanhados por instância. Não é uma sincronização geral de todos os mapas.
+Com o servidor dedicado e os clientes da prévia 18, cada instância observa até 90 m ao redor do próprio Link. O registro conserva até 32.768 identidades, incluindo itens coletados. O cliente acompanha 32 próximos por vez e confirma a limpeza de cada slot antes de reutilizá-lo. Há até 16 descartes nativos próprios acompanhados por instância.
 
-- Materiais de mapa: `Item_Fruit_A`, `Item_Fruit_B`, `Item_Fruit_F`, `Item_Mushroom_A`, `Item_PlantGet_A`.
+- Materiais de mapa das famílias de frutas, cogumelos, plantas, minérios, partes de monstros, carnes, assados, congelados, peixes e insetos com identidade de mapa válida.
 - Armas comuns: famílias `Weapon_Sword_`, `Weapon_Lsword_`, `Weapon_Spear_`, `Weapon_Bow_`, `Weapon_Shield_`; exclui Master Sword e One-Hit Obliterator.
 - **Descarte/arremesso normal de arma:** o hook registra o ator que o próprio jogo retirou do inventário, validando o proprietário e a geração da referência. Não retira a arma outra vez. O criador publica a posição; o outro cliente cria uma arma nativa com durabilidade e par de modificadores preservados.
 - **Coleta dos dois lados:** a função nativa de concessão é adiada; o servidor reserva um único vencedor. O runtime verifica a entrada efetivamente adicionada ao inventário pessoal antes do recibo. Uma mensagem repetida não concede a arma novamente. Na concessão de armas, a durabilidade é o valor da entrada, não uma quantidade de itens.
@@ -55,29 +55,29 @@ Com servidor e clientes da prévia 17 e itens compartilhados ligados, cada inst�
 
 Uma coleta anterior à primeira publicação permanece local. Depois da publicação, inclusive durante perda de heartbeat, a cópia acompanhada não pode contornar a reserva do servidor. Réplicas em criação assíncrona também ficam protegidas até inicialização.
 
-Resultado ambíguo ou desconexão durante uma reserva não libera automaticamente o item para outro jogador. Não há recuperação persistente dessas pendências. Há até 32 pedidos pendentes e 128 totais por conexão; exceder o total encerra a conexão com erro explícito.
+Resultado ambíguo ou desconexão durante uma reserva não libera automaticamente o item para outro jogador. O estado incerto é persistido e conserva o bloqueio. Há até 32 pedidos pendentes. Pedidos finalizados são removidos após o reconhecimento do cliente, permitindo coletas posteriores na mesma conexão.
 
-**Recolha os descartes compartilhados antes de encerrar.** São objetos da sessão, sem persistência ou devolução automática. Encerrar limpa os descartes aceitos e as réplicas do mod; materiais originais e descartes que permaneceram locais não são apagados apenas por desligar o modo.
+O servidor guarda os descartes aceitos no arquivo do mundo. Desconectar um cliente limpa suas réplicas locais. O próximo cliente pode reconstruir um objeto disponível a partir do registro. A permanência no inventário pessoal também depende do save do respectivo jogo.
 
-Posições vêm do proprietário, com atualizações limitadas; rotação, trajetória física exata, colisões e transferência de autoridade ao carregar um objeto ainda não são compartilhadas. Também ficam fora comida preparada, pilhas, baús/lojas, itens de missão, frutos naturais sem identidade de mapa, interiores e santuários.
+Posições vêm do proprietário, com atualizações limitadas; rotação, trajetória física exata, colisões e transferência de autoridade ao carregar um objeto ainda não são compartilhadas. Também ficam fora comida preparada, pilhas, baús/lojas, itens de missão, frutos naturais sem identidade de mapa e espólios dinâmicos. A separação entre interiores está integrada, com gameplay geral ainda pendente.
 
 ## Dano e mundo
 
 A identidade é hash do mapa + nome + posição original. Cada instância calcula a perda de vida local acumulada antes de aplicar o estado do servidor. O servidor soma as contribuições dos clientes e deduplica pelo contador de cada origem. Aplicar dano recebido não o transforma em outro golpe local.
 
-O hook de remoção conserva evidência de vida realmente zerada antes que o ator desapareça. A captura admite monstros de mapa e árvores em pé com getter nativo de vida compatível; exclui raízes, galhos, tocos e troncos. **Zerar vida ainda não comprova a transição da IA de árvore para árvore caída/tronco**, e essa sequência não foi validada em gameplay. Não é correto anunciar o corte de árvores como resolvido somente por este mecanismo. Confirmações de vida zero podem ser reenviadas uma vez por segundo, respeitando o orçamento rotativo de quatro comandos, para liberar evidência capturada depois de uma escrita anterior. O registro de dano comporta 128 entidades; observações são limitadas a 64 próximas por amostra.
+O hook de remoção conserva evidência de vida realmente zerada antes que o ator desapareça. A captura admite monstros de mapa e árvores em pé com getter nativo de vida compatível; exclui raízes, galhos, tocos e troncos. A substituição por toco foi validada em dois jogos para `Obj_TreeConiferous_A_02` e `Obj_TreeBroadleaf_A_L`. Troncos e madeira continuam pendentes. Confirmações de vida zero podem ser reenviadas uma vez por segundo, respeitando o orçamento rotativo de quatro comandos, para liberar evidência capturada depois de uma escrita anterior. O registro conserva até 32.768 identidades na sessão persistente. Cada jogo observa até 64 próximas por amostra e recebe o conjunto necessário aos clientes carregados.
 
-Horário/clima continuam sob autoridade do anfitrião, com sucessão e descarte de amostras antigas. Dia, Blood Moon, missões, flags gerais, runas, projéteis, dano entre Links e todos os eventos do mundo ainda não estão integrados. O servidor coordena estado; não executa BOTW.
+Horário e clima seguem o servidor dedicado, com um dia de 24 minutos por padrão. Dia, Blood Moon, missões, flags gerais, runas, projéteis, dano entre Links e todos os eventos do mundo ainda não estão integrados. O servidor coordena estado; não executa BOTW.
 
 Vida e inventários dos jogadores continuam pessoais. Uma pose de ataque remota não aplica um golpe no outro mundo por si só. A integração nativa roda após os jobs dos atores; hooks de coleta/descarte/remoção apenas capturam ou enfileiram dados, sem chamar funções guest a partir dos workers.
 
-## Atores do mundo - novo na prévia 15
+## Atores do mundo
 
-O primeiro jogador conectado é a autoridade; ao sair, o servidor elege outro e aumenta a época. Capturas antigas e publicações de seguidores são recusadas/descartadas. Até 64 atores elegíveis em 180 m do host são amostrados a 10 Hz e enviados somente ao outro jogador. A aplicação usa tempo decorrido, interpolação de posição/rotação e referências nativas com geração conferida.
+O servidor registra cada entidade por cenário, hash de mapa, nome e colocação original. Atribui a simulação ao cliente carregado mais próximo e aumenta a revisão quando muda essa atribuição. Os clientes recusam aplicar dados de um cenário diferente. A aplicação ocorre após os jobs dos atores, com referências nativas e geração conferidas. Cada captura comporta até 64 atores em 180 m.
 
 Atores inicializados nos estados 1/2 entram com modelo presente e referência válida; a captura não exige que o culling local esteja ativo como no DemoNPC. Inicialização e remoção ficam excluídas.
 
-São usados os monstros comuns, NPCs, objetos móveis da lista explícita e armas soltas do próprio jogo. Hash de mapa, nome e colocação original identificam o mesmo objeto entre processos. O despacho local de RootAI fica suspenso somente para um ator correspondente com estado recém-aplicado no cliente; o host continua executando sua IA. Outros caminhos de física e atualização de NPCs inativos ainda podem avançar localmente. Expiração, desconexão e troca de host liberam referências e devolvem a autoridade local.
+São usados os monstros comuns, NPCs, objetos móveis da lista explícita e armas soltas do próprio jogo. Hash de mapa, nome e colocação original identificam o mesmo objeto entre processos. O despacho local de RootAI fica suspenso somente para um ator correspondente com estado recém-aplicado no cliente; o cliente responsável continua executando sua IA. Outros caminhos de física e atualização de NPCs inativos ainda podem avançar localmente. Expiração, desconexão e troca de host liberam referências e devolvem a autoridade local.
 
 A paleta final dos modelos SDK reconhecidos é reposicionada junto da raiz recebida, preservando os deslocamentos relativos dos ossos. Isso corrige a separação entre o modelo e o esqueleto desenhado; não transmite toda a pose do NPC nem substitui sua física. Modelos/raízes desconhecidos e matrizes inválidas são omitidos.
 
