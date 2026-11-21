@@ -1,5 +1,12 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.17
+
+- Com o servidor e os dois jogadores atualizados, a zona de coleta acompanha cada Link. O cliente pode descobrir materiais e armas de mapa quando o anfitrião está em outra região. A reserva exige proximidade e só o vencedor recebe a concessão de inventário.
+- A sessão conserva a vida registrada de até 32.768 árvores e inimigos identificados no mapa enquanto os jogadores viajam. Cada envio contém apenas as identidades observadas recentemente pelos participantes, até 128. Sair da região e voltar permite reaplicar uma morte registrada.
+- Hateno continua disponível como ponto de encontro. Para a coleta móvel, ligue os itens compartilhados no launcher e use a prévia 17 nas duas máquinas e no servidor.
+- Limites atuais: 32 identidades de itens por sessão, cinco materiais de mapa e famílias de armas comuns. A simulação de IA, os espólios de inimigos, os troncos gerados e a distinção de interiores ainda precisam de integração. O registro dura até o servidor encerrar.
+
 ## 0.5.0-preview.16.1
 
 - Corrige a preparação do filtro de campanha quando a pasta RomFS ou DLC é uma junção de diretório. O launcher lê os arquivos pelo destino do vínculo e grava o filtro no sandbox.

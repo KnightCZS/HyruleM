@@ -30,6 +30,7 @@ type Bridge struct {
 	spawnRequest  chan struct{}
 	native        bool
 	nativeSession string
+	roamingGround bool
 	dropRequests  chan struct{}
 	dropBusy      atomic.Bool
 	dropReady     atomic.Bool

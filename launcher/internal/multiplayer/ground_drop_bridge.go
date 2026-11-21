@@ -62,7 +62,7 @@ func (b *Bridge) finishDrop(ctx context.Context, n *groundSync, request, item ui
 				message = dropFailureMessage(n.dropError)
 			}
 			if r.Status == "rejected" {
-				message = "Drop recusado: fique em Hateno e confira o limite da sessão."
+				message = "Drop recusado. Confira se a sessão tem espaço e se o jogador está no mundo."
 			}
 			if r.Status == "uncertain" {
 				message = "Drop com resultado incerto; nenhuma nova concessão automática será feita."
@@ -95,7 +95,7 @@ func dropFailureMessage(reason string) string {
 	case "apple-missing":
 		return "Você não tem maçãs no inventário deste cliente."
 	case "player-moved-or-outside-zone":
-		return "Descarte cancelado: fique parado perto do encontro em Hateno."
+		return "Descarte cancelado. Fique perto do ponto onde soltou o item."
 	case "inventory-layout-invalid", "inventory-unavailable":
 		return "O runtime não conseguiu conferir o inventário; veja o diagnóstico."
 	case "inventory-remove-not-applied":

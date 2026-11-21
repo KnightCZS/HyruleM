@@ -280,6 +280,22 @@ int main(void) {
     uint64_t natural=HEAP_BASE+0x7b000;ST8(natural+0x64,1);ST64(natural+0x10,natural+0x900);strcpy((char *)(uintptr_t)(natural+0x900),"Item_Fruit_A");memcpy((void *)(uintptr_t)(natural+0x398),player_root,sizeof player_root);ST64(natural+0x7c8,0);ST64(head,natural+0x7b8);ST64(natural+0x7b8,head);ST32(creator+0x48,1);ground_scan_at=0;ground_scan(&cpu,HEAP_BASE+0x1000,&ground_live);for(int j=0;j<GROUND_MAX;j++)assert(ground_local[j].actor!=natural);
     ST64(accessor+8,natural);ST64(safe+8,natural+0x900);assert(!rt_hyrulem_item_pickup(&pickup));
     char *material_close[]={"hm_items_close","0123456789abcdef","0123456789abcdef01234567"};ground_close(3,material_close,&r);unsigned deleted=deletes;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);assert(deletes==deleted+2&&LD8(untouched+0x64)==1&&!rt_hyrulem_item_pickup(&pickup));
+    // Reopen from Hateno, then walk on a different part of the map. The
+    // native pickup gate and scanner must use the current Link position.
+    char *roaming_open[]={"hm_items_open","0123456789abcdef","0123456789abcdef01234567","3437.5","235.9","2101.5","player"};
+    ground_open(7,roaming_open,&r);assert(!r.failed);
+    float previous_link[12];memcpy(previous_link,(void *)(uintptr_t)(HEAP_BASE+0x1398),sizeof previous_link);
+    float moved[12]={1,0,0,-3607,0,1,0,286,0,0,1,-1805};
+    memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),moved,sizeof moved);
+    memcpy((void *)(uintptr_t)(untouched+0x398),moved,sizeof moved);
+    ST64(head,untouched+0x7b8);ST64(untouched+0x7b8,head);ST32(creator+0x48,1);
+    ground_scan_at=0;ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    assert(ground_seen_count==1&&ground_seen[0].hash==124&&ground_mode.zone[0]==-3607);
+    ST64(accessor+8,untouched);ST64(safe+8,untouched+0x900);
+    assert(rt_hyrulem_item_pickup(&pickup));
+    ground_close(3,material_close,&r);ground_tick(&cpu,HEAP_BASE+0x1000,0x7000001000);
+    memcpy((void *)(uintptr_t)(HEAP_BASE+0x1398),previous_link,sizeof previous_link);
+    memcpy((void *)(uintptr_t)(untouched+0x398),player_root,sizeof player_root);
     // Two named bones in a synthetic SDK model. Capture must remove the
     // source root, then replay using another root without choosing an AS leaf.
     uint64_t owner=HEAP_BASE+0x1000,component=HEAP_BASE+0xa0000,units=component+0x100,unit=component+0x200,model=component+0x400,model_vt=component+0x700,sk=component+0x900,res=component+0xa00,dict=component+0xb00,palette=component+0xc00;

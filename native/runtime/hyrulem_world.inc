@@ -1,12 +1,23 @@
 // Map-entity damage ledger. A missing actor is never a destruction event.
-static EnemyHealth world_history[HEALTH_MAX],world_zero[HEALTH_MAX];
+// Keep cumulative damage for changed actors, reclaiming undamaged baselines
+// as the map streams. The transient zero queue remains bounded independently.
+enum { WORLD_HISTORY_MAX=8192 };
+static EnemyHealth world_history[WORLD_HISTORY_MAX],world_zero[HEALTH_MAX];
 static int world_history_count,world_zero_count;static bool world_history_reset;
 static bool map_damage_name(const char *s){
     return !strncmp(s,"Enemy_",6)||(!strncmp(s,"Obj_Tree",8)&&!strstr(s,"_Stump")&&!strstr(s,"_Trunk")&&!strstr(s,"Root")&&!strstr(s,"Branch"));
 }
 static EnemyHealth *world_note(EnemyHealth *e){
     int at=0;while(at<world_history_count&&!same_enemy(e,&world_history[at]))at++;
-    if(at==world_history_count){if(at==HEALTH_MAX)return NULL;world_history[world_history_count++]=*e;}
+    if(at==world_history_count){
+        if(at<WORLD_HISTORY_MAX)world_history_count++;
+        else {
+            // Preserve counters for every damaged identity when recycling.
+            for(at=0;at<world_history_count;at++)if(!world_history[at].damage)break;
+            if(at==world_history_count)return NULL;
+        }
+        world_history[at]=*e;
+    }
     EnemyHealth *old=&world_history[at];if(e->health<old->health){uint64_t delta=(uint64_t)(old->health-e->health);if(old->damage<=INT64_MAX-delta)old->damage+=delta;}
     e->damage=old->damage;return old;
 }

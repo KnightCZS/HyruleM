@@ -48,7 +48,7 @@ func (s *Server) prepareGroundDrop(p *serverPeer, req GroundDropFinish, now time
 		return fmt.Errorf("outro drop ainda está pendente")
 	}
 	result := &GroundDropResult{Request: req.Request, Status: "rejected"}
-	if s.groundFresh(p, now) && req.Source.Position.Sub(p.player.Pose.Position).Len() <= 3.5 && req.Source.Position.Sub(s.cfg.Spawn).Len() <= GroundRadius && len(s.groundItems) < MaxGroundItems {
+	if s.groundFresh(p, now) && req.Source.Position.Sub(p.player.Pose.Position).Len() <= 3.5 && (s.groundRoaming || req.Source.Position.Sub(s.cfg.Spawn).Len() <= GroundRadius) && len(s.groundItems) < MaxGroundItems {
 		key := req.Source.key(p.player.ID)
 		if id := s.groundKeys[key]; id != 0 {
 			if s.groundItems[id].Owner == p.player.ID && s.groundItems[id].State == "spawning" {

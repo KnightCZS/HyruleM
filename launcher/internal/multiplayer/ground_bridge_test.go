@@ -53,8 +53,8 @@ func TestGroundBridgeGrantsOnlyAfterReservationAndRepeatsReceiptUntilCommit(t *t
 	src := GroundSource{Local: 1, Hash: 123, Actor: "Item_Fruit_A", Position: p.Position, Spawn: p.Position}
 	hg := &groundGame{observations: []GroundSource{src}}
 	gg := &groundGame{}
-	a := &Bridge{Client: host, control: hg, nativeSession: "0123456789abcdef"}
-	b := &Bridge{Client: guest, control: gg, nativeSession: "abcdef0123456789"}
+	a := &Bridge{roamingGround: true, Client: host, control: hg, nativeSession: "0123456789abcdef"}
+	b := &Bridge{roamingGround: true, Client: guest, control: gg, nativeSession: "abcdef0123456789"}
 	an, bn := &groundSync{}, &groundSync{}
 	step := func(b *Bridge, n *groundSync) {
 		t.Helper()
@@ -112,7 +112,7 @@ func TestGroundBridgePreparesDropBeforeNativeDebitAndCommitsBothViews(t *testing
 		return ready && host.Ground().Enabled && guest.Ground().Enabled
 	})
 	game := &groundGame{dropOrigin: "0123456789abcdef"}
-	b := &Bridge{Client: host, control: game, native: true, nativeSession: game.dropOrigin, dropRequests: make(chan struct{}, 1)}
+	b := &Bridge{roamingGround: true, Client: host, control: game, native: true, nativeSession: game.dropOrigin, dropRequests: make(chan struct{}, 1)}
 	n := &groundSync{}
 	step := func() {
 		t.Helper()

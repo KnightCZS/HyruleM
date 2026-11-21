@@ -640,7 +640,7 @@ static void caps(int argc,char **argv,ControlReply *r) {
     control_field_bool(r,"skeletal_pose",supported()&&pose_supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());
-    control_field_bool(r,"shared_ground_materials",ground_supported());control_field_bool(r,"native_weapon_drops",ground_supported());
+    control_field_bool(r,"roaming_ground_items",ground_supported());control_field_bool(r,"shared_ground_materials",ground_supported());control_field_bool(r,"native_weapon_drops",ground_supported());
     control_field_bool(r,"actor_job_barrier",supported());
     control_field_bool(r,"animation_capture",supported()&&g_site.hm_as_play_entry);
     control_field_bool(r,"visual_fallback",supported());
@@ -785,7 +785,19 @@ static void receive_health(int argc,char **argv,ControlReply *r) {
     e.hash=(uint32_t)hash;e.health=(int)hp;strcpy(e.name,argv[3]);
     pthread_mutex_lock(&mutex);
     bool ok=!strcmp(desired.session,argv[1]);int at=0;while(at<health_count&&!same_enemy(&e,&health_pending[at]))at++;
-    if(ok&&at<HEALTH_MAX){if(at==health_count)health_pending[health_count++]=e;else if(e.health<health_pending[at].health)health_pending[at].health=e.health;}else ok=false;
+    if(ok && at==HEALTH_MAX){
+        // The server keeps the durable session value. Replace a distant cache
+        // entry when travelling; the bridge reissues it on returning to that actor.
+        float farthest=-1.f;int replace=0;
+        for(int i=0;i<health_count;i++){
+            float d=0;for(int j=0;j<3;j++){float delta=e.spawn[j]-health_pending[i].spawn[j];d+=delta*delta;}
+            if(d>farthest){farthest=d;replace=i;}
+        }
+        health_pending[replace]=e;
+    }else if(ok){
+        if(at==health_count)health_pending[health_count++]=e;
+        else if(e.health<health_pending[at].health)health_pending[at].health=e.health;
+    }
     if(ok&&e.health==0)for(int i=0;i<world_zero_count;i++)if(same_enemy(&e,&world_zero[i])){world_zero[i]=world_zero[--world_zero_count];break;}
     pthread_mutex_unlock(&mutex);if(!ok){control_fail(r,"Wrong session or enemy queue full");return;}control_field_bool(r,"queued",true);
 }

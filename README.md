@@ -1,6 +1,6 @@
 # HyruleM
 
-**Prévia 16.1 para Windows x64.** Duas pessoas podem entrar pelo IP ou DNS do anfitrião. Cliente e servidor negociam a transmissão compacta dos atores próximos e aceitam a prévia 15 na mesma sessão. O mundo visual cobre até 64 atores de mapa já carregados em 180 m. A física compartilhada e o ciclo de criação e remoção de atores continuam em desenvolvimento. [Baixar a prévia](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.16.1) · [Instalação e limites](native/README.md).
+**Prévia 17 para Windows x64.** No mundo aberto, cada Link pode descobrir materiais e armas de mapa perto de si, mesmo longe do anfitrião. O servidor arbitra a coleta e conserva a vida de inimigos e árvores acompanhados durante a sessão. A reprodução visual cobre até 64 atores carregados perto do anfitrião. [Baixar a prévia](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.17) · [Instalação e limites](native/README.md).
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 

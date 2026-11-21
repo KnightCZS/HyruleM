@@ -125,6 +125,7 @@ type GroundReceipt struct {
 	Applied bool   `json:"applied"`
 }
 type GroundView struct {
+	Roaming    bool
 	Enabled    bool
 	World      string
 	Zone       Vec3
@@ -166,7 +167,7 @@ func (c *Client) ReceiptGround(v GroundReceipt) error {
 	return c.send(Message{Type: "ground_receipt", GroundReceipt: &v})
 }
 func (s *Server) groundFresh(p *serverPeer, now time.Time) bool {
-	return s.cfg.SharedItems && p.player.Pose.Ready && now.Sub(p.poseAt) < 2*time.Second && p.player.Pose.Position.Sub(s.cfg.Spawn).Len() <= GroundRadius+5
+	return s.cfg.SharedItems && p.player.Pose.Ready && now.Sub(p.poseAt) < 2*time.Second && (s.groundRoaming || p.player.Pose.Position.Sub(s.cfg.Spawn).Len() <= GroundRadius+5)
 }
 
 // Called with Server.mu held; a missing observation never means pickup.
@@ -183,14 +184,18 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 		return nil
 	}
 	for _, g := range obs {
-		if g.Position.Sub(s.cfg.Spawn).Len() > GroundRadius || g.Position.Sub(p.player.Pose.Position).Len() > 140 {
+		center := s.cfg.Spawn
+		if s.groundRoaming {
+			center = p.player.Pose.Position
+		}
+		if g.Position.Sub(center).Len() > GroundRadius || g.Position.Sub(p.player.Pose.Position).Len() > 140 {
 			continue
 		}
 		if g.Hash != 0 && p.player.ID != s.environmentHost {
-			continue
-		}
-		if g.Hash == 0 && g.Position.Sub(p.player.Pose.Position).Len() > 140 {
-			continue
+			host := s.peers[s.environmentHost]
+			if !s.groundRoaming || (host != nil && s.groundFresh(host, now) && host.player.Pose.Position.Sub(g.Position).Len() <= GroundRadius) {
+				continue
+			}
 		}
 		key := g.key(p.player.ID)
 		id := s.groundKeys[key]

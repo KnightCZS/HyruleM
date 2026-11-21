@@ -1,4 +1,4 @@
-# HyruleM 0.5.0-preview.16.1 — multiplayer experimental
+# HyruleM 0.5.0-preview.17 — multiplayer experimental
 
 Primeira camada de mundo sob autoridade do anfitrião: posição, rotação e pedidos de animação dos atores de mapa já carregados nos dois jogos. Usa os atores nativos correspondentes, com IA local suspensa apenas no seguidor que recebeu estado recente. Até 64 atores em 180 m; veja os limites abaixo.
 
@@ -41,9 +41,9 @@ Até 256 condições numéricas dos quatro usuários ELink locais (corpo/espada/
 
 Até 16 eventos são acompanhados, com encerramento e proteção de geração/sequência. `effects_applied` confirma um identificador nativo, **não uma imagem desenhada**. Rastros feitos por renderizadores próprios da arma, condições textuais, todos os estados temporários entre amostras e efeitos especiais fora desses usuários ainda não estão comprovados. O rastro de cada ataque precisa de teste no jogo.
 
-## Itens e armas — Hateno
+## Itens e armas no mundo aberto
 
-O experimento cobre o mundo aberto, **até 90 m do ponto de encontro de Hateno**, e no máximo **32 identidades por sessão**, incluindo coletados/cancelados. Há até 16 descartes nativos próprios acompanhados por instância. Não é uma sincronização geral de todos os mapas.
+Com servidor e clientes da prévia 17 e itens compartilhados ligados, cada instância observa **até 90 m ao redor do próprio Link**, inclusive longe do anfitrião. A reserva exige proximidade de 3,5 m. Há **32 identidades por sessão**, incluindo itens coletados ou cancelados. Quando o primeiro participante usa uma versão anterior, a sessão mantém a zona fixa de encontro. Há até 16 descartes nativos próprios acompanhados por instância. Não é uma sincronização geral de todos os mapas.
 
 - Materiais de mapa: `Item_Fruit_A`, `Item_Fruit_B`, `Item_Fruit_F`, `Item_Mushroom_A`, `Item_PlantGet_A`.
 - Armas comuns: famílias `Weapon_Sword_`, `Weapon_Lsword_`, `Weapon_Spear_`, `Weapon_Bow_`, `Weapon_Shield_`; exclui Master Sword e One-Hit Obliterator.

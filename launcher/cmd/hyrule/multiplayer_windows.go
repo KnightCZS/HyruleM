@@ -624,7 +624,7 @@ func multiplayerProc(h uintptr, m uint32, w, l uintptr) uintptr {
 		case mpDrop1, mpDrop2:
 			i := id - mpDrop1
 			if b := u.slots[i].bridge; b == nil || !b.RequestAppleDrop() {
-				u.say(i, "Ative os itens do mundo ao hospedar, conecte e aguarde o mundo de Hateno.")
+				u.say(i, "Ative os itens do mundo ao hospedar, conecte e aguarde o jogo carregar.")
 			}
 			u.updateDropButtons()
 		case mpItemsMode:

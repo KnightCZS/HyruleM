@@ -3,7 +3,7 @@
 enum { GROUND_MAX=32, GROUND_EVENTS=32 };
 typedef struct { uint64_t local;uint32_t hash;bool drop,native_drop;int value,bonus;uint32_t modifier;char origin[17],name[48];float spawn[3],pos[3]; } GroundSource;
 typedef struct { uint64_t id,request;GroundSource source;int state;bool own; } GroundState;
-typedef struct { char session[17],world[25];float zone[3];uint64_t heartbeat; } GroundMode;
+typedef struct { char session[17],world[25];float zone[3];bool roaming;uint64_t heartbeat; } GroundMode;
 typedef struct { uint64_t request,id;GroundSource source;bool done; } GroundEvent;
 typedef struct { uint64_t actor,storage,last_seen;GroundSource source; } GroundLocal;
 typedef struct { GearVisual visual;uint64_t request;int result;bool granted; } GroundReplica;
@@ -107,7 +107,7 @@ bool rt_hyrulem_item_pickup(Cpu *c) {
     if(known&&known->state>=1){pthread_mutex_unlock(&ground_mutex);return true;}
     for(int i=0;i<GROUND_EVENTS;i++)if(!ground_events[i].done&&ground_events[i].request&&((id&&ground_events[i].id==id)||ground_source_equal(&ground_events[i].source,&source))){pthread_mutex_unlock(&ground_mutex);return true;}
     int slot=-1;for(int i=0;i<GROUND_EVENTS;i++)if(!ground_events[i].request||ground_events[i].done){slot=i;break;}
-    if(slot<0){pthread_mutex_unlock(&ground_mutex);return known!=NULL||id!=0;} // never bypass authority for a published original
+    if(slot<0){pthread_mutex_unlock(&ground_mutex);return true;} // never bypass authority for a published original
     uint64_t request=++ground_next_request;if(!source.local)source.local=UINT64_C(0x100000000)+request;
     ground_events[slot]=(GroundEvent){request,id,source,false};ground_intercepts++;
     pthread_mutex_unlock(&ground_mutex);return true;
@@ -274,7 +274,12 @@ static bool ground_delete_local(Cpu *c,GroundLocal *l) {
 static void ground_tick(Cpu *c,uint64_t local,uint64_t vt) {
     if(!ground_supported())return;
     GroundMode mode;GroundState states[GROUND_MAX];
-    pthread_mutex_lock(&ground_mutex);mode=ground_mode;memcpy(states,ground_state,sizeof states);pthread_mutex_unlock(&ground_mutex);
+    float pos[3];
+    for(unsigned i=0;i<3;i++)pos[i]=read_float(local+0x3a4+i*16);
+    pthread_mutex_lock(&ground_mutex);
+    if(ground_mode.roaming)memcpy(ground_mode.zone,pos,sizeof pos);
+    mode=ground_mode;memcpy(states,ground_state,sizeof states);
+    pthread_mutex_unlock(&ground_mutex);
     bool fresh=mode.heartbeat&&now_ms()-mode.heartbeat<2500;
     if(!fresh||strcmp(mode.world,ground_live.world)||strcmp(mode.session,ground_live.session)) {
         if(!ground_cleanup(c))return;
@@ -284,7 +289,7 @@ static void ground_tick(Cpu *c,uint64_t local,uint64_t vt) {
         pthread_mutex_lock(&ground_mutex);memset(ground_events,0,sizeof ground_events);pthread_mutex_unlock(&ground_mutex);
     }
     ground_native_tick(c,vt,states);ground_drop_tick(c,local,vt,&mode,states);
-    float pos[3];for(int i=0;i<3;i++)pos[i]=read_float(local+0x3a4+i*16);if(!ground_in_zone(pos,&mode,95))return;
+    if(!ground_in_zone(pos,&mode,95))return;
     ground_scan(c,local,&mode);
     GroundHook hooks[GROUND_MAX*2];int nh=0;GroundSource seen[GROUND_MAX];int ns=0;
     for(int i=0;i<GROUND_MAX;i++) {
@@ -305,7 +310,7 @@ static void ground_tick(Cpu *c,uint64_t local,uint64_t vt) {
             if(s->state==2||s->state==3||s->state==5||r->granted){if(live)ground_delete_local(c,l);continue;}
             if(live){matched=true;if(nh<GROUND_MAX*2)hooks[nh++]=(GroundHook){l->actor,s->id,l->storage,l->source,false,(s->state==4&&l->source.drop)?0:s->state};}
         }
-        if(s->state!=0||r->granted||matched) {if(g->actor||g->spawning)remove_gear(c,g);continue;}
+        if(s->state!=0||r->granted||matched||(mode.roaming&&!ground_in_zone(s->source.pos,&mode,90))) {if(g->actor||g->spawning)remove_gear(c,g);continue;}
         if(!g->storage||g->failed)continue;
         if(g->spawning) {
             if(call(c,g_site.hm_handle_failed,g->storage+HANDLE,0,0,0,0,0,0)||now_ms()-g->started>15000){g->failed=true;remove_gear(c,g);continue;}
@@ -340,10 +345,10 @@ static void ground_tick(Cpu *c,uint64_t local,uint64_t vt) {
 }
 static bool ground_world_token(const char *s){if(strlen(s)!=24)return false;for(int i=0;i<24;i++)if(!((s[i]>='0'&&s[i]<='9')||(s[i]>='a'&&s[i]<='f')))return false;return true;}
 static void ground_open(int argc,char **argv,ControlReply *r) {
-    GroundMode m={0};if(argc!=6||!ground_supported()||!token(argv[1])||!ground_world_token(argv[2])||!number(argv[3],&m.zone[0],100000)||!number(argv[4],&m.zone[1],50000)||!number(argv[5],&m.zone[2],100000)){control_fail(r,"Invalid ground-material session");return;}
+    GroundMode m={0};if((argc!=6&&(argc!=7||strcmp(argv[6],"player")))||!ground_supported()||!token(argv[1])||!ground_world_token(argv[2])||!number(argv[3],&m.zone[0],100000)||!number(argv[4],&m.zone[1],50000)||!number(argv[5],&m.zone[2],100000)){control_fail(r,"Invalid ground-material session");return;}
     pthread_mutex_lock(&mutex);bool ok=!strcmp(desired.session,argv[1]);pthread_mutex_unlock(&mutex);if(!ok){control_fail(r,"Wrong native session");return;}
-    snprintf(m.session,sizeof m.session,"%s",argv[1]);snprintf(m.world,sizeof m.world,"%s",argv[2]);m.heartbeat=now_ms();
-    pthread_mutex_lock(&ground_mutex);if(strcmp(ground_mode.world,m.world)||strcmp(ground_mode.session,m.session))memset(ground_state,0,sizeof ground_state);ground_mode=m;if(!ground_origin[0])snprintf(ground_origin,sizeof ground_origin,"%s",argv[1]);pthread_mutex_unlock(&ground_mutex);control_field_bool(r,"queued",true);
+    m.roaming=argc==7;snprintf(m.session,sizeof m.session,"%s",argv[1]);snprintf(m.world,sizeof m.world,"%s",argv[2]);m.heartbeat=now_ms();
+    pthread_mutex_lock(&ground_mutex);if(strcmp(ground_mode.world,m.world)||strcmp(ground_mode.session,m.session))memset(ground_state,0,sizeof ground_state);else if(m.roaming&&ground_mode.roaming)memcpy(m.zone,ground_mode.zone,sizeof m.zone);ground_mode=m;if(!ground_origin[0])snprintf(ground_origin,sizeof ground_origin,"%s",argv[1]);pthread_mutex_unlock(&ground_mutex);control_field_bool(r,"queued",true);
 }
 static void ground_close(int argc,char **argv,ControlReply *r) {
     if(argc!=3||!token(argv[1])||!ground_world_token(argv[2])){control_fail(r,"Invalid ground-material session");return;}
@@ -385,5 +390,5 @@ static void ground_status(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"drop_request",drop_request);control_field_int(r,"drop_item",drop_id);control_field_int(r,"drop_result",drop_result);control_field_int(r,"drop_sequence",drop_sequence);control_field_str(r,"drop_origin",origin);
     if(drop_source.local){ground_source_json(json,sizeof json,&drop_source);control_field_str(r,"drop_source_json",json);}else control_field_str(r,"drop_source_json","{}");
     control_field_int(r,"pending_inventory_checks",pending);control_field_int(r,"replica_failures",failed);control_field_int(r,"replica_handles",handles);control_field_int(r,"source_materials",n);
-    pthread_mutex_lock(&ground_mutex);bool active=ground_mode.heartbeat&&now_ms()-ground_mode.heartbeat<2500;uint64_t age=ground_mode.heartbeat?now_ms()-ground_mode.heartbeat:UINT64_MAX;pthread_mutex_unlock(&ground_mutex);control_field_bool(r,"world_items_active",active);control_field_int(r,"heartbeat_age_ms",age==UINT64_MAX?-1:(int64_t)age);
+    pthread_mutex_lock(&ground_mutex);bool roaming=ground_mode.roaming;bool active=ground_mode.heartbeat&&now_ms()-ground_mode.heartbeat<2500;uint64_t age=ground_mode.heartbeat?now_ms()-ground_mode.heartbeat:UINT64_MAX;pthread_mutex_unlock(&ground_mutex);control_field_bool(r,"world_items_active",active);control_field_bool(r,"roaming_ground_items",roaming);control_field_int(r,"heartbeat_age_ms",age==UINT64_MAX?-1:(int64_t)age);
 }

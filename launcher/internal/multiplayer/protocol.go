@@ -123,6 +123,7 @@ type Message struct {
 	Environment      *Environment      `json:"environment,omitempty"`
 	GroundEnabled    bool              `json:"ground_enabled,omitempty"`
 	GroundWorld      string            `json:"ground_world,omitempty"`
+	GroundRoaming    bool              `json:"ground_roaming,omitempty"`
 	GroundZone       *Vec3             `json:"ground_zone,omitempty"`
 	GroundItems      []GroundItem      `json:"ground_items,omitempty"`
 	GroundClaims     []GroundClaim     `json:"ground_claims,omitempty"`

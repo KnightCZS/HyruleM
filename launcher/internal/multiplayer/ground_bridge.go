@@ -87,7 +87,14 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 		n.heartbeat = time.Time{}
 	}
 	if n.world != v.World || now.Sub(n.heartbeat) >= time.Second {
-		if err := b.command(ctx, fmt.Sprintf("hm_items_open %s %s %.3f %.3f %.3f", session, v.World, v.Zone.X, v.Zone.Y, v.Zone.Z), nil); err != nil {
+		open := fmt.Sprintf("hm_items_open %s %s %.3f %.3f %.3f", session, v.World, v.Zone.X, v.Zone.Y, v.Zone.Z)
+		if v.Roaming {
+			if !b.roamingGround {
+				return fmt.Errorf("a coleta fora de Hateno exige o runtime da prévia 17. Feche os jogos e abra Iniciar-Nativo.cmd do pacote novo")
+			}
+			open += " player"
+		}
+		if err := b.command(ctx, open, nil); err != nil {
 			return err
 		}
 		n.world = v.World

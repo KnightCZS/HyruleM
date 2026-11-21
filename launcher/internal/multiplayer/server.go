@@ -30,31 +30,33 @@ type serverPeer struct {
 	groundClaims    map[uint64]GroundClaim
 	groundDrop      *GroundDropResult
 	groundRejected  map[uint64]bool
+	loadedDamage    []string
 	damageLedger    map[string]uint64
 }
 
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
 
 type Server struct {
-	worldState       *WorldState
-	worldAt          time.Time
-	mu               sync.Mutex
-	cfg              ServerConfig
-	peers            map[string]*serverPeer
-	connections      map[net.Conn]bool
-	listener         net.Listener
-	cancel           context.CancelFunc
-	wg               sync.WaitGroup
-	closed           bool
-	enemies          map[string]EnemyHealth
-	environmentHost  string
-	environmentEpoch uint64
-	environment      *Environment
-	environmentAt    time.Time
-	groundWorld      string
-	groundItems      map[uint64]GroundItem
-	groundKeys       map[string]uint64
-	groundCounter    uint64
+	worldState                      *WorldState
+	worldAt                         time.Time
+	mu                              sync.Mutex
+	cfg                             ServerConfig
+	peers                           map[string]*serverPeer
+	connections                     map[net.Conn]bool
+	listener                        net.Listener
+	cancel                          context.CancelFunc
+	wg                              sync.WaitGroup
+	closed                          bool
+	enemies                         map[string]EnemyHealth
+	environmentHost                 string
+	environmentEpoch                uint64
+	environment                     *Environment
+	environmentAt                   time.Time
+	groundWorld                     string
+	groundConfigured, groundRoaming bool
+	groundItems                     map[uint64]GroundItem
+	groundKeys                      map[string]uint64
+	groundCounter                   uint64
 }
 
 func Listen(address string, cfg ServerConfig) (*Server, error) {
@@ -148,6 +150,18 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 		}
 	}
 	p := &serverPeer{conn: c, player: Player{ID: id, Name: name, Slot: slot}, out: make(chan Message, 1), done: make(chan struct{}), groundClaims: map[uint64]GroundClaim{}}
+	// The first client selects one item policy for the server lifetime. Never
+	// downgrade a live ledger: a legacy game could award the same distant item offline.
+	if !s.groundConfigured {
+		s.groundRoaming = s.cfg.SharedItems && hello.GroundEnabled
+		s.groundConfigured = true
+	}
+	if s.groundRoaming && !hello.GroundEnabled {
+		s.mu.Unlock()
+		c.SetWriteDeadline(time.Now().Add(time.Second))
+		WriteMessage(c, Message{Type: "error", Error: "Este mundo usa coleta em todo o campo. Atualize o cliente para a prévia 17."})
+		return
+	}
 	s.peers[id] = p
 	s.chooseEnvironmentHostLocked()
 	s.mu.Unlock()
@@ -246,6 +260,12 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				} else {
 					err = mergeEnemyHealth(s.enemies, m.Enemies, p.player.Pose)
 				}
+				if err == nil {
+					p.loadedDamage = p.loadedDamage[:0]
+					for _, e := range m.Enemies {
+						p.loadedDamage = append(p.loadedDamage, e.key())
+					}
+				}
 			}
 			s.mu.Unlock()
 			if err != nil {
@@ -341,9 +361,20 @@ func (s *Server) broadcast(ctx context.Context) {
 			copy.AgeMS = uint64(time.Since(s.environmentAt) / time.Millisecond)
 			environment = &copy
 		}
-		enemies := make([]EnemyHealth, 0, len(s.enemies))
-		for _, e := range s.enemies {
-			enemies = append(enemies, e)
+		// Each game reports at most 64 loaded identities. Keep session-wide
+		// damage on the server and send the union currently needed by the two games.
+		active := make(map[string]bool)
+		enemies := make([]EnemyHealth, 0)
+		for _, p := range s.peers {
+			if !p.player.Pose.Ready || time.Since(p.poseAt) >= 2*time.Second {
+				continue
+			}
+			for _, key := range p.loadedDamage {
+				if e, ok := s.enemies[key]; ok && !active[key] {
+					enemies = append(enemies, e)
+					active[key] = true
+				}
+			}
 		}
 		var world *WorldState
 		if s.worldState != nil && time.Since(s.worldAt) < 1500*time.Millisecond {
@@ -384,11 +415,15 @@ func (s *Server) broadcast(ctx context.Context) {
 					v := *p.groundDrop
 					packet.GroundDropResult = &v
 				}
+				zone := s.cfg.Spawn
+				if s.groundRoaming {
+					zone = p.player.Pose.Position
+				}
+				packet.GroundZone = &zone
+				packet.GroundRoaming = s.groundRoaming
 				s.mu.Unlock()
 				packet.GroundEnabled = true
 				packet.GroundWorld = s.groundWorld
-				zone := s.cfg.Spawn
-				packet.GroundZone = &zone
 			}
 			select {
 			case <-p.done:

@@ -54,7 +54,7 @@ func Connect(ctx context.Context, address, name string, onStatus func(string)) (
 	c.SetDeadline(deadline)
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
-	if e = WriteMessage(c, Message{Type: "hello", Protocol: Protocol, Name: name}); e != nil {
+	if e = WriteMessage(c, Message{Type: "hello", Protocol: Protocol, Name: name, GroundEnabled: true}); e != nil {
 		return fail(e)
 	}
 	reader := bufio.NewReaderSize(c, MaxLine)
@@ -206,7 +206,7 @@ func (c *Client) read(r *bufio.Reader) {
 					}
 					seen[i.ID] = true
 				}
-				c.ground = GroundView{Enabled: true, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult, Rejected: append([]uint64(nil), m.GroundRejected...)}
+				c.ground = GroundView{Enabled: true, Roaming: m.GroundRoaming, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult, Rejected: append([]uint64(nil), m.GroundRejected...)}
 			} else {
 				c.ground = GroundView{}
 			}

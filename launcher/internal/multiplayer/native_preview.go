@@ -23,7 +23,7 @@ type nativePreview struct {
 	lastWorld     time.Time
 	spawnAttempts uint64
 	sentHealth    map[string]int
-	zeroAckAt     map[string]time.Time
+	healthAckAt   map[string]time.Time
 	worldCursor   int
 }
 
@@ -37,6 +37,7 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 		AnimationCapture bool   `json:"animation_capture"`
 		ActorJobBarrier  bool   `json:"actor_job_barrier"`
 		VisualEffects    bool   `json:"visual_effect_events"`
+		RoamingGround    bool   `json:"roaming_ground_items"`
 		WorldActors      bool   `json:"world_actor_sync"`
 	}
 	if err := b.command(ctx, "hm_caps", &caps); err != nil {
@@ -63,6 +64,7 @@ func (b *Bridge) openNative(ctx context.Context) (*nativePreview, error) {
 	if !caps.WorldActors {
 		return nil, fmt.Errorf("falta o controle de atores do mundo; aguarde a recompilação da biblioteca com o gerador novo")
 	}
+	b.roamingGround = caps.RoamingGround
 	var nonce [8]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, err
@@ -375,6 +377,7 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 	for key := range n.sentHealth {
 		if _, ok := byKey[key]; !ok {
 			delete(n.sentHealth, key)
+			delete(n.healthAckAt, key)
 		}
 	}
 	writes := 0
@@ -394,7 +397,7 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 		// Zero is also an acknowledgement of the deletion-hook evidence. It
 		// may arrive after a previous zero write; do not strand that queue.
 		if sent, ok := n.sentHealth[e.key()]; ok && sent <= shared.Health {
-			if shared.Health != 0 || now.Sub(n.zeroAckAt[e.key()]) < time.Second {
+			if now.Sub(n.healthAckAt[e.key()]) < time.Second {
 				continue
 			}
 		}
@@ -407,12 +410,10 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 		}
 		n.worldCursor = (index + 1) % len(local)
 		n.sentHealth[e.key()] = shared.Health
-		if shared.Health == 0 {
-			if n.zeroAckAt == nil {
-				n.zeroAckAt = map[string]time.Time{}
-			}
-			n.zeroAckAt[e.key()] = now
+		if n.healthAckAt == nil {
+			n.healthAckAt = map[string]time.Time{}
 		}
+		n.healthAckAt[e.key()] = now
 		writes++
 	}
 	return nil

@@ -7,7 +7,8 @@ import (
 )
 
 const MaxEnemyObservations = 64
-const MaxSharedEnemies = 128
+const MaxSharedEnemies = MaxPlayers * MaxEnemyObservations
+const maxSessionDamageActors = 32768
 
 // Map hash + actor + original placement identify the same loaded enemy across
 // processes. Native pointers and per-process actor IDs never cross the network.
@@ -52,7 +53,7 @@ func mergeEnemyHealth(registry map[string]EnemyHealth, records []EnemyHealth, lo
 		if exists && old.Health < e.Health {
 			e.Health = old.Health
 		}
-		if exists || len(registry) < MaxSharedEnemies {
+		if exists || len(registry) < maxSessionDamageActors {
 			registry[key] = e
 		}
 	}
@@ -92,7 +93,7 @@ func mergeMapDamage(registry map[string]EnemyHealth, ledger map[string]uint64, o
 	seen := map[string]bool{}
 	for _, e := range records {
 		key := origin + ":" + e.key()
-		if !e.Valid() || seen[key] || e.Position.Sub(local.Position).Len() > 160 || e.Damage < ledger[key] {
+		if !e.Valid() || seen[key] || e.Damage < ledger[key] {
 			return fmt.Errorf("contador de dano inválido")
 		}
 		seen[key] = true
@@ -103,15 +104,20 @@ func mergeMapDamage(registry map[string]EnemyHealth, ledger map[string]uint64, o
 			additional++
 		}
 	}
-	if len(ledger)+additional > MaxSharedEnemies*8 {
+	if len(ledger)+additional > maxSessionDamageActors*2 {
 		return fmt.Errorf("limite de origens de mundo atingido")
 	}
 	for _, e := range records {
 		key := e.key()
 		event := origin + ":" + key
 		before, known := ledger[event]
+		// Final zero evidence may be awaiting acknowledgement after fast travel.
+		// Accept a distant terminal report only for an identity this peer already observed.
+		if e.Position.Sub(local.Position).Len() > 160 && !(known && e.Health == 0) {
+			continue
+		}
 		old, exists := registry[key]
-		if !exists && len(registry) >= MaxSharedEnemies {
+		if !exists && len(registry) >= maxSessionDamageActors {
 			continue
 		}
 		if exists {
@@ -122,7 +128,7 @@ func mergeMapDamage(registry map[string]EnemyHealth, ledger map[string]uint64, o
 			} else {
 				health -= int(delta)
 			}
-			if !known && e.Damage == 0 && e.Health < health {
+			if e.Health == 0 || (!known && e.Damage == 0 && e.Health < health) {
 				health = e.Health
 			}
 			e.Health = health
