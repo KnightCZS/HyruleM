@@ -1,8 +1,10 @@
-# HyruleM 0.5.0-preview.15 - candidata em validação
+# HyruleM 0.5.0-preview.15 - sincronização visual experimental
 
 Primeira camada de mundo sob autoridade do anfitrião: posição, rotação e pedidos de animação dos atores de mapa já carregados nos dois jogos. Usa os atores nativos correspondentes, com IA local suspensa apenas no seguidor que recebeu estado recente. Até 64 atores em 180 m; veja os limites abaixo.
 
-Os testes nativos e de transporte passaram. Candidatos anteriores foram testados com duas instâncias/GPU: corrigida a captura vazia, houve 26/26 correspondências, mas a conferência de posições reprovou com divergência de NPCs. O hook de IA foi movido para o despacho virtual comum; o teste seguinte ainda encontrou matrizes instáveis. A candidata atual conserva a trajetória da rede entre pacotes e confirma AS pela observação do pedido nativo, sem confiar em retorno booleano. Precisa repetir o teste GPU e não foi publicada. O último relato confirma evolução das marionetes, mas efeitos de espada/impacto e algumas roupas continuam pendentes.
+A revisão c64d0fc7 foi testada em dois jogos Windows com GPU. Em Hateno, encontrou 28/28 atores e passou nas sete comparações das raízes dos esqueletos ativos, com diferença máxima observada de 1,36 m em relação ao anfitrião. As imagens também foram conferidas. No acampamento de Bokoblins, as últimas seis amostras ficaram abaixo de 1 m; a primeira chegou a 2,01 m. A correção mantém a trajetória de rede, confirma os pedidos AS e reposiciona a paleta final de ossos, que antes podia permanecer longe da raiz do modelo.
+
+**Esta é uma etapa visual, com atraso e animações ainda aproximadas.** O teste geral de física continua reprovado: posições internas de NPCs inativos divergiram até 17,63 m em Hateno, embora suas raízes de modelo acompanhassem o anfitrião. Não anuncia colisões, combate ou simulação integral compartilhados. O último relato de efeitos de espada/impacto e algumas roupas continua pendente. Resultados e cobertura estão na [auditoria](https://github.com/KnightCZS/HyruleM/blob/v0.5.0-preview.15/docs/AUDITORIA_0.5.0-preview.15.md).
 
 ## Atualizar e usar
 
@@ -75,7 +77,9 @@ O primeiro jogador conectado é a autoridade; ao sair, o servidor elege outro e 
 
 Atores inicializados nos estados 1/2 entram com modelo presente e referência válida; a captura não exige que o culling local esteja ativo como no DemoNPC. Inicialização e remoção ficam excluídas.
 
-São usados os monstros comuns, NPCs, objetos móveis da lista explícita e armas soltas do próprio jogo. Hash de mapa, nome e colocação original identificam o mesmo objeto entre processos. A IA original fica suspensa somente para um ator correspondente com estado recém-aplicado no cliente; o host continua executando sua IA. Expiração, desconexão e troca de host liberam referências e devolvem a autoridade local.
+São usados os monstros comuns, NPCs, objetos móveis da lista explícita e armas soltas do próprio jogo. Hash de mapa, nome e colocação original identificam o mesmo objeto entre processos. O despacho local de RootAI fica suspenso somente para um ator correspondente com estado recém-aplicado no cliente; o host continua executando sua IA. Outros caminhos de física e atualização de NPCs inativos ainda podem avançar localmente. Expiração, desconexão e troca de host liberam referências e devolvem a autoridade local.
+
+A paleta final dos modelos SDK reconhecidos é reposicionada junto da raiz recebida, preservando os deslocamentos relativos dos ossos. Isso corrige a separação entre o modelo e o esqueleto desenhado; não transmite toda a pose do NPC nem substitui sua física. Modelos/raízes desconhecidos e matrizes inválidas são omitidos.
 
 **Atores precisam estar carregados nos dois jogos.** Ausentes são contados, não criados. Extras não são ocultados. Chefes, atores dinâmicos sem identidade de mapa, trajetórias físicas completas, combate contra o Link remoto, alvo mais próximo, agenda/diálogo exato de NPCs e persistência não estão implementados aqui. Animação é o pedido AS, não toda a fase/variáveis da árvore. Pegar/carregar um objeto no cliente pode sofrer correção pelo estado do host. Coleta/descarte anteriores mantêm os limites de Hateno descritos acima.
 
@@ -98,4 +102,4 @@ O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativ
 
 Testes Go/TCP e race, testes C com memória sintética, emissão compilada dos hooks, 36 assinaturas únicas privadas e roundtrips do setter nativo foram executados. Builds/instalação Windows são verificados no CI. Isso não substitui jogar com dois clientes. `native_ready` permanece reservado à geração completa; não anuncia combate/IA/interação geral prontos.
 
-[Auditoria](../docs/AUDITORIA_0.5.0-preview.15.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.
+[Auditoria](https://github.com/KnightCZS/HyruleM/blob/v0.5.0-preview.15/docs/AUDITORIA_0.5.0-preview.15.md) · [Pesquisa](RESEARCH_SYNC.md). Runtime Savage Wind, MIT. Sem código/BNP do Milk Bar, arquivos do jogo, saves, disassembly ou biblioteca recompilada no pacote.

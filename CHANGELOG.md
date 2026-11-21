@@ -2,6 +2,8 @@
 
 ## 0.5.0-preview.15
 
+- Reposiciona a paleta final dos atores reconhecidos junto da raiz recebida, preservando os deslocamentos dos ossos e o histórico da interpolação.
+- Validação GPU: 28/28 atores em Hateno e sete comparações visuais aprovadas. No acampamento, seis amostras abaixo de 1 m e primeira amostra a 2,01 m. Física geral continua reprovada e fora desta etapa visual.
 - Mantém a interpolação sobre a última matriz da rede, evitando contaminação por movimento local entre pacotes.
 - Confirma AS pelo pedido nativo observado, sem inferir sucesso de retorno booleano; normaliza grupo/slot como o motor.
 

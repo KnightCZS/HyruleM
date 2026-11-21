@@ -197,7 +197,7 @@ jobs:
             exit 0
           fi
           if [ -z "$existing" ]; then
-            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.15 — mundo sob autoridade do anfitrião' --notes-file releases/v0.5.0-preview.15.md --prerelease --latest=false --draft
+            gh release create "$tag" --target "$RELEASE_SHA" --title 'HyruleM 0.5.0-preview.15 — sincronia visual de atores próximos' --notes-file releases/v0.5.0-preview.15.md --prerelease --latest=false --draft
           fi
           gh release upload "$tag" release-assets/HyruleM-NativePreview-Windows-x64.zip release-assets/SHA256.txt --clobber
           gh release edit "$tag" --draft=false --prerelease --latest=false

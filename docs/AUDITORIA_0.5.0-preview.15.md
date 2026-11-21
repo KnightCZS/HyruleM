@@ -1,5 +1,20 @@
 # Auditoria - 0.5.0-preview.15
 
+## Resultado atual - 21/11/2026
+
+A revisão c64d0fc771c20ea545a30e7ba193bb4f18e585fb passou nos builds/testes Linux e Windows, no instalador e na conferência do ZIP (CRC, SHA-256, seis fontes nativas, revisão do launcher e nove exports). Foi instalada somente na cópia de teste, com saves/cache próprios. A biblioteca privada com os 201 sites foi reutilizada: esta correção não altera o gerador, os sites ou a ABI guest; nenhum `.id` foi editado.
+
+| Teste GPU | Correspondência | Raízes SDK desenhadas | Física interna |
+| --- | --- | --- | --- |
+| Hateno, dois jogadores no mesmo ponto | 28/28; nenhuma duplicata | 7/7 amostras aprovadas; máximo 1,3592 m entre processos | Reprovada; máximo 17,6267 m em NPC inativo |
+| Acampamento de Bokoblins | Até 23/23; 11 atores ativos comparados por amostra | 6/7 aprovadas; primeira 2,0095 m, demais até 0,9856 m | Reprovada; não certificada como simulação compartilhada |
+
+Em Hateno, foram comparados 6–8 atores em Calc por amostra de paleta; os 28 atores carregados foram comparados em quatro leituras independentes de raiz de ModelGroup, com máximo de 0,2601 m. A diferença entre a raiz SDK e a raiz de modelo do cliente ficou em até 0,00025 m nas paletas reportadas. As imagens dos dois jogos foram inspecionadas: o NPC aparece próximo da posição do anfitrião, com fase de animação ainda aproximada. O teste registrou 30 pedidos AS aceitos e 6.052 despachos de IA local suprimidos no seguidor. O timeout devolveu world_role a zero.
+
+O acampamento confirma a correção da separação entre esqueleto e ModelGroup: antes houve dezenas de metros de divergência; depois, a maior diferença SDK/modelo reportada foi 0,0116 m. Isso não elimina o atraso em relação à captura instantânea do anfitrião. O instrumento conserva a primeira amostra reprovada e `ok=false`; não foi reclassificada como aprovação geral. Em Hateno, `visual_ok=true`, `simulation_ok=false` e `ok=false` continuam separados. Os maiores intervalos entre envios foram 0,3192 s e 0,3243 s, respectivamente.
+
+Cobertura: retransmissor local entre os comandos nativos, com observadores independentes por leitura de memória e capturas de tela. O caminho Go/ControlStream de produção teve teste TCP separado; esta rodada não exercitou o menu do launcher de ponta a ponta. Props móveis, todas as armas soltas, spawn/delete, colisões, PvP, alvo mais próximo e física integral não são certificados por esses testes. A revisão automática do Qodo permaneceu indisponível (sem ferramenta/runtime instalado); não há alegação de review Qodo concluído.
+
 ## Escopo
 
 Primeira autoridade de mundo sobre atores de mapa já carregados: monstros comuns, NPCs, lista explícita de objetos móveis e armas soltas. Até 64 identidades em 180 m do anfitrião. Hash de mapa, nome e posição original unem os atores entre processos; IDs de rede não são ponteiros.
@@ -60,4 +75,4 @@ A revisão a0e57538 compilou e passou nos testes/instalador, mas não corrigiu o
 
 A nova candidata aplica uma transformação afim à paleta final de cada modelo SDK validado, usando a rotina nativa de escrita de ossos já utilizada nas marionetes. A raiz Root/Model é levada à matriz recebida e o mesmo delta preserva os deslocamentos relativos dos demais ossos. Modelos/vtables desconhecidos, raízes sem nome reconhecido, matrizes inválidas e inversas singulares são recusados. As matrizes de saída são validadas antes de qualquer osso do modelo ser escrito. A matriz usada como histórico da interpolação é restaurada depois do scratch.
 
-A correção é chamada somente no caminho seguidor fresco, após aquisição da referência nativa e correspondência de identidade. Não muda flags de sleep, colisão, vida, inventário ou autoridade de física. Continua usando o AS local aproximado; não transmite pose completa nem promete fase exata de animação. Os testes sintéticos verificam deslocamento e rotação dos ossos, inversa com escala, recusa de singularidade/modelo desconhecido, histórico de interpolação e CPU preservados. Ainda requer novo teste com GPU antes de publicação.
+A correção é chamada somente no caminho seguidor fresco, após aquisição da referência nativa e correspondência de identidade. Não muda flags de sleep, colisão, vida, inventário ou autoridade de física. Continua usando o AS local aproximado; não transmite pose completa nem promete fase exata de animação. Os testes sintéticos verificam deslocamento e rotação dos ossos, inversa com escala, recusa de singularidade/modelo desconhecido, histórico de interpolação e CPU preservados. A validação GPU posterior está no resultado atual acima.
