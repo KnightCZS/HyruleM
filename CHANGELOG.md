@@ -1,5 +1,9 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.17.1
+
+No teste com dois jogos em Rito, o cliente recebia a vida zero de um pinheiro, mas a árvore continuava em pé. O hotfix substitui o ator original por um toco nativo para `Obj_TreeConiferous_A_02` e `Obj_TreeBroadleaf_A_L` após a confirmação de vida zero pelo servidor. A árvore só é removida depois que o modelo do toco entra em atividade. O tronco solto, a madeira e outras variedades ainda precisam de sincronização própria.
+
 ## 0.5.0-preview.17
 
 - Com o servidor e os dois jogadores atualizados, a zona de coleta acompanha cada Link. O cliente pode descobrir materiais e armas de mapa quando o anfitrião está em outra região. A reserva exige proximidade e só o vencedor recebe a concessão de inventário.

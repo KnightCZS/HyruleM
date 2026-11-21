@@ -333,6 +333,21 @@ int main(void) {
     #include "test_preview12.inc"
     #include "test_preview14.inc"
     #include "test_world_actors.inc"
+    // A refused stump must leave the genuine collider standing. A successful
+    // retry removes only the matched tree and releases its native replacement.
+    uint64_t standing=HEAP_BASE+0xe5000,tree_block=standing+0x1800;
+    ST64(standing,vt);ST64(standing+0x68,tree_block);ST32(standing+0x60,5);
+    ST32(tree_block+0x40,5);ST64(tree_block+0x48,standing);ST8(standing+0x64,1);
+    ST32(standing+0x900,40);memcpy((void *)(uintptr_t)(standing+0x398),player_root,sizeof player_root);
+    EnemyHealth felled={.hash=876};strcpy(felled.name,"Obj_TreeConiferous_A_02");
+    for(int j=0;j<3;j++)felled.position[j]=player_root[j*4+3];
+    uint64_t dt=deletes;tree_queue(standing,&felled);assert(replacement.original==standing);
+    reject_equipment=true;tree_tick(&cpu,0x7000001000,true);reject_equipment=false;
+    assert(!replacement.original&&deletes==dt&&LD8(standing+0x64)==1);
+    replacement.retry_at=0;deny_lease=false;tree_queue(standing,&felled);tree_tick(&cpu,0x7000001000,true);
+    assert(replacement.stump.spawning&&deletes==dt);
+    tree_tick(&cpu,0x7000001000,true);
+    assert(!replacement.original&&deletes==dt+1&&LD8(standing+0x64)==3&&!memcmp(&cpu,&before,sizeof cpu));
     puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");

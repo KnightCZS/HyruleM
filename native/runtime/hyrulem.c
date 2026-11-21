@@ -283,7 +283,7 @@ static void world_scan(Cpu *c,uint64_t local,bool connected) {
     last_world_scan=now;
     EnemyHealth pending[HEALTH_MAX],seen[WORLD_MAX];int np=0,n=0;
     pthread_mutex_lock(&mutex);np=health_count;memcpy(pending,health_pending,sizeof *pending*np);pthread_mutex_unlock(&mutex);
-    EnemyHealth zeros[HEALTH_MAX];int nz;pthread_mutex_lock(&mutex);if(world_history_reset){world_history_count=0;world_history_reset=false;}nz=world_zero_count;memcpy(zeros,world_zero,sizeof *zeros*nz);pthread_mutex_unlock(&mutex);
+    EnemyHealth zeros[HEALTH_MAX];int nz;pthread_mutex_lock(&mutex);if(world_history_reset){world_history_count=0;world_history_reset=false;replacement.cancelling=replacement.original!=0;}nz=world_zero_count;memcpy(zeros,world_zero,sizeof *zeros*nz);pthread_mutex_unlock(&mutex);
     for(int i=0;i<nz&&n<WORLD_MAX;i++){EnemyHealth e=zeros[i];EnemyHealth *h=world_note(&e);if(h)h->health=0;seen[n++]=e;}
     uint64_t creator=LD64(g_site.hm_creator);
     if(!range(creator,0xe8)||LD32(creator+0x4c)!=0x7b8)return;
@@ -312,6 +312,7 @@ static void world_scan(Cpu *c,uint64_t local,bool connected) {
         for(int i=0;i<np;i++) if(same_enemy(&e,&pending[i])&&pending[i].health<e.health) {
             // Like the original mod's health convergence: never heal from an
             // old snapshot and never write another player's private life.
+            if(!pending[i].health && tree_has_stump(e.name)){tree_queue(a,&e);break;}
             e.health=pending[i].health;ST32(life,(uint32_t)e.health);break;
         }
         if(history)history->health=e.health;bool duplicate=false;for(int j=0;j<n;j++)if(same_enemy(&seen[j],&e)){seen[j]=e;duplicate=true;break;}if(!duplicate)seen[n++]=e;
@@ -494,7 +495,9 @@ void rt_hyrulem_tick(Cpu *c, uint64_t safe_string_vtable) {
         return;
     }
     ground_tick(c,local,safe_string_vtable);
-    world_scan(c,local,d.session[0]&&d.received&&now_ms()-d.received<2500);
+    bool shared_world=d.session[0]&&d.received&&now_ms()-d.received<2500;
+    world_scan(c,local,shared_world);
+    tree_tick(c,safe_string_vtable,shared_world);
     if (!storage) {
         if (!d.session[0]) return;
         storage=(uint64_t)(uintptr_t)hle_alloc(BYTES);
@@ -610,6 +613,7 @@ RT_ON_RESET(hyrulem_reset) {
     actor_world_reset();
     memset(&local_appearance,0,sizeof local_appearance);pose_storage=0;
     memset(&local_pose,0,sizeof local_pose);pose_applied=body_pose_applied=0;visual_log_at=0;memset(&pose_probe,0,sizeof pose_probe);memset(local_armor,0,sizeof local_armor);armor_read_at=0;armor_from_pouch=false;memset(local_gear,0,sizeof local_gear);memset(local_position,0,sizeof local_position);local_ready=false;
+    memset(&replacement,0,sizeof replacement);
     world_count=health_count=world_history_count=world_zero_count=0;world_history_reset=false;last_world_scan=0;
     pthread_mutex_unlock(&mutex);
     storage=actor=spawning_at=applied=tick_count=activation_wait_ticks=activation_wait_at=0; session[0]=0;

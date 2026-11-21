@@ -262,3 +262,87 @@ static void actor_world_tick(Cpu *c,uint64_t local,uint64_t vt,bool paused){
 static void actor_world_reset(void){
     pthread_mutex_lock(&actor_world_mutex);memset(&actor_world_mode,0,sizeof actor_world_mode);memset(&actor_world_live,0,sizeof actor_world_live);memset(actor_world_bindings,0,sizeof actor_world_bindings);memset(actor_world_as,0,sizeof actor_world_as);memset(actor_world_seen,0,sizeof actor_world_seen);actor_world_capture_seq=actor_world_frame_seq=actor_world_id=actor_world_scan_at=actor_world_applied_seq=actor_world_arrival=0;actor_world_seen_count=actor_world_matched=actor_world_missing=actor_world_applied=actor_world_ai_skipped=actor_world_as_applied=0;actor_world_complete=false;memset(actor_world_center,0,sizeof actor_world_center);pthread_mutex_unlock(&actor_world_mutex);
 }
+
+// A felled map tree is replaced by new actors. Lowering its HP alone leaves
+// the original model and collider standing. Keep the original until a native
+// stump has activated, then release the replacement to the game's lifecycle.
+typedef struct {
+    EnemyHealth tree;
+    uint64_t original, block, original_storage, started, retry_at;
+    uint32_t generation;
+    GearVisual stump;
+    float matrix[12];
+    bool cancelling;
+} TreeReplacement;
+static TreeReplacement replacement;
+static uint64_t ground_storage(void);
+
+static bool tree_has_stump(const char *name) {
+    return !strcmp(name,"Obj_TreeConiferous_A_02") || !strcmp(name,"Obj_TreeBroadleaf_A_L");
+}
+static void tree_queue(uint64_t actor,const EnemyHealth *tree) {
+    TreeReplacement *t=&replacement;
+    if(t->original || (now_ms()<t->retry_at && same_enemy(tree,&t->tree)))return;
+    uint64_t block=LD64(actor+0x68);
+    uint32_t gen=LD32(actor+0x60);
+    if(!actor_world_weak(actor,block,gen))return;
+    memcpy(t->matrix,(void *)(uintptr_t)(actor+0x398),sizeof t->matrix);
+    if(!actor_world_matrix(t->matrix))return;
+    t->tree=*tree;t->original=actor;t->block=block;t->generation=gen;t->started=now_ms();
+}
+static void tree_finish(Cpu *c,bool committed) {
+    TreeReplacement *t=&replacement;
+    if(!committed && !remove_gear(c,&t->stump)){t->cancelling=true;return;}
+    if(committed)call(c,g_site.actor_index_release,t->stump.storage+INDEX,0,0,0,0,0,0);
+    if(t->original_storage)call(c,g_site.actor_index_release,t->original_storage+INDEX,0,0,0,0,0,0);
+    uint64_t st=t->stump.storage;
+    memset(&t->stump,0,sizeof t->stump);t->stump.storage=st;
+    t->original=0;t->cancelling=false;t->retry_at=now_ms()+(committed?2500:10000);
+}
+static void tree_tick(Cpu *c,uint64_t vt,bool connected) {
+    TreeReplacement *t=&replacement;GearVisual *g=&t->stump;
+    if(!t->original)return;
+    if(t->cancelling || !connected || now_ms()-t->started>10000 ||
+       !actor_world_weak(t->original,t->block,t->generation)){tree_finish(c,false);return;}
+    if(!t->original_storage)t->original_storage=ground_storage();
+    if(!g->storage)g->storage=ground_storage();
+    if(!t->original_storage||!g->storage){tree_finish(c,false);return;}
+    if(!LD8(t->original_storage+INDEX+12) &&
+       !call(c,g_site.actor_index_assign,t->original_storage+INDEX,t->original,1,0,0,0,0)){tree_finish(c,false);return;}
+    uint64_t st=g->storage;
+    if(!g->spawning&&!g->actor) {
+        uint64_t creator=LD64(g_site.hm_creator),manager=LD64(g_site.hm_heap_mgr);
+        if(!range(creator,0x60)||!range(manager,0x30)||LD8(creator+0x59))return;
+        uint64_t heap=LD64(manager+0x28);if(!range(heap,8))return;
+        memset((void *)(uintptr_t)(st+HANDLE),0,16);memset((void *)(uintptr_t)(st+PARAMS),0,0xd8);
+        memcpy((void *)(uintptr_t)(st+VECTOR),t->tree.position,12);
+        ST64(st+SSTR,vt);ST64(st+SSTR+8,st+KEY);
+        call(c,g_site.hm_param_add,st+PARAMS+0x10,st+VECTOR,st+SSTR,12,4,0,0);
+        snprintf((char *)(uintptr_t)(st+NAME),64,"%.48s_Stump",t->tree.name);
+        if(!call(c,g_site.hm_create,creator,st+NAME,heap,st+HANDLE,st+PARAMS,0,1)){tree_finish(c,false);return;}
+        g->spawning=true;return;
+    }
+    if(g->spawning) {
+        if(call(c,g_site.hm_handle_failed,st+HANDLE,0,0,0,0,0,0)){tree_finish(c,false);return;}
+        if(!call(c,g_site.hm_handle_ready,st+HANDLE,0,0,0,0,0,0))return;
+        uint64_t a=call(c,g_site.hm_handle_get,st+HANDLE,0,0,0,0,0,0);
+        if(!range(a,0x7d0)||!call(c,g_site.actor_index_assign,st+INDEX,a,1,0,0,0,0)){tree_finish(c,false);return;}
+        g->actor=a;
+        uint64_t awake=call(c,g_site.hm_handle_wake,st+HANDLE,0,0,0,0,0,0);g->spawning=false;
+        if(awake!=a){tree_finish(c,false);return;}
+    }
+    ActorRef stump=resolve_at(c,st,g->actor);
+    if(!stump.ptr){if(stump.invalid)tree_finish(c,false);return;}
+    bool ready=stump.state==1 && range(LD64(stump.ptr+0x4e0),0xa4);
+    if(ready){memcpy((void *)(uintptr_t)(st+MATRIX),t->matrix,48);call(c,g_site.hm_set_mtx,stump.ptr,st+MATRIX,0,0,0,0,0);}
+    release_at(c,st);
+    if(!ready)return;
+    ActorRef original=resolve_at(c,t->original_storage,t->original);
+    if(!original.ptr){if(original.invalid)tree_finish(c,false);return;}
+    if(original.state!=1){release_at(c,t->original_storage);return;}
+    uint64_t life=enemy_life(original.ptr);if(!life){release_at(c,t->original_storage);tree_finish(c,false);return;}
+    ST32(life,0);
+    call(c,g_site.hm_delete_actor,original.ptr,0,0,0,0,0,0);
+    release_at(c,t->original_storage);
+    tree_finish(c,true);
+}

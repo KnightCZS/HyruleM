@@ -1,4 +1,4 @@
-# HyruleM 0.5.0-preview.17 — multiplayer experimental
+# HyruleM 0.5.0-preview.17.1 — multiplayer experimental
 
 Primeira camada de mundo sob autoridade do anfitrião: posição, rotação e pedidos de animação dos atores de mapa já carregados nos dois jogos. Usa os atores nativos correspondentes, com IA local suspensa apenas no seguidor que recebeu estado recente. Até 64 atores em 180 m; veja os limites abaixo.
 
@@ -81,7 +81,7 @@ São usados os monstros comuns, NPCs, objetos móveis da lista explícita e arma
 
 A paleta final dos modelos SDK reconhecidos é reposicionada junto da raiz recebida, preservando os deslocamentos relativos dos ossos. Isso corrige a separação entre o modelo e o esqueleto desenhado; não transmite toda a pose do NPC nem substitui sua física. Modelos/raízes desconhecidos e matrizes inválidas são omitidos.
 
-**Atores precisam estar carregados nos dois jogos.** Ausentes são contados, não criados. Extras não são ocultados. Chefes, atores dinâmicos sem identidade de mapa, trajetórias físicas completas, combate contra o Link remoto, alvo mais próximo, agenda/diálogo exato de NPCs e persistência não estão implementados aqui. Animação é o pedido AS, não toda a fase/variáveis da árvore. Pegar/carregar um objeto no cliente pode sofrer correção pelo estado do host. Coleta/descarte anteriores mantêm os limites de Hateno descritos acima.
+**Atores precisam estar carregados nos dois jogos.** Ausentes são contados, não criados. Extras não são ocultados. Chefes, atores dinâmicos sem identidade de mapa, trajetórias físicas completas, combate contra o Link remoto, alvo mais próximo, agenda/diálogo exato de NPCs e persistência não estão implementados aqui. Animação é o pedido AS, não toda a fase/variáveis da árvore. Pegar/carregar um objeto no cliente pode sofrer correção pelo estado do host. As regras de coleta e descarte estão na seção de itens e armas.
 
 ## Diagnóstico e validação
 
