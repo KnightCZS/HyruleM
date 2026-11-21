@@ -81,7 +81,7 @@ func (c *Client) SharedEnemyHealth() []EnemyHealth {
 }
 
 func mapDamageActor(name string) bool {
-	if strings.HasPrefix(name, "Enemy_") {
+	if strings.HasPrefix(name, "Enemy_") || worldActorKind(name) == 3 {
 		return true
 	}
 	return strings.HasPrefix(name, "Obj_Tree") && !strings.Contains(name, "_Stump") && !strings.Contains(name, "_Trunk") && !strings.Contains(name, "Root") && !strings.Contains(name, "Branch")

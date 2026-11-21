@@ -15,11 +15,11 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 13
+const Protocol = 15
 
-// Protocol 13 carries scene and entity authority. Ping 14 enables references
+// Protocol 15 distinguishes native reconstructions from simulation sources. Ping 16 enables references
 // to full world frames already delivered on the same TCP connection.
-const WorldReferenceProtocol = 14
+const WorldReferenceProtocol = 16
 const MaxLine = 256 * 1024
 const MaxPlayers = 2
 

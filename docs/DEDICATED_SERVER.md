@@ -26,7 +26,7 @@ Ctrl+C ou SIGTERM encerra o servidor e grava o estado. O arquivo do mundo e sua 
 
 Cada entidade de mapa tem uma identidade estável e um cliente responsável escolhido pelo servidor entre os que a têm carregada. A escolha usa proximidade e disponibilidade. Uma revisão de autoridade invalida publicações antigas durante a transferência. O receptor aplica o estado na thread do jogo após o término das tarefas dos atores.
 
-Uma entidade carregada novamente recebe seu estado conhecido antes de assumir a simulação. O servidor mantém registros de entidades, vida e itens entre regiões e reinícios. Com nenhum cliente perto de uma entidade, o registro conserva o último estado. A execução da IA nativa depende de um cliente com essa entidade carregada.
+Uma entidade original carregada novamente recebe seu estado conhecido antes de assumir a simulação. Quando falta o ator, o adaptador pode reconstruir inimigos básicos, NPCs e objetos móveis pela API nativa. Essas cópias seguem o estado canônico e não participam da eleição do simulador. O retorno de um original remove a cópia correspondente. O servidor mantém registros de entidades, vida e itens entre regiões e reinícios. Com nenhum cliente perto de uma entidade, o registro conserva o último estado. A execução da IA nativa depende de um cliente com essa entidade carregada.
 
 Os setores do mundo aberto pertencem ao mesmo cenário. Interiores usam o tipo e o nome do mapa, identificados por assinaturas da versão Switch 1.9.0. Jogadores e objetos de santuários distintos têm identidades separadas mesmo quando suas coordenadas coincidem.
 
@@ -46,4 +46,4 @@ Esta prévia aceita dois jogadores. A captura nativa acompanha até 64 atores po
 
 [Resultados e limites dos testes da prévia 18.3](validation/preview18.3.md).
 
-Continuam pendentes a criação geral de atores ausentes, o ciclo dos espólios dinâmicos, troncos e madeira, os eventos gerais de missões, projéteis e a validação completa da física e do combate. A identificação de interiores está integrada ao protocolo. O gameplay em todos os interiores ainda exige validação.
+Continuam pendentes a reprodução de todos os parâmetros de criação e interação de atores ausentes, o ciclo dos espólios dinâmicos, troncos e madeira, os eventos gerais de missões, projéteis e a validação completa da física e do combate. A identificação de interiores está integrada ao protocolo. O gameplay em todos os interiores ainda exige validação.

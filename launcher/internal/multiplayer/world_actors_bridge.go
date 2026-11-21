@@ -2,6 +2,7 @@ package multiplayer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -119,7 +120,7 @@ func (b *Bridge) updateWorldActors(ctx context.Context, n *worldActorSync, now t
 // client. Native epoch == server lease revision fences frames at the barrier.
 func (b *Bridge) updateDedicatedWorld(ctx context.Context, n *worldActorSync, v WorldView, now time.Time) error {
 	if !b.distributedWorld {
-		return fmt.Errorf("o servidor dedicado exige o runtime da prévia 18")
+		return fmt.Errorf("o servidor dedicado exige o runtime da prévia 19")
 	}
 	if v.State == nil || now.Sub(v.At) > 1200*time.Millisecond {
 		b.closeWorldActors(ctx, n)
@@ -132,14 +133,16 @@ func (b *Bridge) updateDedicatedWorld(ctx context.Context, n *worldActorSync, v 
 	if v.State.Lease == 0 {
 		return fmt.Errorf("servidor enviou mundo sem revisão de autoridade")
 	}
-	if n.world != v.WorldID || n.epoch != v.State.Lease {
+	if n.world != v.WorldID {
 		if !b.closeWorldActors(ctx, n) {
 			return fmt.Errorf("liberação da autoridade anterior pendente")
 		}
 		n.world = v.WorldID
-		n.epoch = v.State.Lease
 		n.role = 3
 	}
+	// A lease change fences the native frame directly. Closing the world here
+	// would destroy reconstructions while unrelated entities change owners.
+	n.epoch = v.State.Lease
 	frame := *v.State
 	frame.Epoch = v.State.Lease
 	cmd, err := worldActorCommand(b.nativeSession, v.WorldID, frame.Epoch, 3, &frame)
@@ -148,6 +151,7 @@ func (b *Bridge) updateDedicatedWorld(ctx context.Context, n *worldActorSync, v 
 	}
 	var reply struct {
 		Actors                  string `json:"actors_b64"`
+		Replicas                string `json:"replicas_json"`
 		Sequence                uint64
 		Ready, Paused, Complete bool
 		X, Y, Z                 float64
@@ -156,8 +160,14 @@ func (b *Bridge) updateDedicatedWorld(ctx context.Context, n *worldActorSync, v 
 		return err
 	}
 	if reply.Ready && reply.Sequence > n.captured {
+		var replicas []uint64
+		if reply.Replicas != "" {
+			if err = json.Unmarshal([]byte(reply.Replicas), &replicas); err != nil {
+				return fmt.Errorf("identidades de cópias nativas inválidas: %w", err)
+			}
+		}
 		observation := WorldState{Scene: v.State.Scene, Epoch: v.Epoch, Lease: v.State.Lease, Sequence: reply.Sequence,
-			Center: Vec3{reply.X, reply.Y, reply.Z}, Paused: reply.Paused, Complete: reply.Complete, Actors: reply.Actors}
+			Center: Vec3{reply.X, reply.Y, reply.Z}, Paused: reply.Paused, Complete: reply.Complete, Actors: reply.Actors, Replicas: replicas}
 		if err = b.Client.PublishWorldActors(observation); err != nil {
 			return err
 		}

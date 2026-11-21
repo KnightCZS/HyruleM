@@ -9,6 +9,10 @@ import (
 // Preview readiness is separate from complete Gen1 combat/AI capabilities.
 // A running older adapter must be diagnosed before interpreting actor state.
 type PreviewDiagnostic struct {
+	WorldReplicas            int    `json:"world_replicas"`
+	WorldReplicaSpawns       int    `json:"world_replica_spawns"`
+	WorldReplicaFailures     int    `json:"world_replica_failures"`
+	WorldRebuilds            int    `json:"world_rebuilds"`
 	WorldRole                int    `json:"world_role"`
 	WorldEpoch               uint64 `json:"world_epoch"`
 	WorldCaptured            int    `json:"world_captured"`
@@ -89,6 +93,10 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 	}
 	p.Compatible = true
 	var s struct {
+		WorldReplicas            int    `json:"world_replicas"`
+		WorldReplicaSpawns       int    `json:"world_replica_spawns"`
+		WorldReplicaFailures     int    `json:"world_replica_failures"`
+		WorldRebuilds            int    `json:"world_rebuilds"`
 		WorldRole                int    `json:"world_role"`
 		WorldEpoch               uint64 `json:"world_epoch"`
 		WorldCaptured            int    `json:"world_captured"`
@@ -135,6 +143,7 @@ func DiagnosePreview(queries []ProbeCommand) PreviewDiagnostic {
 		p.Status, p.Message = "status_unavailable", "O runtime não respondeu ao estado nativo. Gere o relatório mantendo o mundo carregado."
 		return p
 	}
+	p.WorldReplicas, p.WorldReplicaSpawns, p.WorldReplicaFailures, p.WorldRebuilds = s.WorldReplicas, s.WorldReplicaSpawns, s.WorldReplicaFailures, s.WorldRebuilds
 	p.WorldRole, p.WorldEpoch, p.WorldCaptured, p.WorldMatched, p.WorldMissing, p.WorldApplied, p.WorldAISkipped, p.WorldAnimationsApplied = s.WorldRole, s.WorldEpoch, s.WorldCaptured, s.WorldMatched, s.WorldMissing, s.WorldApplied, s.WorldAISkipped, s.WorldAnimationsApplied
 	p.VisibilityCaptured, p.VisibilityApplied, p.EffectPropertiesCaptured, p.EffectPropertiesApplied, p.ArmorReferences = s.VisibilityCaptured, s.VisibilityApplied, s.EffectPropertiesCaptured, s.EffectPropertiesApplied, s.ArmorReferences
 	p.ArmorHeadBones, p.ArmorUpperBones, p.ArmorLowerBones = s.ArmorHeadBones, s.ArmorUpperBones, s.ArmorLowerBones

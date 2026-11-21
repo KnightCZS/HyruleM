@@ -1,4 +1,4 @@
-# HyruleM 0.5.0-preview.18.3 — multiplayer experimental
+# HyruleM 0.5.0-preview.19 — multiplayer experimental
 
 O servidor dedicado mantém o registro persistente do mundo e decide o responsável por cada entidade carregada. Ambos os clientes capturam seus arredores. Os demais recebem o estado correspondente e suspendem a decisão local de IA enquanto aplicam dados recentes. O modo pode ser hospedado pelo launcher ou pelo executável independente. Veja [como executar o servidor](../docs/DEDICATED_SERVER.md).
 
@@ -10,7 +10,7 @@ A revisão c64d0fc7 foi testada em dois jogos Windows com GPU. Em Hateno, encont
 
 1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, incluindo `runtime-update`.
 2. Execute **Iniciar-Nativo.cmd**, que instala o runtime com backup.
-3. O launcher confere e, quando necessário, recompila a biblioteca privada compartilhada antes de abrir os clientes. Aguarde o término. A prévia 18 exige ABI 12 e acrescenta as raízes de identidade do cenário. Atualize os dois clientes e o servidor.
+3. O launcher confere e, quando necessário, recompila a biblioteca privada compartilhada antes de abrir os clientes. Aguarde o término. A prévia 19 exige ABI 13 e inclui a reconstrução de entidades ausentes. Atualize os dois clientes e o servidor.
 4. Conecte pelo IP ou DNS do anfitrião e pela porta TCP escolhida. Clientes e servidores das prévias 15 e 16 podem jogar juntos. Com cliente receptor e servidor 16, o primeiro quadro dos atores vai completo e repetições usam uma referência curta. Cada nova captura continua levando a lista completa. A idade da captura continua contando durante as repetições.
 5. Hospede e conecte pelo IP/porta escolhidos. Na primeira abertura desta versão, **Itens do mundo: ligados** é ativado no painel de hospedagem. Depois disso a escolha é preservada; pode desligá-la antes de hospedar. O servidor separado usa `--shared-items=true` por padrão, ou `--shared-items=false` para desligar.
 6. Para hospedar uma sessão privada local, escolha **Somente este PC**. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.
@@ -92,7 +92,9 @@ O botão **Diagnóstico** do launcher coleta, em segundo plano, os estados nativ
 - `skeleton_captured`, `skeleton_received`, `body_pose_applied`, `skeleton_applied`, `armor_source`: captura, chegada pela rede, aplicação ao corpo, aplicação total e origem das roupas.
 - `pose_capture_status`, `pose_bones_skipped`: motivo da captura incompleta. A captura exige matrizes válidas e não publica um quadro corrompido.
 - `drop_error`, `drop_inventory_before`, `drop_inventory_after`: motivo nativo e quantidades conferidas do descarte de maçã. Não confundir ausência de maçã com erro de rede.
-- `world_role`, `world_epoch`, `world_captured`, `world_matched`, `world_missing`, `world_applied`, `world_ai_skipped`, `world_animations_applied`: papel (1 host/2 seguidor), época, captura, correspondência, ausentes, aplicações, decisões locais suspensas e pedidos AS aplicados. Ausente não é destruído.
+- `world_role`, `world_epoch`, `world_captured`, `world_matched`, `world_missing`, `world_applied`, `world_ai_skipped`, `world_animations_applied`: papel (1 host/2 seguidor/3 dedicado), época, captura, correspondência, ausentes, aplicações, decisões locais suspensas e pedidos AS aplicados. Ausente não é destruído.
+- `world_replicas`, `world_replica_spawns`, `world_replica_failures`, `world_rebuilds`: cópias ativas, pedidos nativos de criação aceitos, tentativas que falharam e reconstruções manuais de entidades estrangeiras. Uma cópia não é fonte de simulação.
+
 - `pending_zero_events`: evidências de vida zero aguardando confirmação.
 - `world_items_active`, `heartbeat_age_ms`, `source_materials`: modo ativo e observações.
 - `native_drop_count`, `native_drops_active`, `native_drop_local_recovery`: descartes normais e recuperação local.

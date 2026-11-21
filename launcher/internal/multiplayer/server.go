@@ -168,7 +168,7 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 		return
 	}
 	if s.cfg.DedicatedWorld && !hello.DedicatedWorld {
-		WriteMessage(c, Message{Type: "error", Error: "Este servidor dedicado exige a prévia 18."})
+		WriteMessage(c, Message{Type: "error", Error: "Este servidor dedicado exige a prévia 19."})
 		return
 	}
 	s.mu.Lock()
@@ -470,7 +470,32 @@ func (s *Server) broadcast(ctx context.Context) {
 			if s.cfg.DedicatedWorld {
 				s.mu.Lock()
 				packet.WorldState = s.dedicatedWorldSnapshot(p, sequence, time.Now())
+				// Missing enemies need canonical HP before they can report local
+				// damage. Prioritize that seed, then this client's damage evidence.
+				packet.Enemies = nil
+				known := map[string]bool{}
+				addHealth := func(key string) {
+					if e, ok := s.enemies[key]; ok && !known[key] && len(packet.Enemies) < MaxSharedEnemies {
+						packet.Enemies = append(packet.Enemies, e)
+						known[key] = true
+					}
+				}
+				rows, _ := decodeWorldActors(packet.WorldState.Actors)
+				for _, a := range rows {
+					if a.Kind == 1 || a.Kind == 3 {
+						addHealth((EnemyHealth{Scene: packet.WorldState.Scene, Hash: a.Hash, Actor: a.Actor, Spawn: a.Spawn}).key())
+					}
+				}
+				for _, key := range p.loadedDamage {
+					addHealth(key)
+				}
+				for _, e := range enemies {
+					if e.Scene == p.player.Pose.Scene && e.Position.Sub(p.player.Pose.Position).Len() <= WorldRadius {
+						addHealth(e.key())
+					}
+				}
 				s.mu.Unlock()
+				sort.Slice(packet.Enemies, func(i, j int) bool { return packet.Enemies[i].key() < packet.Enemies[j].key() })
 				packet.DedicatedWorld = true
 			}
 			// The receiver renders its own Link locally. Echoing its complete

@@ -19,7 +19,7 @@ static bool world_test,world_no_as_request;static uint64_t invalidate_world_acto
 static bool empty_inventory;static bool weapon_test;static uint64_t weapon_vt,weapon_pouch;static unsigned weapon_entries;static uint32_t granted_modifier;static int granted_bonus;
 static uint64_t local_equipped[6],gear_handles[32],gear_actors[32];static unsigned gear_allocations,gear_handles_count;static bool reject_equipment;
 void *hle_alloc(uint64_t size) { if(size==FX_MAX*16)return (void *)(uintptr_t)(HLE_HEAP+0x30000);assert(size==BYTES);return (void *)(uintptr_t)(storage?HLE_HEAP+0x1000+0x400*gear_allocations++:HLE_HEAP); }
-static uint64_t handle_actor(uint64_t handle) {if(handle==HLE_HEAP)return mock_actor;for(unsigned i=0;i<gear_handles_count;i++)if(gear_handles[i]==handle)return gear_actors[i];assert(false);return 0;}
+static uint64_t handle_actor(uint64_t handle) {if(handle==HLE_HEAP)return mock_actor;for(unsigned i=gear_handles_count;i>0;i--)if(gear_handles[i-1]==handle)return gear_actors[i-1];assert(false);return 0;}
 void guest_call(Cpu *c,uint64_t fn) {
     calls++;
     if(fn==g_site.hm_material_set||fn==g_site.hm_bone_visible_set){uint64_t bits=LD64(c->x[0]+(fn==g_site.hm_material_set?0xf0:0xe8));unsigned i=(unsigned)c->x[1];uint32_t v=LD32(bits+i/32*4),mask=1u<<(i%32);ST32(bits+i/32*4,c->x[2]?v|mask:v&~mask);shape_writes++;}
@@ -60,7 +60,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     // Deliberately clobber every register: the hook must preserve the caller.
     memset(c->v,0x5a,sizeof c->v);c->x[3]=0xdeadbeef;c->nzcv=0xabcdef;c->fpsr=91;
 }
-void control_register(const ControlCmd *cmds,int n) {assert(n==18);}
+void control_register(const ControlCmd *cmds,int n) {assert(n==19);}
 void control_field_str(ControlReply *r,const char *k,const char *v) {}
 void control_field_int(ControlReply *r,const char *k,int64_t v) {}
 void control_field_num(ControlReply *r,const char *k,double v) {}
@@ -71,7 +71,7 @@ void control_fail(ControlReply *r,const char *fmt,...) {r->failed=true;}
 static void map_at(uint64_t a,size_t n) {assert(mmap((void *)(uintptr_t)a,n,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)==(void *)(uintptr_t)a);}
 int main(void) {
     setenv("HYRULEM_NATIVE_PREVIEW","1",1);
-    map_at(HLE_HEAP,0x40000);map_at(HEAP_BASE,0x100000);
+    map_at(HLE_HEAP,0x100000);map_at(HEAP_BASE,0x100000);
     uint64_t site=1;
     #define SITE(n) g_site.n=site++;
     GAME_SITES_OPTIONAL(SITE)
@@ -353,6 +353,7 @@ int main(void) {
     #include "test_preview12.inc"
     #include "test_preview14.inc"
     #include "test_world_actors.inc"
+    #include "test_lifecycle.inc"
     // A refused stump must leave the genuine collider standing. A successful
     // retry removes only the matched tree and releases its native replacement.
     uint64_t standing=HEAP_BASE+0xe5000,tree_block=standing+0x1800;

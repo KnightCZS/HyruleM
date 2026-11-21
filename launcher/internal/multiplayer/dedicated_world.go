@@ -40,7 +40,16 @@ func (s *Server) acceptDedicatedWorldLocked(p *serverPeer, w *WorldState, now ti
 	p.worldSequence = w.Sequence
 	p.worldPaused = w.Paused
 	p.worldObserved = make(map[string]worldObservation, len(rows))
+	replicas := make(map[uint64]bool, len(w.Replicas))
+	for _, id := range w.Replicas {
+		replicas[id] = true
+	}
 	for _, a := range rows {
+		// A reconstruction follows canonical state; it cannot create authority
+		// or feed replayed transforms back into the simulation.
+		if replicas[a.ID] {
+			continue
+		}
 		a.Scene = w.Scene
 		key := a.key()
 		p.worldObserved[key] = worldObservation{a, now}
@@ -111,7 +120,7 @@ func (s *Server) dedicatedWorldSnapshot(p *serverPeer, sequence uint64, now time
 		if health, known := s.enemies[identity.key()]; known && health.Health == 0 {
 			continue
 		}
-		if entity.State.Scene != p.player.Pose.Scene || entity.Owner == p.player.ID && entity.Settled || entity.Owner == "" || now.Sub(entity.At) > 1500*time.Millisecond ||
+		if entity.State.Scene != p.player.Pose.Scene || entity.Owner == p.player.ID && entity.Settled || entity.Owner != "" && now.Sub(entity.At) > 1500*time.Millisecond ||
 			entity.State.position().Sub(p.player.Pose.Position).Len() > WorldRadius {
 			continue
 		}

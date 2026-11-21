@@ -150,7 +150,7 @@ func TestOldRuntimeRejectionSurvivesDisconnectCleanup(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("old runtime was not rejected")
 	}
-	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 12") {
+	if c.Connected() || !strings.Contains(c.Reason(), "ABI 1") || !strings.Contains(c.Reason(), "ABI 13") {
 		t.Fatal("specific native failure replaced by generic disconnection", c.Reason())
 	}
 }
@@ -174,7 +174,7 @@ func (f *fakeNativeGame) Command(ctx context.Context, cmd string) (core.ControlR
 			data = map[string]any{"ready": true, "sequence": f.worldSequence, "actors_b64": f.worldActors, "complete": true, "x": f.position.X, "y": f.position.Y, "z": f.position.Z}
 		}
 	case cmd == "hm_caps":
-		data = map[string]any{"runtime": "SavageWind-HyruleM", "game_version": "1.9.0", "preview_abi": 12, "native_preview": true, "shared_enemy_health": true, "animation_capture": true, "actor_job_barrier": true, "visual_effect_events": true, "world_actor_sync": true, "distributed_world": true, "roaming_ground_items": true}
+		data = map[string]any{"runtime": "SavageWind-HyruleM", "game_version": "1.9.0", "preview_abi": 13, "native_preview": true, "shared_enemy_health": true, "animation_capture": true, "actor_job_barrier": true, "visual_effect_events": true, "world_actor_sync": true, "distributed_world": true, "roaming_ground_items": true}
 	case cmd == "hm_native_status":
 		data = map[string]any{"state": "idle", "game_ticks": 12, "tick_age_ms": 0, "active": f.active, "model_ready": f.active, "animation_ready": f.active}
 	case cmd == "hm_local_state" || sample:

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Native presence and loaded-world authority use protocol 13. Full Gen1 combat
+// Native presence and loaded-world authority use protocol 15. Full Gen1 combat
 // and AI authority remain separately gated until their native hooks exist.
 type nativePreview struct {
 	session       string
@@ -375,6 +375,27 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 	for _, e := range b.Client.SharedEnemyHealth() {
 		byKey[e.key()] = e
 	}
+	// Seed missing enemies without publishing server state as local damage.
+	seeds := map[string]bool{}
+	view := b.Client.WorldActors()
+	if view.Dedicated && view.State != nil {
+		present := map[string]bool{}
+		for _, e := range local {
+			present[e.key()] = true
+		}
+		rows, _ := decodeWorldActors(view.State.Actors)
+		for _, a := range rows {
+			if a.Kind != 1 && a.Kind != 3 {
+				continue
+			}
+			key := (EnemyHealth{Scene: view.State.Scene, Hash: a.Hash, Actor: a.Actor, Spawn: a.Spawn}).key()
+			if e, ok := byKey[key]; ok && !present[key] {
+				local = append(local, e)
+				present[key] = true
+				seeds[key] = true
+			}
+		}
+	}
 	if n.sentHealth == nil {
 		n.sentHealth = map[string]int{}
 	}
@@ -393,7 +414,7 @@ func (b *Bridge) updateWorldHealth(ctx context.Context, n *nativePreview, now ti
 		index := (start + step) % len(local)
 		e := local[index]
 		shared, ok := byKey[e.key()]
-		if !ok || shared.Health > e.Health || shared.Health == e.Health && e.Health != 0 {
+		if !ok || !seeds[e.key()] && (shared.Health > e.Health || shared.Health == e.Health && e.Health != 0) {
 			continue
 		}
 		// The native queue retains the lowest health for this session. Repeating

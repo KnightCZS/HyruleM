@@ -1,5 +1,14 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.19
+
+- Reconstrução de entidades ausentes e preferência pelo ator original quando ele retorna.
+- Identificação de cópias nas observações, sem transferência indevida de autoridade. Estado persistido sem simulador continua visível.
+- Inicialização com vida canônica antes da coleta de dano e liberação das cópias mortas com evidência preservada.
+- Registro de dano para objetos quebráveis compatíveis e catálogo de 44 famílias de árvores com toco.
+- Protocolo 15, referências 16 e ABI 13; atualize servidor e clientes.
+
+
 ## 0.5.0-preview.18.3
 
 - Retira inimigos com vida zero dos quadros de movimento do servidor.

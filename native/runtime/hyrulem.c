@@ -19,7 +19,7 @@ enum { GEAR_COUNT=6,POSE_MAX=512,POSE_B64_MAX=((8+POSE_MAX*56+2)/3)*4 };
 typedef struct {uint32_t name,part;float matrix[12];} PoseBone;
 typedef struct {unsigned count;PoseBone bones[POSE_MAX];} PoseFrame;
 enum {ACTOR_WORLD_MAX=64, ACTOR_WORLD_STRIDE=300, ACTOR_WORLD_B64=((8+ACTOR_WORLD_MAX*ACTOR_WORLD_STRIDE+2)/3)*4};
-typedef struct {uint64_t id;uint32_t hash,kind;char name[64];float spawn[3],matrix[12];Track tracks[2];} WorldActor;
+typedef struct {uint64_t id;uint32_t hash,kind;char name[64];float spawn[3],matrix[12];Track tracks[2];bool replica;} WorldActor;
 typedef struct {char session[17],world[25],scene[65];uint64_t epoch,sequence,heartbeat;unsigned role,count;bool paused,complete;float center[3];WorldActor actors[ACTOR_WORLD_MAX];} ActorWorldMode;
 static void actor_world_capture_as(uint64_t,uint64_t);
 static void actor_world_tick(Cpu *,uint64_t,uint64_t,bool);
@@ -264,7 +264,7 @@ static bool enemy_name(uint64_t ptr,char out[64]) {
     if (!range(ptr,64)) return false;
     for (int i=0;i<64;i++) {
         unsigned char ch=LD8(ptr+i);out[i]=(char)ch;
-        if (!ch) return i>6 && map_damage_name(out);
+        if (!ch) return i>0 && map_damage_name(out);
         if (!((ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch=='_')) return false;
     }
     return false;
@@ -300,12 +300,13 @@ static void world_scan(Cpu *c,uint64_t local,bool connected) {
         if(!range(a,0x7d0)||a==local||LD8(a+0x64)!=1)continue;
         EnemyHealth e={0};snprintf(e.scene,sizeof e.scene,"%s",local_scene);
         if(!enemy_name(LD64(a+0x10),e.name))continue;
-        uint64_t map=LD64(a+0x7c8),life=enemy_life(a);
-        if(!range(map,0x70)||!life)continue;
-        e.hash=LD32(map+0x58);e.health=(int32_t)LD32(life);
+        uint64_t map=LD64(a+0x7c8),life=enemy_life(a);if(!life)continue;
+        int replica=actor_world_replica_enemy(a,&e);if(replica==0)continue;
+        if(replica<0){if(!range(map,0x70))continue;e.hash=LD32(map+0x58);for(int i=0;i<3;i++)e.spawn[i]=read_float(map+0x5c+i*4);}
+        e.health=(int32_t)LD32(life);
         if(!e.hash||e.hash==UINT32_MAX||e.health<0||e.health>1000000)continue;
         float distance=0;
-        for(int i=0;i<3;i++) {e.spawn[i]=read_float(map+0x5c+i*4);e.position[i]=read_float(a+0x3a4+i*16);float delta=e.position[i]-origin[i];distance+=delta*delta;}
+        for(int i=0;i<3;i++) {e.position[i]=read_float(a+0x3a4+i*16);float delta=e.position[i]-origin[i];distance+=delta*delta;}
         if(!isfinite(distance)||distance>140*140)continue;
         bool valid=true;for(int i=0;i<3;i++)if(!isfinite(e.spawn[i])||fabsf(e.spawn[i])>100000)valid=false;
         if(!valid)continue;
@@ -666,7 +667,7 @@ static bool number(const char *s, float *out, float limit) {
 static void caps(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",12);control_field_bool(r,"world_actor_sync",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",13);control_field_bool(r,"world_actor_sync",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"world_entity_reconstruction",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
     control_field_bool(r,"skeletal_pose",supported()&&pose_supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());
@@ -744,6 +745,9 @@ static void clear_remote(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"queued_sequence",seq);
 }
 static void status(int argc,char **argv,ControlReply *r) {
+    ActorWorldMode world_mode;unsigned copies,spawned,copy_failures,rebuilt;pthread_mutex_lock(&actor_world_mutex);world_mode=actor_world_mode;copies=actor_world_replica_live;spawned=actor_world_replica_spawns;copy_failures=actor_world_replica_failures;rebuilt=actor_world_rebuilds;pthread_mutex_unlock(&actor_world_mutex);
+    control_field_str(r,"world_session",world_mode.session);control_field_int(r,"world_replicas",copies);control_field_int(r,"world_replica_spawns",spawned);control_field_int(r,"world_replica_failures",copy_failures);control_field_int(r,"world_rebuilds",rebuilt);
+    char targets[ACTOR_WORLD_MAX*128+3];size_t used=1;targets[0]='[';for(unsigned i=0;i<world_mode.count;i++){WorldActor *a=&world_mode.actors[i];used+=(size_t)snprintf(targets+used,sizeof targets-used,"%s{\"id\":%llu,\"hash\":%u,\"actor\":\"%s\"}",i?",":"",(unsigned long long)a->id,a->hash,a->name);}targets[used++]=']';targets[used]=0;control_field_str(r,"world_targets_json",targets);
     pthread_mutex_lock(&actor_world_mutex);unsigned world_role=actor_world_live.role,world_count_live=actor_world_seen_count,world_matched_live=actor_world_matched,world_missing_live=actor_world_missing,world_applied_live=actor_world_applied,world_ai_live=actor_world_ai_skipped,world_as_live=actor_world_as_applied;uint64_t world_epoch_live=actor_world_live.epoch;pthread_mutex_unlock(&actor_world_mutex);
     control_field_int(r,"world_role",world_role);control_field_int(r,"world_epoch",world_epoch_live);control_field_int(r,"world_captured",world_count_live);control_field_int(r,"world_matched",world_matched_live);control_field_int(r,"world_missing",world_missing_live);control_field_int(r,"world_applied",world_applied_live);control_field_int(r,"world_ai_skipped",world_ai_live);control_field_int(r,"world_animations_applied",world_as_live);
 
@@ -835,6 +839,7 @@ static void receive_health(int argc,char **argv,ControlReply *r) {
 }
 void control_hyrulem_init(void) {
     static const ControlCmd cmds[]={
+        {"hm_world_rebuild","<session> <entity-id>","Rebuild only an entity controlled by another client",actor_world_rebuild,0},
         {"hm_world_sample","<session> <world> <epoch> <role> <seq> <paused> <x> <y> <z> <HMW1-or-dash>","Host-authoritative loaded map actors",actor_world_sample,0},
         {"hm_native_drop_local","<session> <world> <local>","Return an unenrolled native drop to local play",ground_native_local,0},
         {"hm_item_drop","<session> <world> <id> <request>","Queue a server-prepared one-apple drop",ground_drop_command,0},

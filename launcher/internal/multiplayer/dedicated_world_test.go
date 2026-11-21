@@ -9,6 +9,94 @@ import (
 	"time"
 )
 
+func TestMissingEnemyReceivesCanonicalHealthWithoutLocalObservation(t *testing.T) {
+	s, err := Listen("127.0.0.1:0", ServerConfig{DedicatedWorld: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a, b := testClient(t, s, "Source"), testClient(t, s, "Missing")
+	p := Pose{Scene: "MainField", Ready: true, Position: Vec3{3430, 236, 2100}}
+	a.Publish(p)
+	b.Publish(p)
+	eventually(t, func() bool { return a.WorldActors().State != nil && b.WorldActors().State != nil })
+	row := testWorldActor(10, "Enemy_Bokoblin_Junior", 3434)
+	row.Scene = p.Scene
+	v := a.WorldActors()
+	a.PublishWorldActors(WorldState{Scene: p.Scene, Epoch: v.Epoch, Lease: v.State.Lease, Sequence: 1, Center: p.Position, Actors: encodeWorldActors([]WorldActor{row})})
+	e := EnemyHealth{Scene: p.Scene, Hash: row.Hash, Actor: row.Actor, Spawn: row.Spawn, Position: row.position(), Health: 13}
+	a.PublishMapDamage("0123456789abcdef", []EnemyHealth{e})
+	eventually(t, func() bool { return len(b.SharedEnemyHealth()) == 1 })
+	a.Close()
+	eventually(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.entities[row.key()] != nil && s.entities[row.key()].Owner == ""
+	})
+	game := &worldControl{enemies: []EnemyHealth{}}
+	bridge := &Bridge{Client: b, control: game}
+	native := &nativePreview{session: "abcdef0123456789"}
+	if err := bridge.updateWorldHealth(context.Background(), native, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if len(game.commands) != 2 || !strings.Contains(game.commands[1], "Enemy_Bokoblin_Junior") || !strings.HasSuffix(game.commands[1], " 13 MainField") {
+		t.Fatal("missing canonical health seed", game.commands)
+	}
+}
+
+func TestReconstructionCannotAcquireAuthorityAndUnownedStateRemainsVisible(t *testing.T) {
+	s, err := Listen("127.0.0.1:0", ServerConfig{DedicatedWorld: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a, b := testClient(t, s, "Simulator"), testClient(t, s, "Reconstruction")
+	a.Publish(Pose{Scene: "MainField", Ready: true, Position: Vec3{3430, 236, 2100}})
+	b.Publish(Pose{Scene: "MainField", Ready: true, Position: Vec3{3434, 236, 2100}})
+	eventually(t, func() bool { return a.WorldActors().State != nil && b.WorldActors().State != nil })
+	row := testWorldActor(10, "Npc_Test", 3434)
+	row.Scene = "MainField"
+	publish := func(c *Client, seq uint64, replicas []uint64) {
+		v := c.WorldActors()
+		p, _ := c.LocalPose()
+		if err := c.PublishWorldActors(WorldState{Scene: "MainField", Epoch: v.Epoch, Lease: v.State.Lease, Sequence: seq, Center: p.Position, Actors: encodeWorldActors([]WorldActor{row}), Replicas: replicas}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	publish(a, 1, nil)
+	eventually(t, func() bool {
+		rows, err := decodeWorldActors(b.WorldActors().State.Actors)
+		return err == nil && len(rows) == 1 && rows[0].Hash == row.Hash
+	})
+	publish(b, 1, []uint64{10})
+	eventually(t, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.peers[b.Welcome().ID].worldObserved) == 0 && s.peers[b.Welcome().ID].worldSequence == 1
+	})
+	s.mu.Lock()
+	owner := s.entities[row.key()].Owner
+	s.mu.Unlock()
+	if owner != a.Welcome().ID {
+		t.Fatal("reconstruction became the simulator", owner)
+	}
+	a.Close()
+	eventually(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.entities[row.key()].Owner == "" })
+	eventually(t, func() bool {
+		rows, e := decodeWorldActors(b.WorldActors().State.Actors)
+		return e == nil && len(rows) == 1 && rows[0].Hash == row.Hash
+	})
+	frame := *b.WorldActors().State
+	frame.Replicas = []uint64{1, 1}
+	if frame.Valid() {
+		t.Fatal("duplicate replica identities accepted")
+	}
+	frame.Replicas = []uint64{99}
+	if frame.Valid() {
+		t.Fatal("unknown replica identity accepted")
+	}
+}
+
 func TestDedicatedTerminalEnemyLeavesMovementSnapshot(t *testing.T) {
 	now := time.Now()
 	a := testWorldActor(1, "Enemy_Bokoblin_Junior", 3434)

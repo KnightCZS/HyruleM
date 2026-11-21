@@ -10,8 +10,7 @@ import (
 	"time"
 )
 
-// ponytail: one bounded snapshot of loaded map actors; add lifecycle replication
-// after native spawn/despawn has been validated.
+// Bounded loaded-world window; stable identities live in the dedicated registry.
 const MaxWorldActors = 64
 const WorldRadius = 180
 const worldActorStride = 300
@@ -27,15 +26,16 @@ type WorldActor struct {
 	Tracks [2]AnimationTrack
 }
 type WorldState struct {
-	Scene    string `json:"scene,omitempty"`
-	Lease    uint64 `json:"lease,omitempty"`
-	Epoch    uint64 `json:"epoch"`
-	Sequence uint64 `json:"sequence"`
-	Center   Vec3   `json:"center"`
-	Paused   bool   `json:"paused"`
-	Complete bool   `json:"complete"`
-	Actors   string `json:"actors"`
-	AgeMS    uint64 `json:"age_ms"`
+	Replicas []uint64 `json:"replicas,omitempty"`
+	Scene    string   `json:"scene,omitempty"`
+	Lease    uint64   `json:"lease,omitempty"`
+	Epoch    uint64   `json:"epoch"`
+	Sequence uint64   `json:"sequence"`
+	Center   Vec3     `json:"center"`
+	Paused   bool     `json:"paused"`
+	Complete bool     `json:"complete"`
+	Actors   string   `json:"actors"`
+	AgeMS    uint64   `json:"age_ms"`
 }
 type WorldView struct {
 	Dedicated       bool
@@ -250,6 +250,19 @@ func (w WorldState) Valid() bool {
 	actors, e := decodeWorldActors(w.Actors)
 	if e != nil {
 		return false
+	}
+	if len(w.Replicas) > len(actors) {
+		return false
+	}
+	ids := make(map[uint64]bool, len(actors))
+	for _, a := range actors {
+		ids[a.ID] = true
+	}
+	for _, id := range w.Replicas {
+		if !ids[id] {
+			return false
+		}
+		delete(ids, id)
 	}
 	for _, a := range actors {
 		if a.position().Sub(w.Center).Len() > WorldRadius+1 {
