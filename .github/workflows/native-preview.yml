@@ -95,11 +95,6 @@ jobs:
           cp ../docs/gen1/Diagnosticar.cmd ../preview/
           cp ../native/Iniciar-Nativo.cmd ../native/Instalar-Nativo.cmd ../preview/
           cp ../native/Install-NativePreview.ps1 ../preview/
-      - name: Verify game library probe without loading the game
-        shell: pwsh
-        run: |
-          $id = (& ./preview/runtime-update/savagewind.exe --hyrulem-gamelib-id | Out-String).Trim()
-          if ($LASTEXITCODE -ne 0 -or $id -notmatch '^[0-9a-f]{16}$') { throw 'Game library identifier probe failed' }
       - name: Seal the native package and select native mode for direct launches
         shell: pwsh
         run: |
@@ -132,6 +127,9 @@ jobs:
           if (-not $backup -or (Get-FileHash (Join-Path $backup.FullName 'savagewind.exe') -Algorithm SHA256).Hash -ne $original) { throw 'Original runtime backup missing' }
           $installedHash = (Get-FileHash $exe -Algorithm SHA256).Hash
           if ($installedHash -ne (Get-FileHash preview/runtime-update/savagewind.exe -Algorithm SHA256).Hash) { throw 'Configured runtime was not updated' }
+          # Probe the installed runtime, where its official DLL dependencies exist.
+          $id = (& $exe --hyrulem-gamelib-id | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or $id -notmatch '^[0-9a-f]{16}$') { throw "Game library identifier probe failed ($LASTEXITCODE): $id" }
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./preview/Install-NativePreview.ps1 -ConfigPath $configPath -Ensure
           if ($LASTEXITCODE -ne 0) { throw 'Repeated start failed' }
           if (@(Get-ChildItem -LiteralPath $target -Directory -Filter 'HyruleM-runtime-backup-*').Count -ne 1) { throw 'Ensure rewrote an unchanged installation' }
