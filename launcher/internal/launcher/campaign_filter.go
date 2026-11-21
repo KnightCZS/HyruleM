@@ -339,16 +339,11 @@ func filterCandidatesContext(ctx context.Context, c Config) ([]filterSource, []f
 		}
 	}
 	var inputs []filterInput
-	for index := range sources {
-		src := &sources[index]
-		// WalkDir does not descend when its root itself is a junction or symlink.
-		// Resolve the selected asset root once, retaining relative paths in the overlay.
-		root, err := filepath.EvalSymlinks(src.Root)
-		if err != nil {
-			return nil, nil, err
-		}
-		src.Root = root
-		e := filepath.WalkDir(src.Root, func(full string, de fs.DirEntry, err error) error {
+	for index, src := range sources {
+		// fs.WalkDir follows the selected root, including an NTFS junction.
+		// Entries below that root retain ordinary WalkDir link semantics.
+		assets := os.DirFS(src.Root)
+		e := fs.WalkDir(assets, ".", func(rel string, de fs.DirEntry, err error) error {
 			if e := ctx.Err(); e != nil {
 				return e
 			}
@@ -358,11 +353,6 @@ func filterCandidatesContext(ctx context.Context, c Config) ([]filterSource, []f
 			if de.IsDir() {
 				return nil
 			}
-			rel, e := filepath.Rel(src.Root, full)
-			if e != nil {
-				return e
-			}
-			rel = filepath.ToSlash(rel)
 			if !candidate(rel) {
 				return nil
 			}
@@ -375,7 +365,7 @@ func filterCandidatesContext(ctx context.Context, c Config) ([]filterSource, []f
 			}
 			input := filterInput{Source: index, Relative: rel, Size: st.Size(), Modified: st.ModTime().UnixNano()}
 			if rel == rstbPath || rel == "Pack/Bootup.pack" || rel == "Pack/TitleBG.pack" || path.Base(rel) == "AocMainField.pack" {
-				f, e := os.Open(full)
+				f, e := assets.Open(rel)
 				if e != nil {
 					return e
 				}
