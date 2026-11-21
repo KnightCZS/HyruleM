@@ -44,4 +44,6 @@ O registro aceita até 32.768 identidades de itens. Cada cliente acompanha até 
 
 Esta prévia aceita dois jogadores. A captura nativa acompanha até 64 atores por cliente em 180 m. O transporte funciona em processos e máquinas diferentes.
 
+[Resultados e limites dos testes da prévia 18.3](validation/preview18.3.md).
+
 Continuam pendentes a criação geral de atores ausentes, o ciclo dos espólios dinâmicos, troncos e madeira, os eventos gerais de missões, projéteis e a validação completa da física e do combate. A identificação de interiores está integrada ao protocolo. O gameplay em todos os interiores ainda exige validação.
