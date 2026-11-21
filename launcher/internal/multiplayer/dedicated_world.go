@@ -107,6 +107,10 @@ func (s *Server) dedicatedWorldSnapshot(p *serverPeer, sequence uint64, now time
 	}
 	rows := make([]WorldActor, 0, MaxWorldActors)
 	for _, entity := range s.entities {
+		identity := EnemyHealth{Scene: entity.State.Scene, Hash: entity.State.Hash, Actor: entity.State.Actor, Spawn: entity.State.Spawn}
+		if health, known := s.enemies[identity.key()]; known && health.Health == 0 {
+			continue
+		}
 		if entity.State.Scene != p.player.Pose.Scene || entity.Owner == p.player.ID && entity.Settled || entity.Owner == "" || now.Sub(entity.At) > 1500*time.Millisecond ||
 			entity.State.position().Sub(p.player.Pose.Position).Len() > WorldRadius {
 			continue

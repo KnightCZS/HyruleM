@@ -1,5 +1,11 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.18.3
+
+- Retira inimigos com vida zero dos quadros de movimento do servidor.
+- Libera a referência nativa de movimento e deixa de aplicar posições e animações antigas quando a vida chega a zero. A IA nativa pode concluir o ciclo de morte.
+
+
 ## 0.5.0-preview.18.2
 
 - Mantém a conexão com o servidor quando o controle local sofre timeout ou é reiniciado durante o carregamento. O próximo ciclo usa uma conexão nova sem repetir o comando interrompido.

@@ -1,4 +1,4 @@
-# HyruleM 0.5.0-preview.18.2 — multiplayer experimental
+# HyruleM 0.5.0-preview.18.3 — multiplayer experimental
 
 O servidor dedicado mantém o registro persistente do mundo e decide o responsável por cada entidade carregada. Ambos os clientes capturam seus arredores. Os demais recebem o estado correspondente e suspendem a decisão local de IA enquanto aplicam dados recentes. O modo pode ser hospedado pelo launcher ou pelo executável independente. Veja [como executar o servidor](../docs/DEDICATED_SERVER.md).
 

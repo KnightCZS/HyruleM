@@ -84,6 +84,9 @@ static bool actor_world_ready(uint64_t a){
 static bool actor_world_read(uint64_t a,WorldActor *out){
     if(!actor_world_ready(a)||!actor_world_name(LD64(a+0x10),out->name))return false;
     out->kind=actor_world_kind(out->name);if(actor_world_equipped(a,out->kind))return false;
+    // A retained movement binding must not keep a terminal enemy alive or
+    // overwrite its native death animation. The next scan releases its index.
+    uint64_t life=out->kind==1?enemy_life(a):0;if(life&&LD32(life)==0)return false;
     uint64_t map=LD64(a+0x7c8);if(!range(map,0x70))return false;out->hash=LD32(map+0x58);if(!out->hash||out->hash==UINT32_MAX)return false;
     for(unsigned i=0;i<3;i++){out->spawn[i]=read_float(map+0x5c+i*4);if(!isfinite(out->spawn[i])||fabsf(out->spawn[i])>(i==1?50000.f:100000.f))return false;}
     for(unsigned i=0;i<12;i++)out->matrix[i]=read_float(a+0x398+i*4);return actor_world_matrix(out->matrix);

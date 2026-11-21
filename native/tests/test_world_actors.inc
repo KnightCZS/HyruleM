@@ -24,11 +24,15 @@
     wcmd[3]="2";wcmd[4]="2";wcmd[5]="1";wcmd[7]="3430";wcmd[8]="236";wcmd[9]="2100";wcmd[10]=world_encoded;unsigned world_moves=moves;actor_world_sample(11,wcmd,&r);assert(!r.failed&&moves==world_moves);
     actor_world_tick(&cpu,owner,0x7000001000,false);assert(actor_world_matched==2&&actor_world_missing==0&&moves==world_moves+4&&actor_world_as_applied==1);
     assert(rt_hyrulem_world_ai(&world_cpu)&&!memcmp(&world_cpu,&world_saved,sizeof world_cpu));
-    // Remote movement authority cannot suppress the native death transition.
-    uint64_t old_world_vt=LD64(wa);uint32_t old_world_name=LD32(wa+0x900);
-    ST64(wa,vt);ST32(wa+0x900,0);assert(!rt_hyrulem_world_ai(&world_cpu));
-    ST32(wa+0x900,10);assert(rt_hyrulem_world_ai(&world_cpu));
-    ST64(wa,old_world_vt);ST32(wa+0x900,old_world_name);
+    // Terminal enemies release movement, animation and RootAI authority.
+    uint64_t old_world_vt=LD64(wa),death_vt=wa+0x1c00;
+    ST32(MAIN_BASE+0x120,0x9105c000);ST32(MAIN_BASE+0x124,0xd65f03c0);
+    ST64(death_vt+0x2b8,MAIN_BASE+0x120);ST64(wa,death_vt);ST32(wa+0x170,0);
+    world_moves=moves;actor_world_tick(&cpu,owner,0x7000001000,false);
+    assert(actor_world_matched==1&&moves==world_moves+2&&!rt_hyrulem_world_ai(&world_cpu));
+    for(unsigned i=0;i<ACTOR_WORLD_MAX;i++)assert(actor_world_bindings[i].actor!=wa);
+    ST32(wa+0x170,13);actor_world_scan_at=0;actor_world_tick(&cpu,owner,0x7000001000,false);
+    assert(actor_world_matched==2&&rt_hyrulem_world_ai(&world_cpu));ST64(wa,old_world_vt);
     for(unsigned i=0;i<ACTOR_WORLD_MAX;i++)if(actor_world_bindings[i].actor)actor_world_bindings[i].started=now_ms()-300;
     actor_world_tick(&cpu,owner,0x7000001000,false);assert(fabsf(read_float(wa+0x3a4)-3440)<.001f&&read_float(owner+0x3a4)==3430&&!memcmp(&cpu,&before,sizeof cpu));
     // A later native movement pass must not reset the next network blend.
