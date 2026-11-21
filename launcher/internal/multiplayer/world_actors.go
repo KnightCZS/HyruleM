@@ -3,6 +3,7 @@ package multiplayer
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"strings"
@@ -38,6 +39,43 @@ type WorldView struct {
 	Epoch           uint64
 	State           *WorldState
 	At              time.Time
+}
+
+// A reference identifies one full sample already delivered on this TCP connection.
+func referenceWorld(m Message, previous *WorldView) Message {
+	m.Protocol = WorldReferenceProtocol
+	w := m.WorldState
+	if w != nil && previous.State != nil && previous.WorldID == m.WorldID && previous.HostID == m.HostID &&
+		previous.Epoch == m.Epoch && previous.State.Sequence == w.Sequence {
+		m.WorldRef, m.WorldState = w.Sequence, nil
+	}
+	*previous = WorldView{WorldID: m.WorldID, HostID: m.HostID, Epoch: m.Epoch, State: w}
+	return m
+}
+
+func receivedWorld(m Message, previous WorldView, now time.Time) (WorldView, error) {
+	view := WorldView{WorldID: m.WorldID, HostID: m.HostID, Epoch: m.Epoch, State: m.WorldState, At: now}
+	if m.WorldID != "" {
+		raw, err := hex.DecodeString(m.WorldID)
+		if err != nil || len(raw) != 12 {
+			return WorldView{}, fmt.Errorf("identidade de mundo inválida")
+		}
+	}
+	if m.WorldRef != 0 {
+		if m.Protocol != WorldReferenceProtocol || m.WorldState != nil || previous.State == nil ||
+			previous.WorldID != m.WorldID || previous.HostID != m.HostID || previous.Epoch != m.Epoch ||
+			previous.State.Sequence != m.WorldRef {
+			return WorldView{}, fmt.Errorf("referência de mundo sem quadro correspondente")
+		}
+		return previous, nil // A repeated sample must never renew native authority.
+	}
+	if w := m.WorldState; w != nil {
+		if m.WorldID == "" || m.HostID == "" || w.Epoch != m.Epoch || !w.Valid() {
+			return WorldView{}, fmt.Errorf("mundo autoritativo inválido")
+		}
+		view.At = now.Add(-time.Duration(w.AgeMS) * time.Millisecond)
+	}
+	return view, nil
 }
 
 func worldActorKind(s string) uint32 {

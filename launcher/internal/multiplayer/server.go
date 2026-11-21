@@ -9,6 +9,7 @@ import (
 	"net"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,16 +20,17 @@ type ServerConfig struct {
 	SharedItems bool
 }
 type serverPeer struct {
-	conn           net.Conn
-	player         Player
-	out            chan Message
-	done           chan struct{}
-	once           sync.Once
-	poseAt         time.Time
-	groundClaims   map[uint64]GroundClaim
-	groundDrop     *GroundDropResult
-	groundRejected map[uint64]bool
-	damageLedger   map[string]uint64
+	worldReferences atomic.Bool
+	conn            net.Conn
+	player          Player
+	out             chan Message
+	done            chan struct{}
+	once            sync.Once
+	poseAt          time.Time
+	groundClaims    map[uint64]GroundClaim
+	groundDrop      *GroundDropResult
+	groundRejected  map[uint64]bool
+	damageLedger    map[string]uint64
 }
 
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
@@ -178,6 +180,7 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 	writerDone := make(chan struct{})
 	go func() {
 		defer close(writerDone)
+		var previous WorldView
 		for {
 			select {
 			case <-ctx.Done():
@@ -186,6 +189,10 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 			case <-p.done:
 				return
 			case m := <-p.out:
+				// Compact after dequeue: the latest-only outbox can drop any pending frame.
+				if p.worldReferences.Load() {
+					m = referenceWorld(m, &previous)
+				}
 				c.SetWriteDeadline(time.Now().Add(3 * time.Second))
 				if WriteMessage(c, m) != nil {
 					p.stop()
@@ -207,6 +214,15 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				return
 			}
 			s.mu.Lock()
+			if id == s.environmentHost {
+				if p.player.Pose.Ready && !m.Pose.Ready {
+					// A reloaded native world can restart its own capture sequence.
+					s.resetAuthorityLocked()
+				} else if s.worldState != nil && m.Pose.Position.Sub(s.worldState.Center).Len() > 20 {
+					// Withdraw pre-teleport data, retaining its replay watermark.
+					s.worldAt = time.Time{}
+				}
+			}
 			p.player.Pose = *m.Pose
 			p.poseAt = time.Now()
 			s.mu.Unlock()
@@ -296,6 +312,9 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				return
 			}
 		case "ping":
+			if m.Protocol == WorldReferenceProtocol {
+				p.worldReferences.Store(true)
+			}
 		case "leave":
 			return
 		default:
@@ -335,7 +354,11 @@ func (s *Server) broadcast(ctx context.Context) {
 		players := make([]Player, 0, len(s.peers))
 		targets := make([]*serverPeer, 0, len(s.peers))
 		for _, p := range s.peers {
-			players = append(players, p.player)
+			player := p.player
+			if player.Pose.Ready && time.Since(p.poseAt) >= 2*time.Second {
+				player.Pose = Pose{}
+			}
+			players = append(players, player)
 			targets = append(targets, p)
 		}
 		s.mu.Unlock()

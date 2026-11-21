@@ -1,5 +1,12 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.16
+
+- Negocia referências compactas por conexão para quadros de mundo repetidos. Cliente e servidor continuam interoperando com a prévia 15.
+- Corrige a validade dos atores e do ambiente durante recarga, teleporte e desconexão. Interrompe comandos repetidos ao runtime assim que o seguidor libera o mundo.
+- O launcher aceita nomes DNS e lista interfaces locais IPv6 além das IPv4 e VPNs.
+- [Medição, compatibilidade e limites](releases/v0.5.0-preview.16.md).
+
 ## 0.5.0-preview.15
 
 - Reposiciona a paleta final dos atores reconhecidos junto da raiz recebida, preservando os deslocamentos dos ossos e o histórico da interpolação.

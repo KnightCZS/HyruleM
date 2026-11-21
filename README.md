@@ -1,6 +1,6 @@
 # HyruleM
 
-Candidata **0.5.0-preview.15**, ainda não publicada ([PR em desenvolvimento](https://github.com/KnightCZS/HyruleM/pull/3)): primeira camada de mundo autoritativo, com posição/rotação e pedidos AS de até 64 atores de mapa próximos já carregados nos dois jogos. IA local suspensa apenas nos atores correspondentes do seguidor. **ABI 11/protocolo 11; regeneração privada obrigatória.** Não cria ausentes nem completa combate/IA/interações. [Instalação e limites](native/README.md) · [Auditoria](docs/AUDITORIA_0.5.0-preview.15.md).
+**Prévia 16 para Windows x64.** Duas pessoas podem entrar pelo IP ou DNS do anfitrião. Cliente e servidor negociam a transmissão compacta dos atores próximos e aceitam a prévia 15 na mesma sessão. O mundo visual cobre até 64 atores de mapa já carregados em 180 m. A física compartilhada e o ciclo de criação e remoção de atores continuam em desenvolvimento. [Baixar a prévia](https://github.com/KnightCZS/HyruleM/releases/tag/v0.5.0-preview.16) · [Instalação e limites](native/README.md).
 
 Launcher para explorar BOTW no Savage Wind, com sandbox e um primeiro protótipo **visual** de multiplayer para duas pessoas. Windows x64; Savage Wind `v0.5.3-alpha.5`, BOTW Switch 1.9.0 já preparado pelo proprietário.
 

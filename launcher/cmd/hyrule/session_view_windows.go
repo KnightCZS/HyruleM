@@ -132,7 +132,7 @@ func (u *multiplayerUI) paint(dc uintptr) {
 	label("Conecte a um servidor ou crie um encontro na sua rede.", "body", colorMuted, 28, 84, width-28, 114)
 	v.box(dc, rect{p(28), p(138), p(leftRight), p(246)}, colorCard, colorLine, 14)
 	label("CONEXÃO DIRETA", "label", colorGold, 52, 154, leftRight-24, 172)
-	label("IP do servidor", "small", colorMuted, 52, 173, leftRight-170, 190)
+	label("IP ou DNS do servidor", "small", colorMuted, 52, 173, leftRight-170, 190)
 	label("Porta", "small", colorMuted, leftRight-144, 173, leftRight-24, 190)
 	for i := 0; i < 2; i++ {
 		if i == 1 && !u.localTest {

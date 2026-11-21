@@ -68,6 +68,9 @@ func Connect(ctx context.Context, address, name string, onStatus func(string)) (
 	if m.Type != "welcome" || m.Protocol != Protocol || m.ID == "" || m.Slot < 0 || m.Slot >= MaxPlayers || m.Spawn == nil || !m.Spawn.Valid() {
 		return fail(fmt.Errorf("resposta de conexão inválida"))
 	}
+	if e = WriteMessage(c, Message{Type: "ping", Protocol: WorldReferenceProtocol}); e != nil {
+		return fail(e)
+	}
 	c.SetDeadline(time.Time{})
 	cl := &Client{conn: c, welcome: Welcome{m.ID, m.Slot, *m.Spawn}, connected: true, done: make(chan struct{}), onStatus: onStatus}
 	go cl.read(reader)
@@ -111,6 +114,9 @@ func (c *Client) fail(reason string) {
 		c.reason = reason
 		c.frames = nil
 		c.environment = EnvironmentView{}
+		c.world = WorldView{}
+		c.ground = GroundView{}
+		c.enemies = nil
 		c.mu.Unlock()
 		close(c.done)
 		c.conn.Close()
@@ -128,7 +134,7 @@ func (c *Client) read(r *bufio.Reader) {
 			c.fail("Conexão com o servidor encerrada: " + e.Error())
 			return
 		}
-		if m.Type != "snapshot" || m.Protocol != Protocol || len(m.Players) > MaxPlayers {
+		if m.Type != "snapshot" || (m.Protocol != Protocol && m.Protocol != WorldReferenceProtocol) || len(m.Players) > MaxPlayers {
 			c.fail("Pacote do servidor inválido")
 			return
 		}
@@ -163,6 +169,10 @@ func (c *Client) read(r *bufio.Reader) {
 			return
 		}
 		c.mu.Lock()
+		if !c.connected {
+			c.mu.Unlock()
+			return
+		}
 		if m.Sequence > c.latest {
 			if m.Environment != nil && (!m.Environment.Valid() || m.Environment.Epoch != m.Epoch || m.HostID == "") {
 				c.mu.Unlock()
@@ -200,23 +210,13 @@ func (c *Client) read(r *bufio.Reader) {
 			} else {
 				c.ground = GroundView{}
 			}
-			if m.WorldState != nil && (!m.WorldState.Valid() || m.WorldState.Epoch != m.Epoch || m.HostID == "" || len(m.WorldID) != 24) {
+			view, err := receivedWorld(m, c.world, time.Now())
+			if err != nil {
 				c.mu.Unlock()
-				c.fail("Mundo autoritativo inválido")
+				c.fail(err.Error())
 				return
 			}
-			if m.WorldID != "" {
-				raw, err := hex.DecodeString(m.WorldID)
-				if err != nil || len(raw) != 12 {
-					c.mu.Unlock()
-					c.fail("Identidade de mundo inválida")
-					return
-				}
-			}
-			c.world = WorldView{WorldID: m.WorldID, HostID: m.HostID, Epoch: m.Epoch, State: m.WorldState, At: time.Now()}
-			if m.WorldState != nil {
-				c.world.At = c.world.At.Add(-time.Duration(m.WorldState.AgeMS) * time.Millisecond)
-			}
+			c.world = view
 			c.environment = EnvironmentView{HostID: m.HostID, Epoch: m.Epoch, State: m.Environment, At: time.Now()}
 			for _, p := range m.Players {
 				if p.ID == m.HostID {

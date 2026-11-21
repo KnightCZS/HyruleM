@@ -8,11 +8,11 @@ import (
 )
 
 type worldActorSync struct {
-	last      time.Time
-	world     string
-	epoch     uint64
-	role      int
-	published uint64
+	last     time.Time
+	world    string
+	epoch    uint64
+	role     int
+	sequence uint64
 }
 
 func (b *Bridge) closeWorldActors(ctx context.Context, n *worldActorSync) bool {
@@ -65,6 +65,10 @@ func (b *Bridge) updateWorldActors(ctx context.Context, n *worldActorSync, now t
 	if v.HostID == b.Client.Welcome().ID {
 		role = 1
 	}
+	if role == 2 && (v.State == nil || now.Sub(v.At) > 1200*time.Millisecond) {
+		b.closeWorldActors(ctx, n)
+		return nil
+	}
 	if n.world != v.WorldID || n.epoch != v.Epoch || n.role != role {
 		if !b.closeWorldActors(ctx, n) {
 			return fmt.Errorf("liberação do mundo anterior pendente")
@@ -72,10 +76,9 @@ func (b *Bridge) updateWorldActors(ctx context.Context, n *worldActorSync, now t
 		n.world = v.WorldID
 		n.epoch = v.Epoch
 		n.role = role
-		n.published = 0
+		n.sequence = 0
 	}
-	if role == 2 && (v.State == nil || now.Sub(v.At) > 1200*time.Millisecond) {
-		b.closeWorldActors(ctx, n)
+	if role == 2 && n.sequence == v.State.Sequence {
 		return nil
 	}
 	cmd, err := worldActorCommand(b.nativeSession, v.WorldID, v.Epoch, role, v.State)
@@ -92,12 +95,15 @@ func (b *Bridge) updateWorldActors(ctx context.Context, n *worldActorSync, now t
 	if err = b.command(ctx, cmd, &reply); err != nil {
 		return err
 	}
-	if role == 1 && reply.Ready && reply.Sequence > n.published {
+	if role == 2 {
+		n.sequence = v.State.Sequence
+	}
+	if role == 1 && reply.Ready && reply.Sequence > n.sequence {
 		frame := WorldState{Epoch: v.Epoch, Sequence: reply.Sequence, Center: Vec3{reply.X, reply.Y, reply.Z}, Paused: reply.Paused, Complete: reply.Complete, Actors: reply.Actors}
 		if err = b.Client.PublishWorldActors(frame); err != nil {
 			return err
 		}
-		n.published = reply.Sequence
+		n.sequence = reply.Sequence
 	}
 	return nil
 }

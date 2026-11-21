@@ -68,6 +68,10 @@ func (s *Server) chooseEnvironmentHostLocked() {
 			s.environmentHost = id
 		}
 	}
+	s.resetAuthorityLocked()
+}
+
+func (s *Server) resetAuthorityLocked() {
 	s.environmentEpoch++
 	s.environment = nil
 	s.worldState = nil

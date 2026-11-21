@@ -8,6 +8,7 @@ import (
 	"fmt"
 	core "hyrulelauncher/internal/launcher"
 	mp "hyrulelauncher/internal/multiplayer"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -339,7 +340,7 @@ func (u *multiplayerUI) host() {
 	u.settings.Port = u.settings.HostPort
 	u.set(mpIP, connectIP)
 	u.settings.IP = connectIP
-	u.set(mpHostStatus, fmt.Sprintf("Hospedando em %s · convide usando %s:%d. Se usar Radmin, selecione o IP do adaptador Radmin.", address, connectIP, u.settings.HostPort))
+	u.set(mpHostStatus, fmt.Sprintf("Hospedando em %s · convide usando %s. Se usar Radmin, selecione o IP do adaptador Radmin.", address, net.JoinHostPort(connectIP, strconv.Itoa(u.settings.HostPort))))
 	u.refresh()
 }
 func (u *multiplayerUI) leave(i int) {

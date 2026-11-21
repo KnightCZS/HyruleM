@@ -5,18 +5,21 @@ package multiplayer
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
-	"net"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 )
 
 const Protocol = 11
+
+// Hello and welcome stay on 11. A ping advertising 12 opts this connection
+// into world references. Preview 15 already accepts and ignores that ping.
+const WorldReferenceProtocol = 12
 const MaxLine = 256 * 1024
 const MaxPlayers = 2
 
@@ -98,6 +101,7 @@ type Player struct {
 	Pose Pose   `json:"pose"`
 }
 type Message struct {
+	WorldRef         uint64            `json:"world_ref,omitempty"`
 	WorldID          string            `json:"world_id,omitempty"`
 	WorldState       *WorldState       `json:"world_state,omitempty"`
 	GroundDestroyed  []uint64          `json:"ground_destroyed,omitempty"`
@@ -141,18 +145,6 @@ func NormalizeName(s string) (string, error) {
 	}
 	return s, nil
 }
-func Address(ip, port string) (string, error) {
-	ip = strings.TrimSpace(ip)
-	ip = strings.TrimPrefix(strings.TrimSuffix(ip, "]"), "[")
-	if net.ParseIP(ip) == nil {
-		return "", fmt.Errorf("informe um IP válido, por exemplo 127.0.0.1")
-	}
-	p, e := strconv.Atoi(strings.TrimSpace(port))
-	if e != nil || p < 1 || p > 65535 {
-		return "", fmt.Errorf("a porta precisa estar entre 1 e 65535")
-	}
-	return net.JoinHostPort(ip, strconv.Itoa(p)), nil
-}
 func ReadMessage(r *bufio.Reader) (Message, error) {
 	var m Message
 	line, e := r.ReadSlice('\n')
@@ -165,7 +157,7 @@ func ReadMessage(r *bufio.Reader) (Message, error) {
 	if len(line) > MaxLine {
 		return m, fmt.Errorf("pacote excede o limite")
 	}
-	dec := json.NewDecoder(strings.NewReader(string(line)))
+	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
 	if e = dec.Decode(&m); e != nil {
 		return m, e
