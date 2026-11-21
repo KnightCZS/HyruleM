@@ -5,9 +5,12 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	core "hyrulelauncher/internal/launcher"
+	"io"
 	"math"
+	"net"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -35,6 +38,7 @@ type Bridge struct {
 	dropRequests     chan struct{}
 	dropBusy         atomic.Bool
 	dropReady        atomic.Bool
+	controlIssue     time.Time
 }
 
 func NewBridge(parent context.Context, c *Client, game GameControl, fov float64, status func(string)) *Bridge {
@@ -83,6 +87,26 @@ func (b *Bridge) command(ctx context.Context, cmd string, out any) error {
 		return json.Unmarshal(r.Data, out)
 	}
 	return nil
+}
+
+// A frame stall closes ControlStream's socket. Resume on its next connection;
+// never replay the failed command, which may already have reached the game.
+func (b *Bridge) recoverControl(ctx context.Context, n *nativePreview, err error) bool {
+	var transport *net.OpError
+	if !errors.As(err, &transport) && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return false
+	}
+	if n != nil {
+		n.waitingSince = time.Now()
+		n.sampled = false
+	}
+	_ = b.Client.Publish(Pose{})
+	if time.Since(b.controlIssue) > 15*time.Second {
+		b.say("Conectado ao servidor; aguardando o controle local retomar após o carregamento…")
+		b.controlIssue = time.Now()
+	}
+	wait(ctx, 250*time.Millisecond)
+	return true
 }
 func wait(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)
@@ -216,6 +240,10 @@ func (b *Bridge) run(ctx context.Context) {
 		} else {
 			readErr = b.command(ctx, "pos", &pos)
 		}
+		if readErr != nil && b.recoverControl(ctx, native, readErr) {
+			at = time.Time{}
+			continue
+		}
 		if e := readErr; e != nil || !pos.Valid() {
 			b.restoreEnvironment(ctx, &environment)
 			b.closeWorldActors(ctx, &actorWorld)
@@ -248,6 +276,9 @@ func (b *Bridge) run(ctx context.Context) {
 			native, err = b.openNative(ctx)
 			b.nativeSession = ""
 			if err != nil {
+				if b.recoverControl(ctx, native, err) {
+					continue
+				}
 				b.fail("Modo nativo indisponível: " + err.Error())
 				return
 			}
@@ -327,6 +358,9 @@ func (b *Bridge) run(ctx context.Context) {
 				pose = captured
 				pose.Velocity, pose.Phase = velocity, phase
 			} else if err := b.capturePose(ctx, &pose); err != nil {
+				if b.recoverControl(ctx, native, err) {
+					continue
+				}
 				b.fail("Captura nativa interrompida: " + err.Error())
 				return
 			}
@@ -336,6 +370,9 @@ func (b *Bridge) run(ctx context.Context) {
 		}
 		if native != nil {
 			if err := b.updateNative(ctx, native, now); err != nil {
+				if b.recoverControl(ctx, native, err) {
+					continue
+				}
 				b.fail("Integração nativa interrompida: " + err.Error())
 				return
 			}
@@ -344,6 +381,9 @@ func (b *Bridge) run(ctx context.Context) {
 				worldActorIssue = now
 			}
 			if err := b.updateWorldHealth(ctx, native, now); err != nil {
+				if b.recoverControl(ctx, native, err) {
+					continue
+				}
 				b.fail("Sincronização do mundo interrompida: " + err.Error())
 				return
 			}

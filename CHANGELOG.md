@@ -1,5 +1,12 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.18.2
+
+- Mantém a conexão com o servidor quando o controle local sofre timeout ou é reiniciado durante o carregamento. O próximo ciclo usa uma conexão nova sem repetir o comando interrompido.
+- Erros de ABI, dados inválidos e falhas reais do ator continuam interrompendo a integração com diagnóstico.
+- Libera a IA nativa dos inimigos com vida zero para concluir a transição de morte após receber dano sincronizado.
+
+
 ## 0.5.0-preview.18.1
 
 - Consulta do identificador da biblioteca e reconstrução compartilhada automática antes de abrir os clientes.

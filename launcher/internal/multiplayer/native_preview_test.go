@@ -5,10 +5,52 @@ import (
 	"encoding/json"
 	core "hyrulelauncher/internal/launcher"
 	"math"
+	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type interruptedNativeGame struct {
+	*fakeNativeGame
+	target          string
+	failed, resumed atomic.Bool
+}
+
+func (g *interruptedNativeGame) Command(ctx context.Context, cmd string) (core.ControlReply, error) {
+	match := strings.HasPrefix(cmd, g.target)
+	g.mu.Lock()
+	active := g.active
+	g.mu.Unlock()
+	if match && (active || g.target == "hm_caps") && g.failed.CompareAndSwap(false, true) {
+		return core.ControlReply{}, &net.OpError{Op: "read", Net: "tcp4", Err: context.DeadlineExceeded}
+	}
+	r, err := g.fakeNativeGame.Command(ctx, cmd)
+	if match && g.failed.Load() && err == nil {
+		g.resumed.Store(true)
+	}
+	return r, err
+}
+
+func TestNativeBridgeRecoversLocalControlStalls(t *testing.T) {
+	t.Setenv(core.NativePreviewEnv, "1")
+	for _, target := range []string{"hm_caps", "hm_native_sample ", "hm_native_status", "hm_world_status"} {
+		t.Run(target, func(t *testing.T) {
+			s := testServer(t)
+			a, remote := testClient(t, s, "Local"), testClient(t, s, "Remote")
+			position := Vec3{3430, 236, 2100}
+			remote.Publish(Pose{Ready: true, Position: position})
+			game := &interruptedNativeGame{fakeNativeGame: &fakeNativeGame{fakeGame: &fakeGame{position: position}}, target: target}
+			bridge := NewBridge(context.Background(), a, game, 40, nil)
+			defer func() { bridge.Close(); <-bridge.Done() }()
+			eventually(t, func() bool { return game.resumed.Load() })
+			if !a.Connected() {
+				t.Fatal("local transport stall disconnected the dedicated session", a.Reason())
+			}
+		})
+	}
+}
 
 func TestNativeCommandsRejectInvalidTelemetry(t *testing.T) {
 	pose := Pose{Ready: true, Position: Vec3{3434.5, 235.9, 2101.1}, Velocity: Vec3{X: 2}, Yaw: 1}

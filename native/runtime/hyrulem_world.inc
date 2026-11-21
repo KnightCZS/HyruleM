@@ -109,6 +109,8 @@ static void actor_world_capture_as(uint64_t as,uint64_t request){
 bool rt_hyrulem_world_ai(Cpu *c){
     if(!supported()||!g_site.hm_world_ai_dispatch||!actor_world_ready(c->x[19]))return false;
     uint64_t a=c->x[19],root=LD64(a+0x558);if(!range(root,16)||LD64(root+8)!=a)return false;
+    // The native death transition must run after synchronized HP reaches zero.
+    uint64_t life=enemy_life(a);if(life&&LD32(life)==0)return false;
     bool block=false;pthread_mutex_lock(&actor_world_mutex);
     if(actor_world_mode.role>=2&&actor_world_live.role==actor_world_mode.role&&actor_world_live.epoch==actor_world_mode.epoch&&!strcmp(actor_world_live.world,actor_world_mode.world)&&!strcmp(actor_world_live.session,actor_world_mode.session)&&actor_world_mode.heartbeat&&now_ms()-actor_world_mode.heartbeat<1500)for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){WorldBinding *b=&actor_world_bindings[i];if(b->actor==a&&b->id&&b->applied_at&&now_ms()-b->applied_at<500&&actor_world_index(b)){block=true;actor_world_ai_skipped++;break;}}
     pthread_mutex_unlock(&actor_world_mutex);return block;
