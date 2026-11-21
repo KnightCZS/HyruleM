@@ -339,7 +339,15 @@ func filterCandidatesContext(ctx context.Context, c Config) ([]filterSource, []f
 		}
 	}
 	var inputs []filterInput
-	for index, src := range sources {
+	for index := range sources {
+		src := &sources[index]
+		// WalkDir does not descend when its root itself is a junction or symlink.
+		// Resolve the selected asset root once, retaining relative paths in the overlay.
+		root, err := filepath.EvalSymlinks(src.Root)
+		if err != nil {
+			return nil, nil, err
+		}
+		src.Root = root
 		e := filepath.WalkDir(src.Root, func(full string, de fs.DirEntry, err error) error {
 			if e := ctx.Err(); e != nil {
 				return e

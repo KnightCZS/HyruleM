@@ -371,3 +371,34 @@ func TestReplacementIncludesInternalSubflowEntry(t *testing.T) {
 		t.Fatal("lost helper used by another flow")
 	}
 }
+
+func TestCampaignFilterWithLinkedAssetRoots(t *testing.T) {
+	c, assets := filterFixture(t)
+	extracted := filepath.Join(c.DataDir, "extracted")
+	romfs := filepath.Join(extracted, "romfs")
+	physical := filepath.Join(t.TempDir(), "game-assets")
+	if err := os.Rename(romfs, physical); err != nil {
+		t.Fatal(err)
+	}
+	if err := directoryLink(romfs, physical); err != nil {
+		t.Fatal(err)
+	}
+	dlc := t.TempDir()
+	file(t, filepath.Join(dlc, "Map", "MainField", "I-7", "I-7_Dynamic.smubin"), string(assets["Map/MainField/I-7/I-7_Dynamic.smubin"]))
+	if err := directoryLink(filepath.Join(extracted, "aoc1"), dlc); err != nil {
+		t.Fatal(err)
+	}
+	report, err := PrepareCampaignFilter(context.Background(), c, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.RemovedMain) != 1 || len(report.KeptSide) != 1 || report.RemovedMapTriggers != 2 {
+		t.Fatalf("linked roots omitted: main=%v side=%v triggers=%d", report.RemovedMain, report.KeptSide, report.RemovedMapTriggers)
+	}
+	for rel, want := range assets {
+		got, err := os.ReadFile(filepath.Join(physical, filepath.FromSlash(rel)))
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatal("asset changed", rel, err)
+		}
+	}
+}

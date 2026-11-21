@@ -1,5 +1,10 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.16.1
+
+- Corrige a preparação do filtro de campanha quando a pasta RomFS ou DLC é uma junção de diretório. O launcher lê os arquivos pelo destino do vínculo e grava o filtro no sandbox.
+- Acrescenta **Somente este PC** à hospedagem para que dois clientes locais possam compartilhar o mundo pela interface de loopback.
+
 ## 0.5.0-preview.16
 
 - Negocia referências compactas por conexão para quadros de mundo repetidos. Cliente e servidor continuam interoperando com a prévia 15.

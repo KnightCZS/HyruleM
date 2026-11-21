@@ -706,9 +706,13 @@ func (u *multiplayerUI) loadNetworks() {
 	}
 	u.networks = addresses
 	sendMessage.Call(u.controls[mpBind], 0x14b, 0, 0)
-	u.binds = []string{"0.0.0.0"}
+	u.binds = []string{"0.0.0.0", "127.0.0.1"}
 	sendMessage.Call(u.controls[mpBind], 0x143, 0, uintptr(unsafe.Pointer(wide("Todas as interfaces · LAN e VPN/Radmin"))))
+	sendMessage.Call(u.controls[mpBind], 0x143, 0, uintptr(unsafe.Pointer(wide("Somente este PC · 127.0.0.1"))))
 	selected := uintptr(0)
+	if u.settings.BindIP == "127.0.0.1" {
+		selected = 1
+	}
 	for _, a := range addresses {
 		u.binds = append(u.binds, a.IP)
 		sendMessage.Call(u.controls[mpBind], 0x143, 0, uintptr(unsafe.Pointer(wide(a.IP+" · "+a.Interface))))

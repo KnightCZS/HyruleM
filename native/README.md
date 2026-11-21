@@ -1,4 +1,4 @@
-# HyruleM 0.5.0-preview.16 — multiplayer experimental
+# HyruleM 0.5.0-preview.16.1 — multiplayer experimental
 
 Primeira camada de mundo sob autoridade do anfitrião: posição, rotação e pedidos de animação dos atores de mapa já carregados nos dois jogos. Usa os atores nativos correspondentes, com IA local suspensa apenas no seguidor que recebeu estado recente. Até 64 atores em 180 m; veja os limites abaixo.
 
@@ -13,7 +13,7 @@ A revisão c64d0fc7 foi testada em dois jogos Windows com GPU. Em Hateno, encont
 3. Se o runtime iniciar uma recompilação privada, aguarde o término. A prévia 16 usa a mesma ABI 11 e os mesmos hooks da 15.
 4. Conecte pelo IP ou DNS do anfitrião e pela porta TCP escolhida. Clientes e servidores das prévias 15 e 16 podem jogar juntos. Com cliente receptor e servidor 16, o primeiro quadro dos atores vai completo e repetições usam uma referência curta. Cada nova captura continua levando a lista completa. A idade da captura continua contando durante as repetições.
 5. Hospede e conecte pelo IP/porta escolhidos. Na primeira abertura desta versão, **Itens do mundo: ligados** é ativado no painel de hospedagem. Depois disso a escolha é preservada; pode desligá-la antes de hospedar. O servidor separado usa `--shared-items=true` por padrão, ou `--shared-items=false` para desligar.
-6. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.
+6. Para hospedar uma sessão privada local, escolha **Somente este PC**. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.
 
 ## Atraso na visão do outro jogador
 
