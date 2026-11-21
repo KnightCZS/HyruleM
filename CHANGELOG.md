@@ -1,5 +1,10 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.18.1
+
+- Consulta do identificador da biblioteca e reconstrução compartilhada automática antes de abrir os clientes.
+- Cancelamento dos subprocessos próprios da compilação e relatório local.
+
 ## 0.5.0-preview.18
 
 - Servidor dedicado, autoridade por entidade e armazenamento persistente.

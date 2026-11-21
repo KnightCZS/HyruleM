@@ -38,7 +38,9 @@ func (p *MultiplayerPreparer) Prepare(ctx context.Context, c Config, slot, port 
 	if e := Validate(c); e != nil {
 		return result, e
 	}
-	if c.Backend != Savage || PreparationNeeded(c) {
+	native := nativePreviewRequested(env)
+	rawReady := IsFile(filepath.Join(c.DataDir, "extracted", "exefs", "main")) && IsDir(filepath.Join(c.DataDir, "extracted", "romfs"))
+	if c.Backend != Savage || PreparationNeeded(c) && !(native && rawReady) {
 		return result, fmt.Errorf("prepare e teste o Savage Wind antes de entrar")
 	}
 	if nativePreviewRequested(env) {
@@ -47,6 +49,10 @@ func (p *MultiplayerPreparer) Prepare(ctx context.Context, c Config, slot, port 
 			return result, err
 		}
 		if err = VerifyNativeRuntime(c, filepath.Dir(exe)); err != nil {
+			return result, err
+		}
+		running := p.Running != nil && p.Running(c)
+		if err = ensureNativeLibrary(ctx, c, running, notify); err != nil {
 			return result, err
 		}
 	}

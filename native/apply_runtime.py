@@ -130,6 +130,25 @@ def apply(root):
         "PATCHES['hm_weapon_drop'] = _hm_weapon_drop\nPATCHES['hm_weapon_throw'] = _hm_weapon_drop\n\n")
     text=text.replace("def table(sites):",addition+"def table(sites):")
     patch.write_text(text)
+    main = root / "runtime/main.c"
+    replace_once(main, '#include "gamelib.h"', '#include "gamelib.h"\n#include "gamebuild.h"')
+    replace_once(main, 'bool scan = false, precompile = false, add_steam = false;',
+                 'bool scan = false, precompile = false, add_steam = false, hyrulem_id = false, hyrulem_build = false;')
+    replace_once(main, 'else if (!strcmp(argv[i], "--config")) config = true;',
+                 'else if (!strcmp(argv[i], "--config")) config = true;\n'
+                 '        else if (!strcmp(argv[i], "--hyrulem-gamelib-id")) hyrulem_id = true;\n'
+                 '        else if (!strcmp(argv[i], "--hyrulem-build-game")) hyrulem_build = true;')
+    replace_once(main, '    settings_load();',
+                 '    settings_load();\n'
+                 '    if (hyrulem_id) { puts(gamelib_id()); return 0; }\n'
+                 '    if (hyrulem_build) {\n'
+                 '        int cores = SDL_GetNumLogicalCPUCores(), ram = SDL_GetSystemRAM() / 1024;\n'
+                 '        int jobs = cores < ram - 2 ? cores : ram - 2; if (jobs < 1) jobs = 1;\n'
+                 '        GameBuildOpts opts = {NULL, jobs}; char why[800] = "";\n'
+                 '        bool ok = gamebuild_run(root, &opts, why, sizeof why);\n'
+                 '        if (!ok) fprintf(stderr, "[hyrulem-build] %s\\n", why);\n'
+                 '        return ok ? 0 : 1;\n'
+                 '    }')
     shutil.copyfile(HERE / "runtime/hyrulem_scene.inc", root / "runtime/hyrulem_scene.inc")
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
     shutil.copyfile(HERE / "runtime/hyrulem_items.inc", root / "runtime/hyrulem_items.inc")
