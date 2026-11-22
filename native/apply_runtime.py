@@ -132,6 +132,35 @@ def apply(root):
         "    assert _word(gen, a) == 0xf942cc08, hex(_word(gen, a))\n"
         "    return '{ extern void rt_hyrulem_capture_drop(Cpu *); rt_hyrulem_capture_drop(c); c->x[8] = LD64(c->x[0] + 0x598); }'\n\n"
         "PATCHES['hm_weapon_drop'] = _hm_weapon_drop\nPATCHES['hm_weapon_throw'] = _hm_weapon_drop\n\n")
+    addition+="""def _hm_loot_ai_call(gen, a):
+    assert _word(gen, a) == 0xd63f0100, hex(_word(gen, a))
+    return ('{ extern uint64_t rt_hyrulem_loot_job_begin(uint64_t); '
+            'extern void rt_hyrulem_loot_job_end(uint64_t); '
+            'uint64_t method = c->x[8], token = rt_hyrulem_loot_job_begin(c->x[19]); '
+            f'c->pc = method; c->x[30] = {a + 4:#x}ull; rt_dispatch(c); '
+            'rt_hyrulem_loot_job_end(token); }')
+
+
+def _hm_loot_request(gen, a):
+    assert _word(gen, a) == 0xd10143ff, hex(_word(gen, a))
+    return '{ extern void rt_hyrulem_loot_request(Cpu *); rt_hyrulem_loot_request(c); c->sp -= 0x50; }'
+
+
+def _hm_loot_factory_call(gen, a):
+    assert _word(gen, a) == 0xd63f0100, hex(_word(gen, a))
+    return ('{ extern uint64_t rt_hyrulem_loot_factory_begin(uint64_t, uint64_t); '
+            'extern void rt_hyrulem_loot_factory_end(uint64_t); '
+            'uint64_t method = c->x[8], token = rt_hyrulem_loot_factory_begin(c->x[20], c->x[1]); '
+            f'c->pc = method; c->x[30] = {a + 4:#x}ull; rt_dispatch(c); '
+            'rt_hyrulem_loot_factory_end(token); }')
+
+
+PATCHES['hm_loot_ai_call'] = _hm_loot_ai_call
+PATCHES['hm_loot_request'] = _hm_loot_request
+PATCHES['hm_loot_factory_call'] = _hm_loot_factory_call
+
+
+"""
     text=text.replace("def table(sites):",addition+"def table(sites):")
     patch.write_text(text)
     main = root / "runtime/main.c"
@@ -153,6 +182,7 @@ def apply(root):
                  '        if (!ok) fprintf(stderr, "[hyrulem-build] %s\\n", why);\n'
                  '        return ok ? 0 : 1;\n'
                  '    }')
+    shutil.copyfile(HERE / "runtime/hyrulem_provenance.inc", root / "runtime/hyrulem_provenance.inc")
     shutil.copyfile(HERE / "runtime/hyrulem_scene.inc", root / "runtime/hyrulem_scene.inc")
     shutil.copyfile(HERE / "runtime/hyrulem.c", root / "runtime/hyrulem.c")
     shutil.copyfile(HERE / "runtime/hyrulem_items.inc", root / "runtime/hyrulem_items.inc")

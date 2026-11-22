@@ -2,10 +2,10 @@
 // This runs in a worker: copy bounded metadata only, never call guest code.
 enum { BIRTH_MAX=64 };
 typedef struct {
-    uint64_t sequence,actor,block,parent,parent_block,task,task_words[48];
-    uint32_t generation,parent_generation,hash,parent_hash;
+    uint64_t sequence,actor,block,parent,parent_block,task,task_words[48],request;
+    uint32_t generation,parent_generation,hash,parent_hash,creator_hash;
     unsigned parameters;
-    char name[64],parent_name[64];
+    char name[64],parent_name[64],creator_name[64];
     float position[3];
 } BirthEvent;
 static pthread_mutex_t birth_mutex=PTHREAD_MUTEX_INITIALIZER;
@@ -53,6 +53,7 @@ static LootContext *loot_find(uint64_t a,const GroundMode *g){
     for(unsigned i=0;i<3;i++){identity.spawn[i]=read_float(map+0x5c+i*4);if(!isfinite(identity.spawn[i])||fabsf(identity.spawn[i])>(i==1?50000:100000))return NULL;}
     return loot_cache(a,g,&identity);
 }
+#include "hyrulem_provenance.inc"
 static void loot_bind_trunk(uint64_t a,uint64_t parent,const char *name){
     GroundMode g;if(!loot_scope(&g)||!ground_parent_name(name))return;
     pthread_mutex_lock(&birth_mutex);LootContext *root=loot_find(parent,&g);
@@ -72,23 +73,29 @@ static bool loot_derived(uint64_t a,WorldActor *out){
         }
     }pthread_mutex_unlock(&birth_mutex);return found;
 }
-static bool loot_capture(uint64_t a,uint64_t parent,GroundSource *source){
-    GroundMode g;if(!loot_scope(&g)||!range(a,0x7d0)||!ground_actor(source->name)||strlen(source->name)>47)return false;
-    uint64_t life=range(parent,0x7d0)?enemy_life(parent):0;if(!life||LD32(life)!=0)return false;
+static bool loot_capture_known(uint64_t a,const GroundMode *g,const GroundParent *identity,GroundSource *source){
+    if(!range(a,0x7d0)||!ground_actor(source->name)||strlen(source->name)>47||!identity->hash||!identity->ordinal)return false;
     uint64_t block=LD64(a+0x68);uint32_t gen=LD32(a+0x60);if(!actor_world_weak(a,block,gen))return false;
     for(unsigned i=0;i<3;i++)if(!isfinite(source->pos[i])||fabsf(source->pos[i])>(i==1?50000:100000))return false;
-    pthread_mutex_lock(&ground_mutex);int at=-1;
+    pthread_mutex_lock(&ground_mutex);
+    if(strcmp(ground_mode.session,g->session)||strcmp(ground_mode.world,g->world)||strcmp(ground_mode.scene,g->scene)){pthread_mutex_unlock(&ground_mutex);return false;}int at=-1;
     for(unsigned i=0;i<NATIVE_DROPS;i++){
         NativeDrop *d=&native_drops[i];if(native_drop_live(d,a)){pthread_mutex_unlock(&ground_mutex);return true;}
-        if(d->active&&d->id&&!d->pickup_pending&&!native_drop_live(d,d->actor))d->active=false;
+        if(d->active&&d->enrolled&&!d->pickup_pending&&!native_drop_live(d,d->actor))d->active=false;
         if(!d->active&&at<0)at=(int)i;
     }
     if(at<0){loot_overflow++;pthread_mutex_unlock(&ground_mutex);return false;}
-    pthread_mutex_lock(&birth_mutex);LootContext *context=loot_find(parent,&g);
-    if(!context||context->identity.ordinal>=4096){pthread_mutex_unlock(&birth_mutex);pthread_mutex_unlock(&ground_mutex);return false;}
-    source->parent=context->identity;source->parent.ordinal=++context->identity.ordinal;context->at=now_ms();pthread_mutex_unlock(&birth_mutex);
-    source->local=UINT64_C(0x200000000)+ ++native_drop_sequence;source->native_drop=source->drop=true;source->hash=0;snprintf(source->origin,17,"%s",ground_origin);snprintf(source->scene,65,"%s",g.scene);
+    source->parent=*identity;
+    source->local=UINT64_C(0x200000000)+ ++native_drop_sequence;source->native_drop=source->drop=true;source->hash=0;snprintf(source->origin,17,"%s",ground_origin);snprintf(source->scene,65,"%s",g->scene);
     NativeDrop *d=&native_drops[at];uint64_t reuse=d->fallback.storage;memset(d,0,sizeof *d);d->fallback.storage=reuse;d->active=true;d->actor=a;d->block=block;d->generation=gen;d->source=*source;loot_captured++;pthread_mutex_unlock(&ground_mutex);return true;
+}
+static bool loot_capture(uint64_t a,uint64_t parent,GroundSource *source){
+    GroundMode g;GroundParent identity={0};if(!loot_scope(&g))return false;
+    uint64_t life=range(parent,0x7d0)?enemy_life(parent):0;if(!life||LD32(life)!=0)return false;
+    pthread_mutex_lock(&ground_mutex);bool known=false;for(unsigned i=0;i<NATIVE_DROPS;i++)if(native_drop_live(&native_drops[i],a)){known=true;break;}pthread_mutex_unlock(&ground_mutex);if(known)return true;
+    pthread_mutex_lock(&birth_mutex);LootContext *context=loot_find(parent,&g);
+    if(context&&context->identity.ordinal<4096){identity=context->identity;identity.ordinal=++context->identity.ordinal;context->at=now_ms();}pthread_mutex_unlock(&birth_mutex);
+    return loot_capture_known(a,&g,&identity,source);
 }
 
 void rt_hyrulem_capture_birth(Cpu *c){
@@ -107,7 +114,15 @@ void rt_hyrulem_capture_birth(Cpu *c){
     uint64_t map=LD64(a+0x7c8);if(range(map,0x70))e.hash=LD32(map+0x58);
     uint64_t params=LD64(task+0x40);if(range(params,2))e.parameters=LD16(params);
     for(unsigned i=0;i<3;i++){e.position[i]=read_float(a+0x3a4+i*16);if(!isfinite(e.position[i])||fabsf(e.position[i])>100000)return;}
-    if(e.parent){
+    LootRequest causal={0};bool linked=loot_factory_context(task,e.name,&causal);
+    if(linked){e.request=causal.task;e.creator_hash=causal.creator_hash;snprintf(e.creator_name,64,"%s",causal.creator_name);}
+    GroundMode current;
+    if(linked&&causal.valid&&loot_scope(&current)&&loot_scope_same(&causal.scope,&current)){
+        if(strstr(e.name,"_Trunk")){
+            GroundParent identity=causal.scope.identity;identity.ordinal=0;snprintf(identity.name,64,"%s",e.name);
+            pthread_mutex_lock(&birth_mutex);loot_cache(a,&current,&identity);pthread_mutex_unlock(&birth_mutex);
+        }else if(!ground_weapon(e.name)&&strlen(e.name)<sizeof ((GroundSource *)0)->name){GroundSource source={0};snprintf(source.name,sizeof source.name,"%s",e.name);memcpy(source.spawn,e.position,12);memcpy(source.pos,e.position,12);loot_capture_known(a,&current,&causal.scope.identity,&source);}
+    }else if(e.parent){
         if(strstr(e.name,"_Trunk"))loot_bind_trunk(a,e.parent,e.name);
         else if(!ground_weapon(e.name)){GroundSource source={0};if(strlen(e.name)<sizeof source.name){snprintf(source.name,sizeof source.name,"%s",e.name);memcpy(source.spawn,e.position,12);memcpy(source.pos,e.position,12);loot_capture(a,e.parent,&source);}}
     }
@@ -115,7 +130,7 @@ void rt_hyrulem_capture_birth(Cpu *c){
     if(task>=GUEST_LO+0x100&&range(task-0x100,sizeof e.task_words)){e.task=task;for(unsigned i=0;i<48;i++)e.task_words[i]=LD64(task-0x100+i*8);}
     pthread_mutex_lock(&birth_mutex);e.sequence=++birth_sequence;birth_events[(e.sequence-1)%BIRTH_MAX]=e;pthread_mutex_unlock(&birth_mutex);
 }
-static void birth_reset(void){pthread_mutex_lock(&birth_mutex);memset(birth_events,0,sizeof birth_events);memset(loot_parents,0,sizeof loot_parents);birth_sequence=0;pthread_mutex_unlock(&birth_mutex);pthread_mutex_lock(&ground_mutex);loot_captured=loot_overflow=0;pthread_mutex_unlock(&ground_mutex);}
+static void birth_reset(void){pthread_mutex_lock(&birth_mutex);memset(birth_events,0,sizeof birth_events);memset(loot_parents,0,sizeof loot_parents);memset(loot_requests,0,sizeof loot_requests);__atomic_add_fetch(&loot_boot,1,__ATOMIC_RELEASE);birth_sequence=0;pthread_mutex_unlock(&birth_mutex);pthread_mutex_lock(&ground_mutex);loot_captured=loot_overflow=0;pthread_mutex_unlock(&ground_mutex);}
 static void birth_status(int argc,char **argv,ControlReply *r){
     pthread_mutex_lock(&ground_mutex);uint64_t captured=loot_captured,overflow=loot_overflow;pthread_mutex_unlock(&ground_mutex);control_field_int(r,"world_loot_captured",captured);control_field_int(r,"world_loot_overflow",overflow);
     BirthEvent rows[BIRTH_MAX];uint64_t seq;pthread_mutex_lock(&birth_mutex);memcpy(rows,birth_events,sizeof rows);seq=birth_sequence;pthread_mutex_unlock(&birth_mutex);
@@ -126,10 +141,10 @@ static void birth_status(int argc,char **argv,ControlReply *r){
         char words[48*80+3],pointer[32];size_t n=1;words[0]='[';for(unsigned i=0;i<48;i++)n+=(size_t)snprintf(words+n,sizeof words-n,"%s{\"offset\":%d,\"value\":\"0x%llx\"}",i?",":"",(int)i*8-0x100,(unsigned long long)e->task_words[i]);words[n++]=']';words[n]=0;
         snprintf(pointer,sizeof pointer,"0x%llx",(unsigned long long)e->task);control_field_str(r,"task",pointer);control_field_str(r,"actor",e->name);control_field_str(r,"words_json",words);return;
     }
-    char json[BIRTH_MAX*320+3];size_t used=1;json[0]='[';unsigned count=seq<BIRTH_MAX?(unsigned)seq:BIRTH_MAX;
+    char json[BIRTH_MAX*448+3];size_t used=1;json[0]='[';unsigned count=seq<BIRTH_MAX?(unsigned)seq:BIRTH_MAX;
     for(unsigned i=0;i<count;i++){
         BirthEvent *e=&rows[(seq-count+i)%BIRTH_MAX];
-        int n=snprintf(json+used,sizeof json-used,"%s{\"sequence\":%llu,\"actor\":\"%s\",\"hash\":%u,\"parent\":\"%s\",\"parent_hash\":%u,\"parameters\":%u,\"position\":[%.3f,%.3f,%.3f]}",i?",":"",(unsigned long long)e->sequence,e->name,e->hash,e->parent_name,e->parent_hash,e->parameters,e->position[0],e->position[1],e->position[2]);
+        int n=snprintf(json+used,sizeof json-used,"%s{\"sequence\":%llu,\"actor\":\"%s\",\"hash\":%u,\"parent\":\"%s\",\"parent_hash\":%u,\"creator\":\"%s\",\"creator_hash\":%u,\"parameters\":%u,\"position\":[%.3f,%.3f,%.3f]}",i?",":"",(unsigned long long)e->sequence,e->name,e->hash,e->parent_name,e->parent_hash,e->creator_name,e->creator_hash,e->parameters,e->position[0],e->position[1],e->position[2]);
         if(n<0||(size_t)n>=sizeof json-used-2){control_fail(r,"Birth diagnostic overflow");return;}used+=(size_t)n;
     }json[used++]=']';json[used]=0;control_field_int(r,"sequence",seq);control_field_str(r,"births_json",json);
 }

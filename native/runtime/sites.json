@@ -271,5 +271,26 @@
     "kind": "code",
     "pattern": "f942e2c8 f90006a8 b5000068 f942dec8 f90006a8 9102a295 aa1503e0 94000000/fc000000 b9804e88 9100e280 8b160101",
     "at": 0
+  },
+  {
+    "name": "hm_loot_ai_call",
+    "address": "0x7001524e68",
+    "kind": "code",
+    "pattern": "f942ae60 b4000080 f9400008 f9405108 d63f0100 f9400268 aa1303e0 f9415d08",
+    "at": 4
+  },
+  {
+    "name": "hm_loot_request",
+    "address": "0x7001517620",
+    "kind": "code",
+    "pattern": "d10143ff a9017bfd a9025ff8 a90357f6 a9044ff4 910043fd aa0103f4 aa0003f3 940000d6 b4000cf4 f9400288 aa0003e1 aa1403e0 f9400108 d63f0100 7200001f",
+    "at": 0
+  },
+  {
+    "name": "hm_loot_factory_call",
+    "address": "0x7001517534",
+    "kind": "code",
+    "pattern": "d63f0100 b40003e0 f940ca88 aa0003f5 f900b808 39419008 71000d1f 54000100",
+    "at": 0
   }
 ]

@@ -69,6 +69,8 @@ bool control_reply_failed(const ControlReply *r){return r->failed;}
 void control_fail(ControlReply *r,const char *fmt,...) {r->failed=true;}
 
 static void map_at(uint64_t a,size_t n) {assert(mmap((void *)(uintptr_t)a,n,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED,-1,0)==(void *)(uintptr_t)a);}
+typedef struct {uint64_t task;Cpu birth;} AsyncBirthTest;
+static void *async_birth_test(void *arg){AsyncBirthTest *test=arg;uint64_t token=rt_hyrulem_loot_factory_begin(test->task,test->birth.x[21]);rt_hyrulem_capture_birth(&test->birth);rt_hyrulem_loot_factory_end(token);return NULL;}
 int main(void) {
     setenv("HYRULEM_NATIVE_PREVIEW","1",1);
     map_at(HLE_HEAP,0x100000);map_at(HEAP_BASE,0x100000);

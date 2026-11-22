@@ -195,3 +195,34 @@ with tempfile.TemporaryDirectory(prefix='hyrulem-birth-hook-') as temp:
  subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
  subprocess.run([str(p/'hook')],check=True)
 print('Birth observer: successful initialization continuation, original LDR and CPU preservation passed')
+
+# Both virtual-call wrappers bracket exactly one real dispatch. Bookkeeping
+# must preserve the callee's return registers, SIMD, flags and native LR/PC.
+for method,begin,end,kind in [('_hm_loot_ai_call','rt_hyrulem_loot_job_begin','rt_hyrulem_loot_job_end','job'),('_hm_loot_factory_call','rt_hyrulem_loot_factory_begin','rt_hyrulem_loot_factory_end','factory')]:
+ struct.pack_into('<I',image,0x480,0xd63f0100)
+ fragment=getattr(patches,method)(gen,base+0x480)
+ declaration=('uint64_t a' if kind=='job' else 'uint64_t a,uint64_t b')
+ check=('assert(a==19);' if kind=='job' else 'assert(a==20&&b==1);')
+ source='''#include "cpu.h"
+#include <assert.h>
+#include <string.h>
+static unsigned active,ended;static Cpu returned;
+uint64_t BEGIN(DECL){CHECK assert(!active);active=1;return 73;}
+void END(uint64_t token){assert(active&&token==73);active=0;ended++;}
+void rt_dispatch(Cpu *c){assert(active&&c->pc==0x7000123456ull&&c->x[30]==0x7000000484ull);memset(c,0x5a,sizeof *c);c->x[0]=987;returned=*c;}
+static void generated(Cpu *c){FRAGMENT}
+int main(void){Cpu c;memset(&c,0xa5,sizeof c);c.x[19]=19;c.x[20]=20;c.x[1]=1;c.x[8]=0x7000123456ull;generated(&c);assert(!active&&ended==1&&!memcmp(&c,&returned,sizeof c));return 0;}
+'''.replace('BEGIN',begin).replace('END',end).replace('DECL',declaration).replace('CHECK',check).replace('FRAGMENT',fragment)
+ with tempfile.TemporaryDirectory(prefix='hyrulem-causal-call-') as temp:
+  p=Path(temp);(p/'hook.c').write_text(source)
+  subprocess.run([sys.executable,'-m','ziglang','cc','-std=gnu11','-O0','-UNDEBUG','-I'+str((args.runtime/'runtime').resolve()),str(p/'hook.c'),'-lm','-o',str(p/'hook')],check=True)
+  subprocess.run([str(p/'hook')],check=True)
+print('Creation provenance: exact virtual dispatch, paired scope and callee CPU return preservation passed')
+struct.pack_into('<I',image,0x4c0,0xd10143ff)
+fragment=patches._hm_loot_request(gen,base+0x4c0)
+assert 'c->sp -= 0x50' in fragment
+try:
+ patches._hm_loot_request(gen,base+0x480)
+ raise AssertionError('request hook accepted a changed native prologue')
+except AssertionError as error:
+ assert 'request hook accepted' not in str(error)

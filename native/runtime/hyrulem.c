@@ -671,7 +671,7 @@ static bool number(const char *s, float *out, float limit) {
 #include "hyrulem_birth.inc"
 
 static void caps(int argc,char **argv,ControlReply *r) {
-    control_field_bool(r,"world_loot_provenance",world_supported()&&g_site.hm_birth_capture);
+    control_field_bool(r,"world_loot_provenance",world_supported()&&g_site.hm_birth_capture&&g_site.hm_loot_ai_call&&g_site.hm_loot_request&&g_site.hm_loot_factory_call);
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
     control_field_int(r,"preview_abi",14);control_field_bool(r,"world_actor_sync",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"world_entity_reconstruction",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());

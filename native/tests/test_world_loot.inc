@@ -56,5 +56,35 @@
     char *trunk_lease[]={"hm_world_sample",desired.session,ground_mode.world,"901","3","1","0","3437.5","235.9","2101.5",empty_world,"MainField","701"};
     calls_before_birth=calls;r.failed=false;actor_world_sample(13,trunk_lease,&r);assert(!r.failed&&actor_world_mode.owned_count==1&&actor_world_mode.owned[0]==701&&calls==calls_before_birth);
     trunk_lease[12]="701,701";actor_world_sample(13,trunk_lease,&r);assert(r.failed&&actor_world_mode.owned_count==1&&calls==calls_before_birth);r.failed=false;
+    // Enrollment survives removal from the 32-slot visual window. A stale
+    // accepted source with no current visual ID can release its pool record.
+    for(unsigned i=0;i<NATIVE_DROPS;i++)native_drops[i].active=false;
+    native_drops[0]=(NativeDrop){.active=true,.enrolled=true,.actor=second_loot,.block=second_loot+0x1000,.generation=9};
+    strcpy((char *)(uintptr_t)(second_loot+0x800),"Item_Material_04");
+    ST8(second_loot+0x64,1);
+    GroundSource reclaimed={0};strcpy(reclaimed.name,"Item_Material_04");memcpy(reclaimed.pos,loot_parent.spawn,12);memcpy(reclaimed.spawn,loot_parent.spawn,12);
+    assert(loot_capture(second_loot,parent,&reclaimed)&&native_drops[0].active&&native_drops[0].generation==10&&!native_drops[1].active);
+    // A detached asynchronous creation keeps copied ancestry after the weak
+    // parent dies. Reused requests, nested jobs and resets cannot inherit it.
+    uint64_t request_task=HEAP_BASE+0xf7400,request_desc=HEAP_BASE+0xf7000;
+    ST64(request_desc+0x18,request_desc+0x200);strcpy((char *)(uintptr_t)(request_desc+0x200),"Item_Material_04");
+    Cpu enqueue=cpu;enqueue.x[0]=request_task;enqueue.x[1]=request_desc;Cpu enqueue_before=enqueue;
+    ST64(job.x[21]+0x48,0);ST32(parent+0x900,0);ST32(birth_weak+0x140,6);
+    for(unsigned i=0;i<NATIVE_DROPS;i++)native_drops[i].active=false;
+    uint64_t scope_token=rt_hyrulem_loot_job_begin(parent);calls_before_birth=calls;rt_hyrulem_loot_request(&enqueue);rt_hyrulem_loot_job_end(scope_token);
+    assert(calls==calls_before_birth&&!memcmp(&enqueue,&enqueue_before,sizeof enqueue));
+    ST32(birth_weak+0x140,7); // the native parent may disappear before its child initializes
+    uint64_t factory_token;unsigned captured_before_async=loot_captured;AsyncBirthTest async={.task=request_task,.birth=job};async.birth.x[22]=second_loot;pthread_t birth_thread;
+    assert(!pthread_create(&birth_thread,NULL,async_birth_test,&async)&&!pthread_join(birth_thread,NULL));
+    assert(loot_captured==captured_before_async+1&&native_drops[0].source.parent.hash==123&&!strcmp(native_drops[0].source.parent.name,"Obj_TreeBroadleaf_A_L")&&calls==calls_before_birth);
+    LootRequest request_copy;assert(!loot_factory_context(job.x[21],"Item_Material_04",&request_copy));
+    ST32(birth_weak+0x140,6);scope_token=rt_hyrulem_loot_job_begin(parent);uint64_t nested=rt_hyrulem_loot_job_begin(0);
+    rt_hyrulem_loot_request(&enqueue);rt_hyrulem_loot_job_end(nested);rt_hyrulem_loot_job_end(scope_token);
+    factory_token=rt_hyrulem_loot_factory_begin(request_task,job.x[21]);assert(loot_factory_context(job.x[21],"Item_Material_04",&request_copy)&&!request_copy.valid&&!request_copy.creator_name[0]);
+    assert(!loot_factory_context(job.x[21]+8,"Item_Material_04",&request_copy)&&!loot_factory_context(job.x[21],"Item_Fruit_A",&request_copy));rt_hyrulem_loot_factory_end(factory_token);
+    scope_token=rt_hyrulem_loot_job_begin(parent);rt_hyrulem_loot_request(&enqueue);rt_hyrulem_loot_job_end(scope_token);
+    rt_hyrulem_loot_request(&enqueue); // pool reuse outside any actor job erases the old link
+    factory_token=rt_hyrulem_loot_factory_begin(request_task,job.x[21]);assert(loot_factory_context(job.x[21],"Item_Material_04",&request_copy)&&!request_copy.valid);rt_hyrulem_loot_factory_end(factory_token);
+    scope_token=rt_hyrulem_loot_job_begin(parent);birth_reset();rt_hyrulem_loot_job_end(scope_token);assert(!loot_thread.jobs&&!loot_thread.factories);
     puts("world loot: exact parent alias, dead-parent gate, held pre-export pickup, one-credit grant and deferred duplicate disposal passed");
     ground_reset();birth_reset();actor_world_reset();
