@@ -115,7 +115,7 @@ func TestBidirectionalDamageIsAdditiveAndIdempotent(t *testing.T) {
 	if err := mergeMapDamage(reg, ledger, "0123456789abcdef", []EnemyHealth{e}, p); err == nil {
 		t.Fatal("counter rewind accepted")
 	}
-	for _, name := range []string{"GameROMPlayer", "Obj_TreeApple_A_01_Stump", "Obj_TreeBroadleaf_A_L_Trunk"} {
+	for _, name := range []string{"GameROMPlayer", "Obj_TreeApple_A_01_Stump"} {
 		e.Actor = name
 		if e.Valid() {
 			t.Fatal("unsafe actor", name)

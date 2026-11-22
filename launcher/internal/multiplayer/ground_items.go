@@ -40,7 +40,7 @@ func GroundActor(s string) bool {
 			return false
 		}
 	}
-	for _, prefix := range []string{"Item_Fruit_", "Item_Mushroom_", "Item_PlantGet_", "Item_Ore_", "Item_Enemy_", "Item_Meat_", "Item_Roast_", "Item_Chilled_", "Item_FishGet_", "Animal_Insect_", "Animal_Fish_"} {
+	for _, prefix := range []string{"Item_Material_", "Item_Fruit_", "Item_Mushroom_", "Item_PlantGet_", "Item_Ore_", "Item_Enemy_", "Item_Meat_", "Item_Roast_", "Item_Chilled_", "Item_FishGet_", "Animal_Insect_", "Animal_Fish_"} {
 		if strings.HasPrefix(s, prefix) && len(s) > len(prefix) {
 			return true
 		}
@@ -49,18 +49,19 @@ func GroundActor(s string) bool {
 }
 
 type GroundSource struct {
-	Scene         string `json:"scene,omitempty"`
-	Local         uint64 `json:"local"`
-	NativeDrop    bool   `json:"native_drop,omitempty"`
-	Value         int    `json:"value,omitempty"`
-	Modifier      uint32 `json:"modifier,omitempty"`
-	ModifierValue int    `json:"modifier_value,omitempty"`
-	Drop          bool   `json:"drop,omitempty"`
-	Origin        string `json:"origin,omitempty"`
-	Hash          uint32 `json:"hash"`
-	Actor         string `json:"actor"`
-	Spawn         Vec3   `json:"spawn"`
-	Position      Vec3   `json:"position"`
+	Parent        *LootParent `json:"parent,omitempty"`
+	Scene         string      `json:"scene,omitempty"`
+	Local         uint64      `json:"local"`
+	NativeDrop    bool        `json:"native_drop,omitempty"`
+	Value         int         `json:"value,omitempty"`
+	Modifier      uint32      `json:"modifier,omitempty"`
+	ModifierValue int         `json:"modifier_value,omitempty"`
+	Drop          bool        `json:"drop,omitempty"`
+	Origin        string      `json:"origin,omitempty"`
+	Hash          uint32      `json:"hash"`
+	Actor         string      `json:"actor"`
+	Spawn         Vec3        `json:"spawn"`
+	Position      Vec3        `json:"position"`
 }
 
 func validOrigin(s string) bool {
@@ -82,7 +83,10 @@ func (g GroundSource) Valid() bool {
 		if g.Value <= 0 || g.Value > 1000000 || g.ModifierValue < -100000 || g.ModifierValue > 100000 {
 			return false
 		}
-	} else if g.Value != 0 || g.Modifier != 0 || g.ModifierValue != 0 || g.NativeDrop {
+	} else if g.Value != 0 || g.Modifier != 0 || g.ModifierValue != 0 || g.NativeDrop && g.Parent == nil {
+		return false
+	}
+	if g.Parent != nil && (!g.Parent.valid() || !g.NativeDrop) {
 		return false
 	}
 	if g.NativeDrop && (!g.Drop || g.Local < 0x200000000) {
@@ -91,6 +95,9 @@ func (g GroundSource) Valid() bool {
 	return (g.Hash != 0 && !g.Drop || g.Hash == 0 && g.Drop && validOrigin(g.Origin)) && g.Local > 0 && g.Local <= math.MaxInt64 && GroundActor(g.Actor) && g.Spawn.Valid() && g.Position.Valid() && g.Hash != math.MaxUint32
 }
 func (g GroundSource) key(owner string) string {
+	if g.Parent != nil {
+		return fmt.Sprintf("%s:w:%d", g.Parent.key(g.Scene), g.Parent.Ordinal)
+	}
 	if g.Hash == 0 {
 		return g.Scene + ":" + fmt.Sprintf("d:%s:%d", g.Origin, g.Local)
 	}
@@ -156,17 +163,34 @@ type GroundView struct {
 	Items      []GroundItem
 	Claims     []GroundClaim
 	At         time.Time
+	Enrolled   []uint64
+	Discarded  []uint64
 	Rejected   []uint64
 	DropResult *GroundDropResult
 }
 
+func (g GroundSource) clone() GroundSource {
+	if g.Parent != nil {
+		p := *g.Parent
+		g.Parent = &p
+	}
+	return g
+}
 func (c *Client) Ground() GroundView {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	v := c.ground
 	v.Items = append([]GroundItem(nil), v.Items...)
 	v.Claims = append([]GroundClaim(nil), v.Claims...)
+	for i := range v.Items {
+		v.Items[i].Source = v.Items[i].Source.clone()
+	}
+	for i := range v.Claims {
+		v.Claims[i].Source = v.Claims[i].Source.clone()
+	}
 	v.Rejected = append([]uint64(nil), v.Rejected...)
+	v.Discarded = append([]uint64(nil), v.Discarded...)
+	v.Enrolled = append([]uint64(nil), v.Enrolled...)
 	if v.DropResult != nil {
 		copy := *v.DropResult
 		v.DropResult = &copy
@@ -224,6 +248,9 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 				continue
 			}
 		}
+		if !s.acceptLoot(p, g) {
+			continue
+		}
 		key := g.key(p.player.ID)
 		id := s.groundKeys[key]
 		if id == 0 {
@@ -231,7 +258,7 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 				continue
 			}
 			if len(s.groundItems) >= s.groundLimit() {
-				if g.NativeDrop {
+				if g.NativeDrop && g.Parent == nil {
 					if p.groundRejected == nil {
 						p.groundRejected = map[uint64]bool{}
 					}
@@ -241,14 +268,32 @@ func (s *Server) observeGround(p *serverPeer, obs []GroundSource, now time.Time)
 				}
 				continue
 			}
+			if err := s.pinLoot(g); err != nil {
+				return err
+			}
 			s.groundCounter++
 			id = s.groundCounter
 			s.groundKeys[key] = id
 			s.groundItems[id] = GroundItem{ID: id, Source: g, Owner: p.player.ID, State: "available"}
 		}
 		item := s.groundItems[id]
+		if g.Parent != nil && (item.Source.Origin != g.Origin || item.Source.Local != g.Local) {
+			p.discardLoot(g.Local)
+			continue
+		}
 		if item.Source.Actor != g.Actor {
 			continue
+		}
+		if g.NativeDrop {
+			if p.groundEnrolled == nil {
+				p.groundEnrolled = map[uint64]bool{}
+			}
+			if len(p.groundEnrolled) < MaxGroundItems {
+				p.groundEnrolled[g.Local] = true
+			}
+			if item.State == "taken" || item.State == "cancelled" {
+				p.discardLoot(g.Local)
+			}
 		}
 		if item.State == "available" {
 			if item.Source.Drop && item.Owner != p.player.ID {
@@ -327,6 +372,10 @@ func (s *Server) claimGround(p *serverPeer, req GroundClaim, now time.Time) erro
 		return nil
 	}
 	req.Item = id
+	if req.Source.Parent != nil && (item.Source.Origin != req.Source.Origin || item.Source.Local != req.Source.Local) {
+		p.groundClaims[req.Request] = req
+		return nil
+	}
 	if item.Source.Actor != req.Source.Actor || item.Source.Value != req.Source.Value || item.Source.Modifier != req.Source.Modifier || item.Source.ModifierValue != req.Source.ModifierValue || item.Source.key(item.Owner) != req.Source.key(p.player.ID) || item.Source.Position.Sub(p.player.Pose.Position).Len() > 3.5 {
 		p.groundClaims[req.Request] = req
 		return nil

@@ -1,7 +1,8 @@
 // Original, bounded ground-material experiment. No game assets or game code.
 // Command handlers enqueue data. Actor and inventory calls run only after jobs.
 enum { GROUND_MAX=32, GROUND_EVENTS=32 };
-typedef struct { uint64_t local;uint32_t hash;bool drop,native_drop;int value,bonus;uint32_t modifier;char origin[17],name[48],scene[65];float spawn[3],pos[3]; } GroundSource;
+typedef struct {uint32_t hash,ordinal;char name[64];float spawn[3];} GroundParent;
+typedef struct { GroundParent parent;uint64_t local;uint32_t hash;bool drop,native_drop;int value,bonus;uint32_t modifier;char origin[17],name[48],scene[65];float spawn[3],pos[3]; } GroundSource;
 typedef struct { uint64_t id,request;GroundSource source;int state;bool own; } GroundState;
 typedef struct { char session[17],world[25],scene[65];float zone[3];bool roaming;uint64_t heartbeat; } GroundMode;
 typedef struct { uint64_t request,id;GroundSource source;bool done; } GroundEvent;
@@ -23,6 +24,7 @@ static GroundHook ground_hooks[GROUND_MAX*2];static int ground_hook_count;
 static GroundSource ground_seen[GROUND_MAX];static int ground_seen_count;
 static GroundLocal ground_local[GROUND_MAX];
 static GroundReplica ground_replica[GROUND_MAX];
+static unsigned ground_native_cursor;
 static uint64_t ground_next_local,ground_next_request,ground_scan_at,ground_intercepts;
 static bool ground_session_ready;
 enum{GROUND_DROPS=8};
@@ -40,12 +42,18 @@ static bool ground_source_equal(const GroundSource *a,const GroundSource *b);
 static bool ground_world_token(const char *);
 
 
+static bool loot_capture(uint64_t,uint64_t,GroundSource *);
 static bool ground_weapon(const char *name);
+static bool ground_parent_name(const char *name){
+ if(!clip_name(name))return false;char root[64];snprintf(root,sizeof root,"%s",name);
+ for(unsigned i=0;root[i];i++)if(root[i]=='-')return false;
+ size_t n=strlen(root);if(n>6&&!strncmp(root,"Obj_Tree",8)&&!strcmp(root+n-6,"_Trunk"))root[n-6]=0;return map_damage_name(root);
+}
 static bool weapon_data(uint64_t,GroundSource *);
 static uint64_t ground_storage(void);
 static bool ground_actor(const char *name) {
     if(ground_weapon(name))return true;
-    const char *prefixes[]={"Item_Fruit_","Item_Mushroom_","Item_PlantGet_","Item_Ore_","Item_Enemy_","Item_Meat_","Item_Roast_","Item_Chilled_","Item_FishGet_","Animal_Insect_","Animal_Fish_"};
+    const char *prefixes[]={"Item_Material_","Item_Fruit_","Item_Mushroom_","Item_PlantGet_","Item_Ore_","Item_Enemy_","Item_Meat_","Item_Roast_","Item_Chilled_","Item_FishGet_","Animal_Insect_","Animal_Fish_"};
     for(unsigned i=0;i<sizeof prefixes/sizeof *prefixes;i++){size_t n=strlen(prefixes[i]);if(!strncmp(name,prefixes[i],n)&&name[n])return true;}
     return false;
 }
@@ -121,7 +129,7 @@ static void ground_reset(void) {
     memset(ground_local,0,sizeof ground_local);memset(ground_replica,0,sizeof ground_replica);memset(ground_pending,0,sizeof ground_pending);
     memset(ground_drops,0,sizeof ground_drops);memset(ground_drop_hooks,0,sizeof ground_drop_hooks);memset(&ground_drop_queued,0,sizeof ground_drop_queued);memset(&ground_drop_last_source,0,sizeof ground_drop_last_source);
     memset(ground_destroyed,0,sizeof ground_destroyed);ground_destroyed_count=0;memset(native_drops,0,sizeof native_drops);native_drop_sequence=native_drop_vt=0;
-    ground_drop_sequence=ground_drop_last_request=ground_drop_last_id=0;ground_drop_last_result=0;ground_drop_busy=false;ground_origin[0]=0;
+    ground_native_cursor=0;ground_drop_sequence=ground_drop_last_request=ground_drop_last_id=0;ground_drop_last_result=0;ground_drop_busy=false;ground_origin[0]=0;
     ground_drop_error[0]=0;ground_drop_before=ground_drop_after=-1;ground_next_local=ground_next_request=ground_scan_at=ground_intercepts=0;ground_session_ready=false;
     pthread_mutex_unlock(&ground_mutex);
 }
@@ -343,6 +351,7 @@ static void ground_tick(Cpu *c,uint64_t local,uint64_t vt) {
             pthread_mutex_unlock(&ground_mutex);
             if(valid){r->request=s->request;r->result=ground_grant(c,s,vt,g->storage);r->granted=r->result==1;}
         }
+        for(unsigned j=0;j<NATIVE_DROPS;j++){NativeDrop *d=&native_drops[j];if(d->active&&!d->discard&&!d->local_only&&ground_source_equal(&d->source,&s->source)&&native_drop_live(d,d->actor)){matched=true;break;}}
         for(int j=0;j<GROUND_MAX;j++)if(ground_is_local(s,&ground_local[j])) {
             GroundLocal *l=&ground_local[j];ActorRef ref=resolve_at(c,l->storage,l->actor);
             bool live=ref.ptr&&ref.state==1;if(ref.ptr)release_at(c,l->storage);
@@ -396,28 +405,45 @@ static void ground_close(int argc,char **argv,ControlReply *r) {
 }
 static void ground_update(int argc,char **argv,ControlReply *reply) {
     GroundState s={0};uint64_t hash,local,request;
-    if(argc!=22||!token(argv[1])||!ground_world_token(argv[2])||!integer(argv[3],&s.id)||s.id>GROUND_MAX||!ground_actor(argv[4])||(!integer(argv[5],&hash)&&strcmp(argv[5],"0"))||hash>=UINT32_MAX||(!integer(argv[12],&local))||(!integer(argv[15],&request)&&strcmp(argv[15],"0"))||strlen(argv[13])!=1||argv[13][0]<'0'||argv[13][0]>'1'||strlen(argv[14])!=1||argv[14][0]<'0'||argv[14][0]>'5'||strlen(argv[16])!=1||argv[16][0]<'0'||argv[16][0]>'1'||(strcmp(argv[17],"-")&&!token(argv[17]))){control_fail(reply,"Invalid ground-material state");return;}
+    if((argc!=22&&argc!=28)||!token(argv[1])||!ground_world_token(argv[2])||!integer(argv[3],&s.id)||s.id>GROUND_MAX||!ground_actor(argv[4])||(!integer(argv[5],&hash)&&strcmp(argv[5],"0"))||hash>=UINT32_MAX||(!integer(argv[12],&local))||(!integer(argv[15],&request)&&strcmp(argv[15],"0"))||strlen(argv[13])!=1||argv[13][0]<'0'||argv[13][0]>'1'||strlen(argv[14])!=1||argv[14][0]<'0'||argv[14][0]>'5'||strlen(argv[16])!=1||argv[16][0]<'0'||argv[16][0]>'1'||(strcmp(argv[17],"-")&&!token(argv[17]))){control_fail(reply,"Invalid ground-material state");return;}
     for(int i=0;i<6;i++)if(!number(argv[6+i],i<3?&s.source.spawn[i]:&s.source.pos[i-3],100000)){control_fail(reply,"Invalid ground-material position");return;}
     s.source.drop=argv[16][0]=='1';if(s.source.drop){if(hash||!token(argv[17])){control_fail(reply,"Invalid drop identity");return;}snprintf(s.source.origin,sizeof s.source.origin,"%s",argv[17]);}else if(!hash){control_fail(reply,"Mapless natural material is outside this experiment");return;}
     uint64_t value,modifier;float bonus;
     if((!integer(argv[18],&value)&&strcmp(argv[18],"0"))||value>1000000||(!integer(argv[19],&modifier)&&strcmp(argv[19],"0"))||modifier>UINT32_MAX||!number(argv[20],&bonus,100000)||bonus!=truncf(bonus)||strlen(argv[21])!=1||(argv[21][0]!='0'&&argv[21][0]!='1')){control_fail(reply,"Invalid item metadata");return;}
     s.source.value=(int)value;s.source.modifier=(uint32_t)modifier;s.source.bonus=(int)bonus;s.source.native_drop=argv[21][0]=='1';
-    if((ground_weapon(argv[4])&&!value)||(!ground_weapon(argv[4])&&(value||modifier||bonus||s.source.native_drop))||(s.source.native_drop&&(!s.source.drop||local<UINT64_C(0x200000000)))){control_fail(reply,"Invalid weapon identity");return;}
+    if(argc==28){
+        uint64_t ph,ordinal;if(!actor_world_integer(argv[22],&ph)||ph>=UINT32_MAX||!actor_world_integer(argv[27],&ordinal)||ordinal>4096){control_fail(reply,"Invalid loot parent");return;}
+        if(ph){if(!ordinal||!ground_parent_name(argv[23])||!s.source.native_drop){control_fail(reply,"Invalid loot ancestry");return;}s.source.parent.hash=(uint32_t)ph;s.source.parent.ordinal=(uint32_t)ordinal;snprintf(s.source.parent.name,64,"%s",argv[23]);}
+        else if(ordinal||strcmp(argv[23],"-")){control_fail(reply,"Partial loot ancestry");return;}
+        for(unsigned i=0;i<3;i++)if(!number(argv[24+i],&s.source.parent.spawn[i],i==1?50000:100000)||(!ph&&s.source.parent.spawn[i]!=0)){control_fail(reply,"Invalid loot placement");return;}
+    }
+    if((ground_weapon(argv[4])&&!value)||(!ground_weapon(argv[4])&&(value||modifier||bonus||(s.source.native_drop&&!s.source.parent.hash)))||(s.source.native_drop&&(!s.source.drop||local<UINT64_C(0x200000000)))){control_fail(reply,"Invalid weapon identity");return;}
     snprintf(s.source.scene,sizeof s.source.scene,"%s",ground_mode.scene);s.source.hash=(uint32_t)hash;s.source.local=local;snprintf(s.source.name,sizeof s.source.name,"%s",argv[4]);s.own=argv[13][0]=='1';s.state=argv[14][0]-'0';s.request=request;
     pthread_mutex_lock(&ground_mutex);bool ok=!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]);GroundState *old=&ground_state[s.id-1];if(ok&&old->id&&strcmp(old->source.name,s.source.name))ok=false;if(ok){*old=s;if(s.state==5||s.state==2)for(unsigned i=0;i<ground_destroyed_count;i++)if(ground_destroyed[i]==s.id){ground_destroyed[i]=ground_destroyed[--ground_destroyed_count];break;}}pthread_mutex_unlock(&ground_mutex);if(!ok){control_fail(reply,"Wrong material identity/session");return;}control_field_bool(reply,"queued",true);
 }
 static void ground_deny(int argc,char **argv,ControlReply *r) {
     uint64_t request;if(argc!=4||!token(argv[1])||!ground_world_token(argv[2])||!integer(argv[3],&request)){control_fail(r,"Invalid material request");return;}
-    pthread_mutex_lock(&ground_mutex);if(!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]))for(int i=0;i<GROUND_EVENTS;i++)if(ground_events[i].request==request)ground_events[i].done=true;pthread_mutex_unlock(&ground_mutex);control_field_bool(r,"queued",true);
+    pthread_mutex_lock(&ground_mutex);if(!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]))for(int i=0;i<GROUND_EVENTS;i++)if(ground_events[i].request==request){ground_events[i].done=true;for(unsigned j=0;j<NATIVE_DROPS;j++)if(native_drops[j].active&&!native_drops[j].local_only&&ground_source_equal(&native_drops[j].source,&ground_events[i].source))native_drops[j].pickup_pending=false;}pthread_mutex_unlock(&ground_mutex);control_field_bool(r,"queued",true);
 }
 static int ground_source_json(char *out,size_t n,const GroundSource *s) {
-    return snprintf(out,n,"{\"local\":%llu,\"hash\":%u,\"scene\":\"%s\",\"value\":%d,\"modifier\":%u,\"modifier_value\":%d,\"native_drop\":%s,\"drop\":%s,\"origin\":\"%s\",\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"position\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f}}",(unsigned long long)s->local,s->hash,s->scene,s->value,s->modifier,s->bonus,s->native_drop?"true":"false",s->drop?"true":"false",s->origin,s->name,s->spawn[0],s->spawn[1],s->spawn[2],s->pos[0],s->pos[1],s->pos[2]);
+    char parent[256]="";if(s->parent.hash)snprintf(parent,sizeof parent,",\"parent\":{\"hash\":%u,\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"ordinal\":%u}",s->parent.hash,s->parent.name,s->parent.spawn[0],s->parent.spawn[1],s->parent.spawn[2],s->parent.ordinal);
+    return snprintf(out,n,"{\"local\":%llu,\"hash\":%u,\"scene\":\"%s\",\"value\":%d,\"modifier\":%u,\"modifier_value\":%d,\"native_drop\":%s,\"drop\":%s,\"origin\":\"%s\",\"actor\":\"%s\",\"spawn\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f},\"position\":{\"X\":%.3f,\"Y\":%.3f,\"Z\":%.3f}%s}",(unsigned long long)s->local,s->hash,s->scene,s->value,s->modifier,s->bonus,s->native_drop?"true":"false",s->drop?"true":"false",s->origin,s->name,s->spawn[0],s->spawn[1],s->spawn[2],s->pos[0],s->pos[1],s->pos[2],parent);
 }
 static void ground_status(int argc,char **argv,ControlReply *r) {
     GroundSource seen[GROUND_MAX];GroundEvent events[GROUND_EVENTS];int n;uint64_t count;GroundSource drop_source;uint64_t drop_request,drop_id,drop_sequence;int drop_result;char origin[17];GroundReceipt receipts[GROUND_MAX];char drop_error[48];int apple_before,apple_after;
-    pthread_mutex_lock(&ground_mutex);n=0;for(int i=0;i<ground_seen_count;i++){GroundSource *s=&ground_seen[i];bool keep=!s->native_drop;if(s->native_drop)for(int j=0;j<NATIVE_DROPS;j++)if(native_drops[j].active&&!native_drops[j].local_only&&native_drops[j].source.local==s->local){keep=true;native_drops[j].exported=true;break;}if(keep)seen[n++]=*s;}
-    for(int j=0;j<NATIVE_DROPS&&n<GROUND_MAX;j++){NativeDrop *d=&native_drops[j];if(!d->active||d->local_only||d->id)continue;bool found=false;for(int i=0;i<n;i++)if(seen[i].native_drop&&seen[i].local==d->source.local)found=true;if(!found){seen[n++]=d->source;d->exported=true;}}memcpy(events,ground_events,sizeof events);count=ground_intercepts;memcpy(receipts,ground_receipts,sizeof receipts);drop_request=ground_drop_last_request;drop_id=ground_drop_last_id;drop_result=ground_drop_last_result;drop_source=ground_drop_last_source;drop_sequence=ground_drop_sequence;snprintf(origin,sizeof origin,"%s",ground_origin);snprintf(drop_error,sizeof drop_error,"%s",ground_drop_error);apple_before=ground_drop_before;apple_after=ground_drop_after;pthread_mutex_unlock(&ground_mutex);
-    char json[20000];pthread_mutex_lock(&ground_mutex);size_t destroy_used=0;json[destroy_used++]='[';for(unsigned i=0;i<ground_destroyed_count;i++){int k=snprintf(json+destroy_used,sizeof json-destroy_used,"%s%llu",i?",":"",(unsigned long long)ground_destroyed[i]);destroy_used+=(size_t)k;}json[destroy_used++]=']';json[destroy_used]=0;pthread_mutex_unlock(&ground_mutex);control_field_str(r,"drop_error",drop_error);control_field_int(r,"drop_inventory_before",apple_before);control_field_int(r,"drop_inventory_after",apple_after);control_field_str(r,"destroyed_json",json);size_t used=1;json[0]='[';
+    pthread_mutex_lock(&ground_mutex);n=0;
+    // New births must not starve behind a full map-material observation window.
+    for(unsigned j=0;j<NATIVE_DROPS&&n<GROUND_MAX;j++){NativeDrop *d=&native_drops[j];if(d->active&&!d->local_only&&!d->discard&&!d->enrolled){seen[n++]=d->source;d->exported=true;}}
+    unsigned cursor=ground_native_cursor;for(unsigned j=0;j<NATIVE_DROPS&&n<GROUND_MAX/2;j++){
+        unsigned at=(cursor+j)%NATIVE_DROPS;NativeDrop *d=&native_drops[at];
+        if(d->active&&!d->local_only&&!d->discard&&d->enrolled&&native_drop_live(d,d->actor)){seen[n++]=d->source;d->exported=true;ground_native_cursor=(at+1)%NATIVE_DROPS;}
+    }
+    for(int i=0;i<ground_seen_count&&n<GROUND_MAX;i++){GroundSource *source=&ground_seen[i];bool keep=!source->native_drop;
+        if(source->native_drop)for(unsigned j=0;j<NATIVE_DROPS;j++){NativeDrop *d=&native_drops[j];if(d->active&&!d->local_only&&!d->discard&&d->source.local==source->local){keep=true;d->exported=true;break;}}
+        bool found=false;for(int j=0;j<n;j++)if(ground_source_equal(&seen[j],source))found=true;if(keep&&!found)seen[n++]=*source;
+    }
+    memcpy(events,ground_events,sizeof events);count=ground_intercepts;memcpy(receipts,ground_receipts,sizeof receipts);drop_request=ground_drop_last_request;drop_id=ground_drop_last_id;drop_result=ground_drop_last_result;drop_source=ground_drop_last_source;drop_sequence=ground_drop_sequence;snprintf(origin,sizeof origin,"%s",ground_origin);snprintf(drop_error,sizeof drop_error,"%s",ground_drop_error);apple_before=ground_drop_before;apple_after=ground_drop_after;pthread_mutex_unlock(&ground_mutex);
+    char json[40000];pthread_mutex_lock(&ground_mutex);size_t destroy_used=0;json[destroy_used++]='[';for(unsigned i=0;i<ground_destroyed_count;i++){int k=snprintf(json+destroy_used,sizeof json-destroy_used,"%s%llu",i?",":"",(unsigned long long)ground_destroyed[i]);destroy_used+=(size_t)k;}json[destroy_used++]=']';json[destroy_used]=0;pthread_mutex_unlock(&ground_mutex);control_field_str(r,"drop_error",drop_error);control_field_int(r,"drop_inventory_before",apple_before);control_field_int(r,"drop_inventory_after",apple_after);control_field_str(r,"destroyed_json",json);size_t used=1;json[0]='[';
     for(int i=0;i<n;i++){if(i)json[used++]=',';int k=ground_source_json(json+used,sizeof json-used,&seen[i]);if(k<0||(size_t)k>=sizeof json-used-2){control_fail(r,"Materials overflow");return;}used+=(size_t)k;}json[used++]=']';json[used]=0;control_field_str(r,"items_json",json);
     used=1;json[0]='[';bool comma=false;
     for(int i=0;i<GROUND_EVENTS;i++)if(events[i].request&&!events[i].done){int k=snprintf(json+used,sizeof json-used,"%s{\"request\":%llu,\"item\":%llu,\"source\":",comma?",":"",(unsigned long long)events[i].request,(unsigned long long)events[i].id);if(k<0||(size_t)k>=sizeof json-used-2){control_fail(r,"Events overflow");return;}used+=(size_t)k;k=ground_source_json(json+used,sizeof json-used,&events[i].source);if(k<0||(size_t)k>=sizeof json-used-3){control_fail(r,"Events overflow");return;}used+=(size_t)k;json[used++]='}';comma=true;}

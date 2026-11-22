@@ -110,6 +110,9 @@ func (s *Server) loadWorld() error {
 			item.Claimant = item.Owner
 			item.Request = item.Source.Local
 		}
+		if err := s.pinLoot(item.Source); err != nil {
+			return err
+		}
 		s.groundItems[item.ID] = item
 		s.groundKeys[key] = item.ID
 	}

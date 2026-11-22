@@ -1,5 +1,5 @@
-enum{NATIVE_DROPS=16};
-typedef struct {uint64_t actor,block,id;uint32_t generation;GroundSource source;bool active,exported,local_only,pickup_pending,broken,recovery_failed;unsigned recovery_attempts;GearVisual fallback;} NativeDrop;
+enum{NATIVE_DROPS=256};
+typedef struct {uint64_t actor,block,id;uint32_t generation;GroundSource source;int state;bool active,exported,enrolled,discard,local_only,pickup_pending,broken,recovery_failed;unsigned recovery_attempts;GearVisual fallback;} NativeDrop;
 static uint64_t ground_destroyed[GROUND_MAX];static unsigned ground_destroyed_count;
 static NativeDrop native_drops[NATIVE_DROPS];static uint64_t native_drop_sequence,native_drop_vt;
 static bool ground_weapon(const char *name){return strcmp(name,"Weapon_Sword_070")&&strcmp(name,"Weapon_Sword_502")&&(gear_name(name,0)||gear_name(name,1)||gear_name(name,2));}
@@ -16,13 +16,14 @@ static bool weapon_data(uint64_t a,GroundSource *s){
 void rt_hyrulem_capture_drop(Cpu *c){
     if(!ground_supported()||!range(g_site.player_info,8))return;uint64_t a=c->x[0],info=LD64(g_site.player_info);GroundSource source={0};
     if(!range(info,0x68)||!range(a,0xfa0)||!ground_read_name(LD64(a+0x10),source.name)||!ground_weapon(source.name)||!weapon_data(a,&source))return;
-    uint64_t owner=LD64(a+0x938);if(!range(owner,0x50)||LD32(owner+0x40)!=LD32(a+0x940)||LD64(owner+0x48)!=LD64(info+0x60))return;
+    uint64_t owner=LD64(a+0x938);if(!range(owner,0x50)||LD32(owner+0x40)!=LD32(a+0x940)||!range(LD64(owner+0x48),0x7d0))return;
+    if(LD64(owner+0x48)!=LD64(info+0x60)){uint64_t model=LD64(a+0x4e0);if(!range(model,0x88))return;for(unsigned i=0;i<3;i++)source.spawn[i]=source.pos[i]=read_float(model+0x64+i*16);loot_capture(a,LD64(owner+0x48),&source);return;}
     uint64_t block=LD64(a+0x68),model=LD64(a+0x4e0);uint32_t generation=LD32(a+0x60);if(!range(block,0x50)||generation==UINT32_MAX||LD32(block+0x40)!=generation||LD64(block+0x48)!=a||!range(model,0x88))return;
     for(int i=0;i<3;i++)source.spawn[i]=source.pos[i]=read_float(model+0x64+i*16);
     pthread_mutex_lock(&ground_mutex);
     if(!ground_origin[0]||!ground_mode.heartbeat||now_ms()-ground_mode.heartbeat>=2500||!ground_in_zone(source.pos,&ground_mode,90)){pthread_mutex_unlock(&ground_mutex);return;}
     int at=-1;for(int i=0;i<NATIVE_DROPS;i++){if(native_drop_live(&native_drops[i],a)){pthread_mutex_unlock(&ground_mutex);return;}if(!native_drops[i].active&&at<0)at=i;}
-    if(at>=0){NativeDrop *d=&native_drops[at];memset(d,0,sizeof *d);d->active=true;d->actor=a;d->block=block;d->generation=generation;source.drop=source.native_drop=true;snprintf(source.scene,sizeof source.scene,"%s",ground_mode.scene);source.local=UINT64_C(0x200000000)+ ++native_drop_sequence;snprintf(source.origin,17,"%s",ground_origin);d->source=source;}
+    if(at>=0){NativeDrop *d=&native_drops[at];uint64_t reuse=d->fallback.storage;memset(d,0,sizeof *d);d->fallback.storage=reuse;d->active=true;d->actor=a;d->block=block;d->generation=generation;source.drop=source.native_drop=true;snprintf(source.scene,sizeof source.scene,"%s",ground_mode.scene);source.local=UINT64_C(0x200000000)+ ++native_drop_sequence;snprintf(source.origin,17,"%s",ground_origin);d->source=source;}
     pthread_mutex_unlock(&ground_mutex);
 }
 static void ground_destroy_queue(uint64_t id){if(!id)return;for(unsigned i=0;i<ground_destroyed_count;i++)if(ground_destroyed[i]==id)return;if(ground_destroyed_count<GROUND_MAX)ground_destroyed[ground_destroyed_count++]=id;}
@@ -43,8 +44,9 @@ static bool ground_native_hook(uint64_t a,GroundHook *out,bool *vanilla){
         NativeDrop *d=&native_drops[i];if(!d->active)continue;
         if(native_drop_live(d,a)){
             if(d->local_only){d->active=false;*vanilla=true;return true;}
-            if(!d->exported&&!d->id){d->active=false;*vanilla=true;return true;}
-            d->pickup_pending=true;*out=(GroundHook){a,d->id,0,d->source,true,0};return true;
+            if(d->discard){*out=(GroundHook){a,0,0,d->source,true,1};return true;}
+            if(!d->source.parent.hash&&!d->exported&&!d->id){d->active=false;*vanilla=true;return true;}
+            d->pickup_pending=true;*out=(GroundHook){a,d->id,0,d->source,true,d->state};return true;
         }
         if(d->fallback.storage&&(d->fallback.actor==a||ground_pending_actor(d->fallback.storage)==a)){*out=(GroundHook){a,0,0,d->source,true,1};return true;}
     }
@@ -79,8 +81,15 @@ static void ground_native_tick(Cpu *c,uint64_t vt,const GroundState states[GROUN
     native_drop_vt=vt;
     for(int i=0;i<NATIVE_DROPS;i++){
         NativeDrop *d=&native_drops[i];NativeDrop copy;pthread_mutex_lock(&ground_mutex);copy=*d;
-        if(copy.active&&!copy.local_only)for(int j=0;j<GROUND_MAX;j++)if(states[j].id&&states[j].own&&ground_source_equal(&states[j].source,&copy.source)){d->id=copy.id=states[j].id;if(d->broken)ground_destroy_queue(d->id);if(states[j].state==2||states[j].state==5)d->active=copy.active=false;break;}
+        if(copy.active&&!copy.local_only)for(int j=0;j<GROUND_MAX;j++)if(states[j].id&&states[j].own&&ground_source_equal(&states[j].source,&copy.source)){d->id=copy.id=states[j].id;d->enrolled=copy.enrolled=true;d->state=copy.state=states[j].state;if(d->broken)ground_destroy_queue(d->id);if(states[j].state==2||states[j].state==5)d->discard=copy.discard=true;break;}
         pthread_mutex_unlock(&ground_mutex);if(!copy.active)continue;
+        if(copy.discard){
+            bool gone=!native_drop_live(&copy,copy.actor);
+            if(!gone){GearVisual *g=&d->fallback;if(!g->storage)g->storage=ground_storage();if(g->storage){if(!g->actor&&call(c,g_site.actor_index_assign,g->storage+INDEX,copy.actor,1,0,0,0,0))g->actor=copy.actor;if(g->actor)gone=remove_gear(c,g);}}
+            if(gone&&(d->fallback.actor||d->fallback.spawning))gone=remove_gear(c,&d->fallback);
+            if(gone){pthread_mutex_lock(&ground_mutex);d->active=false;pthread_mutex_unlock(&ground_mutex);}continue;
+        }
+        if(copy.enrolled&&!copy.pickup_pending&&!native_drop_live(&copy,copy.actor)){pthread_mutex_lock(&ground_mutex);d->active=false;pthread_mutex_unlock(&ground_mutex);continue;}
         if(copy.local_only&&copy.pickup_pending&&!copy.broken&&!native_drop_live(&copy,copy.actor))native_fallback_tick(c,d,vt);
         pthread_mutex_lock(&ground_mutex);d->recovery_failed=d->fallback.failed;pthread_mutex_unlock(&ground_mutex);
     }
@@ -91,7 +100,7 @@ static bool ground_native_cleanup(Cpu *c){
         NativeDrop *d=&native_drops[i];NativeDrop copy;pthread_mutex_lock(&ground_mutex);copy=*d;pthread_mutex_unlock(&ground_mutex);if(!copy.active)continue;
         bool live=native_drop_live(&copy,copy.actor);
         if(copy.local_only&&copy.pickup_pending&&!copy.broken&&!live){native_fallback_tick(c,d,native_drop_vt);pthread_mutex_lock(&ground_mutex);d->recovery_failed=d->fallback.failed;pthread_mutex_unlock(&ground_mutex);if(d->active)done=false;continue;}
-        if(!copy.local_only&&copy.exported&&live){
+        if(!copy.local_only&&(copy.exported||copy.source.parent.hash)&&live){
             GearVisual *g=&d->fallback;if(!g->storage)g->storage=ground_storage();if(!g->storage){done=false;continue;}
             if(!g->actor){if(!call(c,g_site.actor_index_assign,g->storage+INDEX,copy.actor,1,0,0,0,0)){done=false;continue;}g->actor=copy.actor;}
             if(!remove_gear(c,g)){done=false;continue;}
@@ -101,7 +110,20 @@ static bool ground_native_cleanup(Cpu *c){
 }
 static void ground_native_local(int argc,char **argv,ControlReply *r){
     uint64_t local;if(argc!=4||!token(argv[1])||!ground_world_token(argv[2])||!integer(argv[3],&local)||local<UINT64_C(0x200000000)){control_fail(r,"Invalid native drop acknowledgement");return;}
-    pthread_mutex_lock(&ground_mutex);bool valid=!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]);if(valid)for(int i=0;i<NATIVE_DROPS;i++)if(native_drops[i].source.local==local)native_drops[i].local_only=true;pthread_mutex_unlock(&ground_mutex);if(!valid){control_fail(r,"Wrong native drop session");return;}control_field_bool(r,"queued",true);
+    pthread_mutex_lock(&ground_mutex);bool valid=!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]);if(valid)for(int i=0;i<NATIVE_DROPS;i++)if(native_drops[i].source.local==local&&!native_drops[i].source.parent.hash)native_drops[i].local_only=true;pthread_mutex_unlock(&ground_mutex);if(!valid){control_fail(r,"Wrong native drop session");return;}control_field_bool(r,"queued",true);
+}
+static void ground_world_enrolled(int argc,char **argv,ControlReply *r){
+    uint64_t ids[GROUND_MAX];unsigned count;
+    if(argc!=4||!token(argv[1])||!ground_world_token(argv[2])||!actor_world_ids(argv[3],ids,&count,GROUND_MAX,UINT64_C(0x200000000))||!count){control_fail(r,"Invalid drop enrollment");return;}
+    pthread_mutex_lock(&ground_mutex);bool valid=!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]);
+    if(valid)for(unsigned i=0;i<NATIVE_DROPS;i++)if(native_drops[i].active)for(unsigned j=0;j<count;j++)if(native_drops[i].source.local==ids[j])native_drops[i].enrolled=true;
+    pthread_mutex_unlock(&ground_mutex);if(!valid){control_fail(r,"Wrong drop enrollment session");return;}control_field_bool(r,"queued",true);
+}
+static void ground_world_discard(int argc,char **argv,ControlReply *r){
+    uint64_t local;if(argc!=4||!token(argv[1])||!ground_world_token(argv[2])||!integer(argv[3],&local)||local<UINT64_C(0x200000000)){control_fail(r,"Invalid world loot discard");return;}
+    pthread_mutex_lock(&ground_mutex);bool valid=!strcmp(ground_mode.session,argv[1])&&!strcmp(ground_mode.world,argv[2]);
+    if(valid)for(unsigned i=0;i<NATIVE_DROPS;i++){NativeDrop *d=&native_drops[i];if(d->active&&d->source.local==local&&d->source.native_drop){d->discard=true;for(unsigned j=0;j<GROUND_EVENTS;j++)if(ground_events[j].request&&ground_source_equal(&ground_events[j].source,&d->source))ground_events[j].done=true;}}
+    pthread_mutex_unlock(&ground_mutex);if(!valid){control_fail(r,"Wrong world loot session");return;}control_field_bool(r,"queued",true);
 }
 static int weapon_inventory(Cpu *c,uint64_t mgr,const char *name,uint64_t ids[420],uint64_t *created,const uint64_t *before,int nbefore,const GroundSource *expected){
     int tabs=(int32_t)LD32(mgr+0x44498),total=0;if(tabs<1||tabs>50||LD32(mgr+0x78)+LD32(mgr+0x90)!=420)return -1;

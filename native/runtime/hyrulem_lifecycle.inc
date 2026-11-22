@@ -1,5 +1,5 @@
 // Reconstruct missing canonical entities through the already verified native
-// constructor. Copies never become simulation sources and carry no map pointer.
+// constructor. Trunks may simulate only under an explicit server lease; no map pointer is forged.
 static uint64_t ground_storage(void);
 static void actor_world_unbind(Cpu *c,uint64_t actor){
     for(unsigned i=0;i<ACTOR_WORLD_MAX;i++)if(actor_world_bindings[i].actor==actor)actor_world_release(c,&actor_world_bindings[i]);
@@ -49,7 +49,11 @@ static void actor_world_replica_tick(Cpu *c,const ActorWorldMode *mode,uint64_t 
         const WorldActor *target=same?actor_world_target(mode,r->identity.id):NULL;
         if(target&&!actor_world_same(target,&r->identity))target=NULL;
         if(target){r->last_target=now;r->identity=*target;}
-        if(!same||(target&&actor_world_original(target))||(!target&&now-r->last_target>1500)){
+        bool own=same&&actor_world_is_trunk(&r->identity)&&actor_world_owned(mode,r->identity.id);
+        if(own&&g->actor&&actor_world_replica(g->actor)!=r)own=false;
+        if(own&&g->actor){float distance=0;for(unsigned i=0;i<3;i++){float d=read_float(g->actor+0x3a4+i*16)-mode->center[i];distance+=d*d;}if(!isfinite(distance)||distance>181.f*181.f)own=false;}
+        if(own)r->last_target=now;
+        if(!same||(target&&actor_world_original(target))||(!target&&!own&&now-r->last_target>1500)){
             actor_world_remove_replica(c,r);continue;
         }
         if(!target)continue;

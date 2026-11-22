@@ -1,4 +1,6 @@
-# HyruleM 0.5.0-preview.19 — multiplayer experimental
+# HyruleM 0.5.0-preview.20 — multiplayer experimental
+
+A prévia 20 integra a origem nativa dos espólios e dos troncos ao dedicado. O servidor escolhe um conjunto de itens por destruição, persiste sua identidade e conserva a coleta exclusiva. Troncos reconstruídos só simulam com autorização explícita. [Notas e limites desta versão](../releases/v0.5.0-preview.20.md). A validação gráfica está em andamento.
 
 O servidor dedicado mantém o registro persistente do mundo e decide o responsável por cada entidade carregada. Ambos os clientes capturam seus arredores. Os demais recebem o estado correspondente e suspendem a decisão local de IA enquanto aplicam dados recentes. O modo pode ser hospedado pelo launcher ou pelo executável independente. Veja [como executar o servidor](../docs/DEDICATED_SERVER.md).
 
@@ -10,7 +12,7 @@ A revisão c64d0fc7 foi testada em dois jogos Windows com GPU. Em Hateno, encont
 
 1. Feche ambos os jogos e o launcher. Extraia o ZIP inteiro, incluindo `runtime-update`.
 2. Execute **Iniciar-Nativo.cmd**, que instala o runtime com backup.
-3. O launcher confere e, quando necessário, recompila a biblioteca privada compartilhada antes de abrir os clientes. Aguarde o término. A prévia 19 exige ABI 13 e inclui a reconstrução de entidades ausentes. Atualize os dois clientes e o servidor.
+3. O launcher confere e, quando necessário, recompila a biblioteca privada compartilhada antes de abrir os clientes. Aguarde o término. A prévia 19 exige ABI 14 e inclui a reconstrução de entidades ausentes. Atualize os dois clientes e o servidor.
 4. Conecte pelo IP ou DNS do anfitrião e pela porta TCP escolhida. Clientes e servidores das prévias 15 e 16 podem jogar juntos. Com cliente receptor e servidor 16, o primeiro quadro dos atores vai completo e repetições usam uma referência curta. Cada nova captura continua levando a lista completa. A idade da captura continua contando durante as repetições.
 5. Hospede e conecte pelo IP/porta escolhidos. Na primeira abertura desta versão, **Itens do mundo: ligados** é ativado no painel de hospedagem. Depois disso a escolha é preservada; pode desligá-la antes de hospedar. O servidor separado usa `--shared-items=true` por padrão, ou `--shared-items=false` para desligar.
 6. Para hospedar uma sessão privada local, escolha **Somente este PC**. Para testar no mesmo PC, expanda **Testar dois jogos neste PC**. Cada instância tem save, cache, configurações e porta de controle próprios.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -79,7 +80,14 @@ func groundCommand(session, world, self string, item GroundItem) (string, error)
 	g := item.Source
 	cmd := fmt.Sprintf("hm_item_state %s %s %d %s %d %.3f %.3f %.3f %.3f %.3f %.3f %d %d %d %d %d %s", session, world, item.ID, g.Actor, g.Hash, g.Spawn.X, g.Spawn.Y, g.Spawn.Z, g.Position.X, g.Position.Y, g.Position.Z, g.Local, boolInt(item.Owner == self), state, request, boolInt(g.Drop), originArg(g.Origin))
 	cmd += fmt.Sprintf(" %d %d %d %d", g.Value, g.Modifier, g.ModifierValue, boolInt(g.NativeDrop))
-	if len(cmd) > 511 {
+	parent := LootParent{}
+	parentName := "-"
+	if g.Parent != nil {
+		parent = *g.Parent
+		parentName = parent.Actor
+	}
+	cmd += fmt.Sprintf(" %d %s %.3f %.3f %.3f %d", parent.Hash, parentName, parent.Spawn.X, parent.Spawn.Y, parent.Spawn.Z, parent.Ordinal)
+	if len(cmd) > 767 {
 		return "", fmt.Errorf("estado de material excede limite")
 	}
 	return cmd, nil
@@ -227,7 +235,25 @@ func (b *Bridge) updateGround(ctx context.Context, n *groundSync, now time.Time)
 			n.receiptAt[receipt.Request] = now
 		}
 	}
+	if len(v.Enrolled) > 0 {
+		ids := make([]string, len(v.Enrolled))
+		for i, id := range v.Enrolled {
+			ids[i] = fmt.Sprint(id)
+		}
+		if err := b.command(ctx, fmt.Sprintf("hm_world_drop_enrolled %s %s %s", session, v.World, strings.Join(ids, ",")), nil); err != nil {
+			return err
+		}
+	}
 	budget := 8
+	for _, id := range v.Discarded {
+		if !n.closed[id] && budget > 0 {
+			if err := b.command(ctx, fmt.Sprintf("hm_world_drop_discard %s %s %d", session, v.World, id), nil); err != nil {
+				return err
+			}
+			n.closed[id] = true
+			budget--
+		}
+	}
 	for _, id := range v.Rejected {
 		if !n.closed[id] && budget > 0 {
 			if err := b.command(ctx, fmt.Sprintf("hm_native_drop_local %s %s %d", session, v.World, id), nil); err != nil {

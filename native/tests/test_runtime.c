@@ -60,7 +60,7 @@ void guest_call(Cpu *c,uint64_t fn) {
     // Deliberately clobber every register: the hook must preserve the caller.
     memset(c->v,0x5a,sizeof c->v);c->x[3]=0xdeadbeef;c->nzcv=0xabcdef;c->fpsr=91;
 }
-void control_register(const ControlCmd *cmds,int n) {assert(n==20);}
+void control_register(const ControlCmd *cmds,int n) {assert(n==22);}
 void control_field_str(ControlReply *r,const char *k,const char *v) {}
 void control_field_int(ControlReply *r,const char *k,int64_t v) {}
 void control_field_num(ControlReply *r,const char *k,double v) {}
@@ -401,6 +401,7 @@ int main(void) {
     ST32(birth_weak+0x40,9);for(unsigned i=0;i<BIRTH_MAX+4;i++)rt_hyrulem_capture_birth(&job);
     assert(birth_sequence==BIRTH_MAX+5&&calls==calls_before_birth&&!memcmp(&job,&job_before,sizeof job));
     birth_status(0,NULL,&r);birth_reset();assert(birth_sequence==0);unsetenv("HYRULEM_NATIVE_BIRTH_TRACE");
+    #include "test_world_loot.inc"
     puts("final skeleton: named-bone capture/replay, atomic validation, private armor and CPU preservation passed");
     puts("ground materials: deferred pickup, exact inventory delta, receipt idempotency and uncertain-write safety passed");
     puts("equipment isolation, transforms, bounded failures, cleanup and AS smoothing checks passed");

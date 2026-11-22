@@ -38,7 +38,7 @@ func (c *Client) FinishGroundDrop(v GroundDropFinish) error {
 	return c.send(Message{Type: "ground_drop_finish", GroundDrop: &v})
 }
 func (s *Server) prepareGroundDrop(p *serverPeer, req GroundDropFinish, now time.Time) error {
-	if req.Request == 0 || req.Request > math.MaxInt64 || req.Source.Local != req.Request || !req.Source.Valid() || !req.Source.Drop || req.Source.Actor != "Item_Fruit_A" {
+	if req.Request == 0 || req.Request > math.MaxInt64 || req.Source.Local != req.Request || !req.Source.Valid() || req.Source.Parent != nil || !req.Source.Drop || req.Source.Actor != "Item_Fruit_A" {
 		return fmt.Errorf("pedido de drop inválido")
 	}
 	if old := p.groundDrop; old != nil && req.Request <= old.Request {
@@ -82,7 +82,7 @@ func (s *Server) finishGroundDrop(p *serverPeer, req GroundDropFinish) error {
 		return nil
 	}
 	if req.Result == 1 {
-		if !req.Source.Valid() || req.Source.key(p.player.ID) != item.Source.key(p.player.ID) || req.Source.Actor != item.Source.Actor || req.Source.Position.Sub(item.Source.Position).Len() > 4 {
+		if !req.Source.Valid() || req.Source.Parent != nil || req.Source.key(p.player.ID) != item.Source.key(p.player.ID) || req.Source.Actor != item.Source.Actor || req.Source.Position.Sub(item.Source.Position).Len() > 4 {
 			return fmt.Errorf("identidade do drop mudou")
 		}
 		item.Source = req.Source

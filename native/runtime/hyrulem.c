@@ -20,7 +20,7 @@ typedef struct {uint32_t name,part;float matrix[12];} PoseBone;
 typedef struct {unsigned count;PoseBone bones[POSE_MAX];} PoseFrame;
 enum {ACTOR_WORLD_MAX=64, ACTOR_WORLD_STRIDE=300, ACTOR_WORLD_B64=((8+ACTOR_WORLD_MAX*ACTOR_WORLD_STRIDE+2)/3)*4};
 typedef struct {uint64_t id;uint32_t hash,kind;char name[64];float spawn[3],matrix[12];Track tracks[2];bool replica;} WorldActor;
-typedef struct {char session[17],world[25],scene[65];uint64_t epoch,sequence,heartbeat;unsigned role,count;bool paused,complete;float center[3];WorldActor actors[ACTOR_WORLD_MAX];} ActorWorldMode;
+typedef struct {char session[17],world[25],scene[65];uint64_t epoch,sequence,heartbeat;unsigned role,count,owned_count;uint64_t owned[ACTOR_WORLD_MAX];bool paused,complete;float center[3];WorldActor actors[ACTOR_WORLD_MAX];} ActorWorldMode;
 static void actor_world_capture_as(uint64_t,uint64_t);
 static void actor_world_tick(Cpu *,uint64_t,uint64_t,bool);
 static void actor_world_reset(void);
@@ -260,6 +260,8 @@ static uint64_t enemy_life(uint64_t a) {
     return 0;
 }
 static bool map_damage_name(const char *);
+static void loot_parent_note(uint64_t,const EnemyHealth *);
+static bool loot_derived(uint64_t,WorldActor *);
 static bool enemy_name(uint64_t ptr,char out[64]) {
     if (!range(ptr,64)) return false;
     for (int i=0;i<64;i++) {
@@ -297,7 +299,7 @@ static void world_scan(Cpu *c,uint64_t local,bool connected) {
     for(unsigned step=0;node!=head&&step<limit&&n<WORLD_MAX;step++) {
         if(!range(node,16)||node<0x7b8)break;
         uint64_t a=node-0x7b8;node=LD64(node);
-        if(!range(a,0x7d0)||a==local||LD8(a+0x64)!=1)continue;
+        if(!range(a,0x7d0)||a==local||(LD8(a+0x64)!=1&&LD8(a+0x64)!=2))continue;
         EnemyHealth e={0};snprintf(e.scene,sizeof e.scene,"%s",local_scene);
         if(!enemy_name(LD64(a+0x10),e.name))continue;
         uint64_t map=LD64(a+0x7c8),life=enemy_life(a);if(!life)continue;
@@ -310,6 +312,7 @@ static void world_scan(Cpu *c,uint64_t local,bool connected) {
         if(!isfinite(distance)||distance>140*140)continue;
         bool valid=true;for(int i=0;i<3;i++)if(!isfinite(e.spawn[i])||fabsf(e.spawn[i])>100000)valid=false;
         if(!valid)continue;
+        loot_parent_note(a,&e);
         EnemyHealth *history=world_note(&e);
         for(int i=0;i<np;i++) if(same_enemy(&e,&pending[i])&&pending[i].health<e.health) {
             // Like the original mod's health convergence: never heal from an
@@ -668,9 +671,10 @@ static bool number(const char *s, float *out, float limit) {
 #include "hyrulem_birth.inc"
 
 static void caps(int argc,char **argv,ControlReply *r) {
+    control_field_bool(r,"world_loot_provenance",world_supported()&&g_site.hm_birth_capture);
     control_field_int(r,"abi",1); control_field_str(r,"runtime","SavageWind-HyruleM");
     control_field_str(r,"game_version",g_game_version); control_field_bool(r,"simulated",false);
-    control_field_int(r,"preview_abi",13);control_field_bool(r,"world_actor_sync",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"world_entity_reconstruction",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
+    control_field_int(r,"preview_abi",14);control_field_bool(r,"world_actor_sync",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"world_entity_reconstruction",world_supported()&&g_site.hm_world_ai_dispatch);control_field_bool(r,"visual_effect_events",g_site.hm_fx_emit&&g_site.hm_fx_created&&g_site.hm_fx_stop&&g_site.hm_fx_set_int&&g_site.hm_fx_set_float); control_field_bool(r,"native_preview",supported());
     control_field_bool(r,"skeletal_pose",supported()&&pose_supported());
     control_field_bool(r,"visual_equipment",supported()&&g_site.player_equipment);
     control_field_bool(r,"shared_environment",supported());
@@ -748,6 +752,7 @@ static void clear_remote(int argc,char **argv,ControlReply *r) {
     control_field_int(r,"queued_sequence",seq);
 }
 static void status(int argc,char **argv,ControlReply *r) {
+    pthread_mutex_lock(&ground_mutex);uint64_t captured=loot_captured,overflow=loot_overflow;pthread_mutex_unlock(&ground_mutex);control_field_int(r,"world_loot_captured",captured);control_field_int(r,"world_loot_overflow",overflow);
     ActorWorldMode world_mode;unsigned copies,spawned,copy_failures,rebuilt;pthread_mutex_lock(&actor_world_mutex);world_mode=actor_world_mode;copies=actor_world_replica_live;spawned=actor_world_replica_spawns;copy_failures=actor_world_replica_failures;rebuilt=actor_world_rebuilds;pthread_mutex_unlock(&actor_world_mutex);
     control_field_str(r,"world_session",world_mode.session);control_field_int(r,"world_replicas",copies);control_field_int(r,"world_replica_spawns",spawned);control_field_int(r,"world_replica_failures",copy_failures);control_field_int(r,"world_rebuilds",rebuilt);
     char targets[ACTOR_WORLD_MAX*128+3];size_t used=1;targets[0]='[';for(unsigned i=0;i<world_mode.count;i++){WorldActor *a=&world_mode.actors[i];used+=(size_t)snprintf(targets+used,sizeof targets-used,"%s{\"id\":%llu,\"hash\":%u,\"actor\":\"%s\"}",i?",":"",(unsigned long long)a->id,a->hash,a->name);}targets[used++]=']';targets[used]=0;control_field_str(r,"world_targets_json",targets);
@@ -844,6 +849,8 @@ void control_hyrulem_init(void) {
     static const ControlCmd cmds[]={
         {"hm_world_rebuild","<session> <entity-id>","Rebuild only an entity controlled by another client",actor_world_rebuild,0},
         {"hm_world_sample","<session> <world> <epoch> <role> <seq> <paused> <x> <y> <z> <HMW1-or-dash>","Host-authoritative loaded map actors",actor_world_sample,0},
+        {"hm_world_drop_enrolled","<session> <world> <local IDs>","Acknowledge source registration independently of visual slots",ground_world_enrolled,0},
+        {"hm_world_drop_discard","<session> <world> <local>","Discard duplicate generated loot after joined jobs",ground_world_discard,0},
         {"hm_native_drop_local","<session> <world> <local>","Return an unenrolled native drop to local play",ground_native_local,0},
         {"hm_item_drop","<session> <world> <id> <request>","Queue a server-prepared one-apple drop",ground_drop_command,0},
         {"hm_items_open","<session> <world> <x> <y> <z>","Enable bounded experimental material sharing",ground_open,0},

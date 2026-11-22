@@ -36,8 +36,8 @@ func (s *ControlStream) Command(ctx context.Context, cmd string) (ControlReply, 
 	defer s.mu.Unlock()
 	var r ControlReply
 	limit := 256
-	if strings.HasPrefix(cmd, "hm_item_state ") {
-		limit = 511
+	if strings.HasPrefix(cmd, "hm_item_state ") || strings.HasPrefix(cmd, "hm_world_drop_enrolled ") {
+		limit = 767
 	}
 	if strings.HasPrefix(cmd, "hm_world_sample ") || strings.HasPrefix(cmd, "hm_native_remote ") || strings.HasPrefix(cmd, "hm_native_sample ") {
 		limit = 65535

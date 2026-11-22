@@ -15,11 +15,11 @@ import (
 	"unicode/utf8"
 )
 
-const Protocol = 15
+const Protocol = 17
 
-// Protocol 15 distinguishes native reconstructions from simulation sources. Ping 16 enables references
+// Protocol 17 carries generated loot ancestry and explicit trunk simulation leases. Ping 18 enables references
 // to full world frames already delivered on the same TCP connection.
-const WorldReferenceProtocol = 16
+const WorldReferenceProtocol = 18
 const MaxLine = 256 * 1024
 const MaxPlayers = 2
 
@@ -112,6 +112,8 @@ type Message struct {
 	WorldID          string            `json:"world_id,omitempty"`
 	WorldState       *WorldState       `json:"world_state,omitempty"`
 	GroundDestroyed  []uint64          `json:"ground_destroyed,omitempty"`
+	GroundEnrolled   []uint64          `json:"ground_enrolled,omitempty"`
+	GroundDiscarded  []uint64          `json:"ground_discarded,omitempty"`
 	GroundRejected   []uint64          `json:"ground_rejected,omitempty"`
 	WorldOrigin      string            `json:"world_origin,omitempty"`
 	Type             string            `json:"type"`

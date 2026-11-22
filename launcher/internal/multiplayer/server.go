@@ -40,6 +40,8 @@ type serverPeer struct {
 	groundClaims    map[uint64]GroundClaim
 	groundDrop      *GroundDropResult
 	groundRejected  map[uint64]bool
+	groundDiscarded map[uint64]bool
+	groundEnrolled  map[uint64]bool
 	loadedDamage    []string
 	damageLedger    map[string]uint64
 }
@@ -47,6 +49,7 @@ type serverPeer struct {
 func (p *serverPeer) stop() { p.once.Do(func() { close(p.done); p.conn.Close() }) }
 
 type Server struct {
+	lootOrigins                     map[string]string
 	worldFile                       *os.File
 	savedAt                         time.Time
 	persistenceError                error
@@ -361,6 +364,8 @@ func (s *Server) serve(ctx context.Context, c net.Conn) {
 				// This is a complete native observation snapshot. Keep rejection
 				// acknowledgements for sources still awaiting local handoff only.
 				p.groundRejected = map[uint64]bool{}
+				p.groundDiscarded = map[uint64]bool{}
+				p.groundEnrolled = map[uint64]bool{}
 				err = s.observeGround(p, m.GroundSources, time.Now())
 			case "ground_claim":
 				if m.GroundClaim == nil {
@@ -507,6 +512,12 @@ func (s *Server) broadcast(ctx context.Context) {
 			if s.cfg.SharedItems {
 				s.mu.Lock()
 				packet.GroundItems, packet.GroundClaims = s.groundSnapshot(p)
+				for id := range p.groundEnrolled {
+					packet.GroundEnrolled = append(packet.GroundEnrolled, id)
+				}
+				for id := range p.groundDiscarded {
+					packet.GroundDiscarded = append(packet.GroundDiscarded, id)
+				}
 				for id := range p.groundRejected {
 					packet.GroundRejected = append(packet.GroundRejected, id)
 				}

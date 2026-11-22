@@ -180,7 +180,7 @@ func (c *Client) read(r *bufio.Reader) {
 				return
 			}
 			if m.GroundEnabled {
-				if len(m.GroundWorld) != 24 || m.GroundZone == nil || !m.GroundZone.Valid() || len(m.GroundItems) > MaxGroundItems || len(m.GroundClaims) > 128 || len(m.GroundRejected) > MaxGroundItems {
+				if len(m.GroundWorld) != 24 || m.GroundZone == nil || !m.GroundZone.Valid() || len(m.GroundItems) > MaxGroundItems || len(m.GroundClaims) > 128 || len(m.GroundRejected) > MaxGroundItems || len(m.GroundDiscarded) > MaxGroundItems || len(m.GroundEnrolled) > MaxGroundItems {
 					c.mu.Unlock()
 					c.fail("mundo de materiais inválido")
 					return
@@ -190,7 +190,7 @@ func (c *Client) read(r *bufio.Reader) {
 					c.fail("identidade do mundo inválida")
 					return
 				}
-				for _, id := range m.GroundRejected {
+				for _, id := range append(append(append([]uint64(nil), m.GroundRejected...), m.GroundDiscarded...), m.GroundEnrolled...) {
 					if id < 0x200000000 || id > math.MaxInt64 {
 						c.mu.Unlock()
 						c.fail("descarte recusado inválido")
@@ -206,7 +206,7 @@ func (c *Client) read(r *bufio.Reader) {
 					}
 					seen[i.ID] = true
 				}
-				c.ground = GroundView{Scene: m.GroundScene, Enabled: true, Roaming: m.GroundRoaming, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult, Rejected: append([]uint64(nil), m.GroundRejected...)}
+				c.ground = GroundView{Scene: m.GroundScene, Enabled: true, Roaming: m.GroundRoaming, World: m.GroundWorld, Zone: *m.GroundZone, Items: append([]GroundItem(nil), m.GroundItems...), Claims: append([]GroundClaim(nil), m.GroundClaims...), At: time.Now(), DropResult: m.GroundDropResult, Enrolled: append([]uint64(nil), m.GroundEnrolled...), Discarded: append([]uint64(nil), m.GroundDiscarded...), Rejected: append([]uint64(nil), m.GroundRejected...)}
 			} else {
 				c.ground = GroundView{}
 			}

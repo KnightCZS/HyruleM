@@ -32,6 +32,7 @@ void rt_hyrulem_capture_zero(Cpu *c){
     int replica=actor_world_replica_enemy(a,&e);if(replica==0)return;if(replica<0){if(!range(map,0x70))return;e.hash=LD32(map+0x58);for(int i=0;i<3;i++)e.spawn[i]=read_float(map+0x5c+i*4);}
     if(!e.hash||e.hash==UINT32_MAX)return;
     for(int i=0;i<3;i++){e.position[i]=read_float(a+0x3a4+i*16);if(!isfinite(e.spawn[i])||!isfinite(e.position[i])||fabsf(e.spawn[i])>100000||fabsf(e.position[i])>100000)return;}
+    loot_parent_note(a,&e);
     pthread_mutex_lock(&mutex);
     if(desired.session[0]&&desired.received&&now_ms()-desired.received<2500){int at=0;while(at<world_zero_count&&!same_enemy(&e,&world_zero[at]))at++;if(at<HEALTH_MAX){world_zero[at]=e;if(at==world_zero_count)world_zero_count++;}}
     pthread_mutex_unlock(&mutex);
@@ -57,6 +58,8 @@ typedef struct {
     bool health_ready;
 } WorldReplica;
 static WorldReplica actor_world_replicas[ACTOR_WORLD_MAX];
+static bool actor_world_is_trunk(const WorldActor *a){size_t n=strlen(a->name);return a->kind==3&&n>6&&!strncmp(a->name,"Obj_Tree",8)&&!strcmp(a->name+n-6,"_Trunk");}
+static bool actor_world_owned(const ActorWorldMode *m,uint64_t id){for(unsigned i=0;i<m->owned_count;i++)if(m->owned[i]==id)return true;return false;}
 static bool actor_world_weak(uint64_t,uint64_t,uint32_t);
 static WorldReplica *actor_world_replica(uint64_t actor){
     for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){
@@ -65,7 +68,7 @@ static WorldReplica *actor_world_replica(uint64_t actor){
     }return NULL;
 }
 static int actor_world_replica_enemy(uint64_t actor,EnemyHealth *out){
-    WorldReplica *r=actor_world_replica(actor);if(!r)return -1;if(!r->health_ready)return 0;
+    WorldReplica *r=actor_world_replica(actor);if(!r){WorldActor derived={0};if(!loot_derived(actor,&derived))return -1;out->hash=derived.hash;memcpy(out->spawn,derived.spawn,12);return 1;}if(!r->health_ready)return 0;
     snprintf(out->scene,sizeof out->scene,"%s",r->scene);out->hash=r->identity.hash;memcpy(out->spawn,r->identity.spawn,sizeof out->spawn);return 1;
 }
 static WorldAS actor_world_as[128];
@@ -79,6 +82,7 @@ static uint32_t actor_world_kind(const char *s){
         for(unsigned i=0;i<sizeof exclude/sizeof *exclude;i++)if(strstr(s,exclude[i]))return 0;return 1;
     }
     if(!strncmp(s,"Npc_",4))return 2;
+    size_t n=strlen(s);if(n>6&&!strncmp(s,"Obj_Tree",8)&&!strcmp(s+n-6,"_Trunk"))return 3;
     const char *props[]={"Obj_Barrel","Obj_Box","Obj_LiftRock","Obj_Rock","FldObj_KorokStone","FldObj_KorokBlock","DgnObj_Small_Box","DgnObj_IronBall","Kibako","Barrel","DgnObj_StoneBarrel","Test_MetalBarrel","FldObj_SnowBallDoor_A_02"};
     for(unsigned i=0;i<sizeof props/sizeof *props;i++)if(!strncmp(s,props[i],strlen(props[i])))return 3;
     if(strcmp(s,"Weapon_Sword_070")&&strcmp(s,"Weapon_Sword_502")&&(!strncmp(s,"Weapon_Sword_",13)||!strncmp(s,"Weapon_Lsword_",14)||!strncmp(s,"Weapon_Spear_",13)||!strncmp(s,"Weapon_Bow_",11)||!strncmp(s,"Weapon_Shield_",14)))return 4;
@@ -115,8 +119,8 @@ static bool actor_world_read(uint64_t a,WorldActor *out){
     uint64_t life=(out->kind==1||out->kind==3)?enemy_life(a):0;if(life&&LD32(life)==0)return false;
     WorldReplica *replica=actor_world_replica(a);
     if(replica){if(((out->kind==1||out->kind==3)&&!replica->health_ready)||strcmp(out->name,replica->identity.name))return false;out->hash=replica->identity.hash;memcpy(out->spawn,replica->identity.spawn,sizeof out->spawn);out->replica=true;}
-    else{uint64_t map=LD64(a+0x7c8);if(!range(map,0x70))return false;out->hash=LD32(map+0x58);if(!out->hash||out->hash==UINT32_MAX)return false;
-        for(unsigned i=0;i<3;i++){out->spawn[i]=read_float(map+0x5c+i*4);if(!isfinite(out->spawn[i])||fabsf(out->spawn[i])>(i==1?50000.f:100000.f))return false;}}
+    else{uint64_t map=LD64(a+0x7c8);if(!range(map,0x70)){if(!loot_derived(a,out))return false;}else{out->hash=LD32(map+0x58);if(!out->hash||out->hash==UINT32_MAX)return false;
+        for(unsigned i=0;i<3;i++){out->spawn[i]=read_float(map+0x5c+i*4);if(!isfinite(out->spawn[i])||fabsf(out->spawn[i])>(i==1?50000.f:100000.f))return false;}}}
     for(unsigned i=0;i<12;i++)out->matrix[i]=read_float(a+0x398+i*4);return actor_world_matrix(out->matrix);
 }
 static bool actor_world_weak(uint64_t a,uint64_t block,uint32_t generation){return range(a,0x70)&&range(block,0x50)&&generation!=UINT32_MAX&&LD32(block+0x40)==generation&&LD64(block+0x48)==a&&LD8(a+0x64)!=3;}
@@ -143,6 +147,7 @@ bool rt_hyrulem_world_ai(Cpu *c){
     // The native death transition must run after synchronized HP reaches zero.
     uint64_t life=enemy_life(a);WorldReplica *copy=actor_world_replica(a);if(life&&LD32(life)==0&&(!copy||copy->health_ready))return false;
     bool block=false;pthread_mutex_lock(&actor_world_mutex);
+    if(copy&&actor_world_mode.role==3&&!strcmp(copy->world,actor_world_mode.world)&&!strcmp(copy->session,actor_world_mode.session)&&!strcmp(copy->scene,local_scene)&&actor_world_is_trunk(&copy->identity)&&actor_world_owned(&actor_world_mode,copy->identity.id)&&actor_world_mode.heartbeat&&now_ms()-actor_world_mode.heartbeat<1500){pthread_mutex_unlock(&actor_world_mutex);return false;}
     if(actor_world_mode.role>=2&&actor_world_live.role==actor_world_mode.role&&actor_world_live.epoch==actor_world_mode.epoch&&!strcmp(actor_world_live.world,actor_world_mode.world)&&!strcmp(actor_world_live.session,actor_world_mode.session)&&actor_world_mode.heartbeat&&now_ms()-actor_world_mode.heartbeat<1500)for(unsigned i=0;i<ACTOR_WORLD_MAX;i++){WorldBinding *b=&actor_world_bindings[i];if(b->actor==a&&b->id&&b->applied_at&&now_ms()-b->applied_at<500&&actor_world_index(b)){block=true;actor_world_ai_skipped++;break;}}
     if(!block&&actor_world_mode.role==3&&actor_world_mode.heartbeat&&now_ms()-actor_world_mode.heartbeat<1500){WorldReplica *r=actor_world_replica(a);if(r&&!strcmp(r->world,actor_world_mode.world)&&!strcmp(r->session,actor_world_mode.session)&&!strcmp(r->scene,local_scene)&&now_ms()-r->last_target<1500){block=true;actor_world_ai_skipped++;}}
     pthread_mutex_unlock(&actor_world_mutex);return block;
@@ -180,15 +185,26 @@ static void actor_world_release(Cpu *c,WorldBinding *b){
 }
 static void actor_world_close(void){pthread_mutex_lock(&actor_world_mutex);actor_world_mode.role=0;actor_world_mode.heartbeat=0;pthread_mutex_unlock(&actor_world_mutex);}
 static bool actor_world_integer(const char *p,uint64_t *n){if(!strcmp(p,"0")){*n=0;return true;}if(!*p)return false;uint64_t v=0;for(;*p;p++){if(*p<'0'||*p>'9'||v>(INT64_MAX-(unsigned)(*p-'0'))/10)return false;v=v*10+(unsigned)(*p-'0');}*n=v;return true;}
+static bool actor_world_ids(const char *text,uint64_t *ids,unsigned *count,unsigned limit,uint64_t minimum){
+    *count=0;if(!strcmp(text,"-"))return true;const char *at=text;
+    while(*at){const char *end=strchr(at,',');size_t n=end?(size_t)(end-at):strlen(at);char token[22];uint64_t id;
+        if(!n||n>=sizeof token||*count>=limit)return false;memcpy(token,at,n);token[n]=0;if(!actor_world_integer(token,&id)||id<minimum)return false;
+        for(unsigned i=0;i<*count;i++)if(ids[i]==id)return false;ids[(*count)++]=id;if(!end)return true;at=end+1;
+    }return false;
+}
 static bool actor_world_token(const char *s,unsigned length){if(strlen(s)!=length)return false;for(unsigned i=0;i<length;i++)if(!((s[i]>='0'&&s[i]<='9')||(s[i]>='a'&&s[i]<='f')))return false;return true;}
 static void actor_world_sample(int argc,char **argv,ControlReply *r){
     ActorWorldMode next={0};uint64_t role,pause;
-    if((argc!=11&&argc!=12)||!world_supported()||!g_site.hm_world_ai_dispatch||!actor_world_token(argv[1],16)||!actor_world_token(argv[2],24)||!actor_world_integer(argv[3],&next.epoch)||!next.epoch||!actor_world_integer(argv[4],&role)||role>3||!actor_world_integer(argv[5],&next.sequence)||!actor_world_integer(argv[6],&pause)||pause>1){control_fail(r,"Invalid authoritative world command");return;}
+    if((argc!=11&&argc!=12&&argc!=13)||!world_supported()||!g_site.hm_world_ai_dispatch||!actor_world_token(argv[1],16)||!actor_world_token(argv[2],24)||!actor_world_integer(argv[3],&next.epoch)||!next.epoch||!actor_world_integer(argv[4],&role)||role>3||!actor_world_integer(argv[5],&next.sequence)||!actor_world_integer(argv[6],&pause)||pause>1){control_fail(r,"Invalid authoritative world command");return;}
     for(unsigned i=0;i<3;i++){char *end;errno=0;next.center[i]=strtof(argv[7+i],&end);if(errno||*end||!isfinite(next.center[i])||fabsf(next.center[i])>(i==1?50000.f:100000.f)){control_fail(r,"Invalid world center");return;}}
-    if(argc==12){if(!actor_scene_valid(argv[11])){control_fail(r,"Invalid world scene");return;}snprintf(next.scene,sizeof next.scene,"%s",argv[11]);}
+    if(argc>=12){if(!actor_scene_valid(argv[11])){control_fail(r,"Invalid world scene");return;}snprintf(next.scene,sizeof next.scene,"%s",argv[11]);}
     next.role=(unsigned)role;next.paused=pause!=0;next.heartbeat=now_ms();snprintf(next.session,17,"%s",argv[1]);snprintf(next.world,25,"%s",argv[2]);
     if(role>=2&&(!next.sequence||!actor_world_decode(argv[10],&next))){control_fail(r,"Invalid world actor frame");return;}
     if(role<2&&strcmp(argv[10],"-")){control_fail(r,"Unexpected world payload");return;}
+    if(argc==13){
+        if(!actor_world_ids(argv[12],next.owned,&next.owned_count,ACTOR_WORLD_MAX,1)||(next.owned_count&&role!=3)){control_fail(r,"Invalid simulation lease");return;}
+        for(unsigned i=0;i<next.owned_count;i++)for(unsigned j=0;j<next.count;j++)if(next.owned[i]==next.actors[j].id){control_fail(r,"Conflicting simulation lease");return;}
+    }
     pthread_mutex_lock(&mutex);bool session_ok=!strcmp(desired.session,next.session);bool scene_ok=!next.scene[0]||!strcmp(next.scene,local_scene);pthread_mutex_unlock(&mutex);
     if(!scene_ok){control_field_bool(r,"ready",false);return;}
     pthread_mutex_lock(&actor_world_mutex);
@@ -199,7 +215,7 @@ static void actor_world_sample(int argc,char **argv,ControlReply *r){
     WorldActor copy[ACTOR_WORLD_MAX];unsigned count=actor_world_seen_count;memcpy(copy,actor_world_seen,sizeof *copy*count);uint64_t seq=actor_world_frame_seq;float center[3];memcpy(center,actor_world_center,sizeof center);bool complete=actor_world_complete;unsigned matched=actor_world_matched,missing=actor_world_missing,applied=actor_world_applied,ai=actor_world_ai_skipped,as=actor_world_as_applied;bool ready=ok&&(role==1||role==3)&&actor_world_live.role==role&&actor_world_live.epoch==next.epoch&&!strcmp(actor_world_live.scene,next.scene)&&!strcmp(actor_world_live.world,next.world)&&!strcmp(actor_world_live.session,next.session)&&actor_world_live.heartbeat&&now_ms()-actor_world_live.heartbeat<1500;bool paused=actor_world_live.paused;
     pthread_mutex_unlock(&actor_world_mutex);if(!ok){control_fail(r,"Wrong session, epoch or stale world frame");return;}
     char replicas[ACTOR_WORLD_MAX*22+3];size_t used=1;replicas[0]='[';bool comma=false;
-    for(unsigned i=0;i<count;i++)if(copy[i].replica){used+=(size_t)snprintf(replicas+used,sizeof replicas-used,"%s%llu",comma?",":"",(unsigned long long)copy[i].id);comma=true;}
+    for(unsigned i=0;i<count;i++)if(copy[i].replica&&!actor_world_is_trunk(&copy[i])){used+=(size_t)snprintf(replicas+used,sizeof replicas-used,"%s%llu",comma?",":"",(unsigned long long)copy[i].id);comma=true;}
     replicas[used++]=']';replicas[used]=0;control_field_str(r,"replicas_json",replicas);
     char encoded[ACTOR_WORLD_B64+1];actor_world_encode(copy,count,encoded);control_field_str(r,"actors_b64",encoded);control_field_int(r,"sequence",seq);control_field_bool(r,"ready",ready);control_field_bool(r,"paused",paused);control_field_bool(r,"complete",complete);control_field_num(r,"x",center[0]);control_field_num(r,"y",center[1]);control_field_num(r,"z",center[2]);control_field_int(r,"captured",count);control_field_int(r,"matched",matched);control_field_int(r,"missing",missing);control_field_int(r,"applied",applied);control_field_int(r,"ai_skipped",ai);control_field_int(r,"animations_applied",as);
 }

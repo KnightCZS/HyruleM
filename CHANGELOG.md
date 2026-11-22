@@ -1,5 +1,13 @@
 # Histórico do HyruleM
 
+## 0.5.0-preview.20
+
+- Espólios com identidade do criador, origem canônica por destruição e persistência.
+- Troncos derivados, vida compartilhada e autorização explícita de simulação.
+- Coleta retida antes da publicação e descarte de cópias somente após os jobs.
+- Corrigidos o arredondamento da identidade de vida e a cena dos descartes de armas.
+- Protocolo 17, referências 18, ABI nativa 14; validação gráfica em andamento.
+
 ## 0.5.0-preview.19
 
 - Reconstrução de entidades ausentes e preferência pelo ator original quando ele retorna.

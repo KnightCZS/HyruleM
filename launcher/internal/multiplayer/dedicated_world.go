@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -24,7 +25,7 @@ type worldObservation struct {
 // The dedicated process owns the registry. Native simulation is leased to a
 // client that has the entity loaded. Every ownership change fences old frames.
 func (s *Server) acceptDedicatedWorldLocked(p *serverPeer, w *WorldState, now time.Time) error {
-	if w == nil || !w.Valid() || w.AgeMS != 0 {
+	if w == nil || !w.Valid() || w.AgeMS != 0 || len(w.Simulate) != 0 {
 		return fmt.Errorf("observação de mundo inválida")
 	}
 	if w.Scene != p.player.Pose.Scene || !validScene(w.Scene) {
@@ -115,13 +116,20 @@ func (s *Server) dedicatedWorldSnapshot(p *serverPeer, sequence uint64, now time
 		return &copy
 	}
 	rows := make([]WorldActor, 0, MaxWorldActors)
+	owned := make([]WorldActor, 0, MaxWorldActors)
 	for _, entity := range s.entities {
 		identity := EnemyHealth{Scene: entity.State.Scene, Hash: entity.State.Hash, Actor: entity.State.Actor, Spawn: entity.State.Spawn}
 		if health, known := s.enemies[identity.key()]; known && health.Health == 0 {
 			continue
 		}
-		if entity.State.Scene != p.player.Pose.Scene || entity.Owner == p.player.ID && entity.Settled || entity.Owner != "" && now.Sub(entity.At) > 1500*time.Millisecond ||
+		if entity.State.Scene != p.player.Pose.Scene || entity.Owner != "" && now.Sub(entity.At) > 1500*time.Millisecond ||
 			entity.State.position().Sub(p.player.Pose.Position).Len() > WorldRadius {
+			continue
+		}
+		if entity.Owner == p.player.ID && entity.Settled {
+			if strings.HasPrefix(entity.State.Actor, "Obj_Tree") && strings.HasSuffix(entity.State.Actor, "_Trunk") {
+				owned = append(owned, entity.State)
+			}
 			continue
 		}
 		rows = append(rows, entity.State)
@@ -135,8 +143,18 @@ func (s *Server) dedicatedWorldSnapshot(p *serverPeer, sequence uint64, now time
 	if !complete {
 		rows = rows[:MaxWorldActors]
 	}
+	sort.Slice(owned, func(i, j int) bool {
+		return owned[i].position().Sub(p.player.Pose.Position).Len() < owned[j].position().Sub(p.player.Pose.Position).Len()
+	})
+	if len(owned) > MaxWorldActors {
+		owned = owned[:MaxWorldActors]
+	}
+	ownedIDs := make([]uint64, len(owned))
+	for i, a := range owned {
+		ownedIDs[i] = a.ID
+	}
 	p.worldOutputAt = now
-	p.worldOutput = &WorldState{Scene: p.player.Pose.Scene, Epoch: s.environmentEpoch, Lease: s.worldLease, Sequence: sequence,
+	p.worldOutput = &WorldState{Simulate: ownedIDs, Scene: p.player.Pose.Scene, Epoch: s.environmentEpoch, Lease: s.worldLease, Sequence: sequence,
 		Center: p.player.Pose.Position, Actors: encodeWorldActors(rows), Complete: complete}
 	return p.worldOutput
 }

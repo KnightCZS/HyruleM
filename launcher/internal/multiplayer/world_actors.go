@@ -26,6 +26,7 @@ type WorldActor struct {
 	Tracks [2]AnimationTrack
 }
 type WorldState struct {
+	Simulate []uint64 `json:"simulate,omitempty"`
 	Replicas []uint64 `json:"replicas,omitempty"`
 	Scene    string   `json:"scene,omitempty"`
 	Lease    uint64   `json:"lease,omitempty"`
@@ -90,6 +91,9 @@ func worldActorKind(s string) uint32 {
 			}
 		}
 		return 1
+	}
+	if strings.HasPrefix(s, "Obj_Tree") && strings.HasSuffix(s, "_Trunk") {
+		return 3
 	}
 	if strings.HasPrefix(s, "Npc_") {
 		return 2
@@ -247,6 +251,16 @@ func (w WorldState) Valid() bool {
 	if w.Epoch == 0 || w.Sequence == 0 || w.Epoch > math.MaxInt64 || w.Sequence > math.MaxInt64 || !w.Center.Valid() || w.AgeMS > 60000 {
 		return false
 	}
+	if len(w.Simulate) > MaxWorldActors {
+		return false
+	}
+	owned := map[uint64]bool{}
+	for _, id := range w.Simulate {
+		if id == 0 || id > math.MaxInt64 || owned[id] {
+			return false
+		}
+		owned[id] = true
+	}
 	actors, e := decodeWorldActors(w.Actors)
 	if e != nil {
 		return false
@@ -256,6 +270,9 @@ func (w WorldState) Valid() bool {
 	}
 	ids := make(map[uint64]bool, len(actors))
 	for _, a := range actors {
+		if owned[a.ID] {
+			return false
+		}
 		ids[a.ID] = true
 	}
 	for _, id := range w.Replicas {

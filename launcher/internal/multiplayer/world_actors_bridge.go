@@ -50,6 +50,15 @@ func worldActorCommand(session, world string, epoch uint64, role int, w *WorldSt
 	cmd := fmt.Sprintf("hm_world_sample %s %s %d %d %d %d %.4f %.4f %.4f %s", session, world, epoch, role, state.Sequence, boolInt(state.Paused), state.Center.X, state.Center.Y, state.Center.Z, blob)
 	if role == 3 && state.Scene != "" {
 		cmd += " " + state.Scene
+		ids := make([]string, len(state.Simulate))
+		for i, id := range state.Simulate {
+			ids[i] = fmt.Sprint(id)
+		}
+		owned := "-"
+		if len(ids) > 0 {
+			owned = strings.Join(ids, ",")
+		}
+		cmd += " " + owned
 	}
 	if len(cmd) > 65535 || strings.ContainsAny(cmd, "\r\n\x00") {
 		return "", fmt.Errorf("quadro de mundo excessivo")
