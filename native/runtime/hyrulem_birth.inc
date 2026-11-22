@@ -18,15 +18,18 @@ static bool birth_name(uint64_t a,char name[64]){
 void rt_hyrulem_capture_birth(Cpu *c){
     const char *trace=getenv("HYRULEM_NATIVE_BIRTH_TRACE");if(!trace||strcmp(trace,"1")||!supported())return;
     uint64_t task=c->x[21],a=c->x[22];BirthEvent e={0};
-    if(!range(task,0x50)||!birth_name(a,e.name)||(!ground_actor(e.name)&&!strstr(e.name,"_Trunk")))return;
+    if(!range(task,0x58)||!birth_name(a,e.name)||(!ground_actor(e.name)&&!strstr(e.name,"_Trunk")))return;
     e.actor=a;e.block=LD64(a+0x68);e.generation=LD32(a+0x60);
     if(!actor_world_weak(a,e.block,e.generation))return;
-    e.parent=LD64(task+0x40);if(birth_name(e.parent,e.parent_name)){
-        e.parent_block=LD64(e.parent+0x68);e.parent_generation=LD32(e.parent+0x60);
-        uint64_t map=LD64(e.parent+0x7c8);if(range(map,0x70))e.parent_hash=LD32(map+0x58);
+    // The factory has already copied this weak ActorIndex to child+0x748.
+    // Task+0x40 is the inline parameter buffer, not the parent actor pointer.
+    e.parent_block=LD64(task+0x48);e.parent_generation=LD32(task+0x50);
+    if(range(e.parent_block,0x50)&&e.parent_generation!=UINT32_MAX&&LD32(e.parent_block+0x40)==e.parent_generation){
+        uint64_t parent=LD64(e.parent_block+0x48);
+        if(birth_name(parent,e.parent_name)&&LD64(parent+0x68)==e.parent_block&&LD32(parent+0x60)==e.parent_generation){e.parent=parent;uint64_t map=LD64(parent+0x7c8);if(range(map,0x70))e.parent_hash=LD32(map+0x58);}else e.parent_name[0]=0;
     }
     uint64_t map=LD64(a+0x7c8);if(range(map,0x70))e.hash=LD32(map+0x58);
-    uint64_t params=LD64(task+0x30);if(range(params,2))e.parameters=LD16(params);
+    uint64_t params=LD64(task+0x40);if(range(params,2))e.parameters=LD16(params);
     for(unsigned i=0;i<3;i++){e.position[i]=read_float(a+0x3a4+i*16);if(!isfinite(e.position[i])||fabsf(e.position[i])>100000)return;}
     pthread_mutex_lock(&birth_mutex);e.sequence=++birth_sequence;birth_events[(e.sequence-1)%BIRTH_MAX]=e;pthread_mutex_unlock(&birth_mutex);
 }

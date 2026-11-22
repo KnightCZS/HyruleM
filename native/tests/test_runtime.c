@@ -391,8 +391,8 @@ int main(void) {
     memset((void *)(uintptr_t)born,0,0x4000);
     ST64(born+0x10,born+0x800);strcpy((char *)(uintptr_t)(born+0x800),"Item_Enemy_00");
     ST64(born+0x68,birth_weak);ST32(born+0x60,9);ST32(birth_weak+0x40,9);ST64(birth_weak+0x48,born);
-    ST64(task+0x40,parent);ST64(parent+0x10,parent+0x800);strcpy((char *)(uintptr_t)(parent+0x800),"Enemy_Bokoblin_Junior");
-    ST64(parent+0x7c8,parent+0x900);ST32(parent+0x958,123);ST64(task+0x30,task+0x100);ST16(task+0x100,4);
+    ST64(task+0x48,birth_weak+0x100);ST32(task+0x50,6);ST32(birth_weak+0x140,6);ST64(birth_weak+0x148,parent);ST64(parent+0x68,birth_weak+0x100);ST32(parent+0x60,6);ST64(parent+0x10,parent+0x800);strcpy((char *)(uintptr_t)(parent+0x800),"Enemy_Bokoblin_Junior");
+    ST64(parent+0x7c8,parent+0x900);ST32(parent+0x958,123);ST64(task+0x40,task+0x100);ST16(task+0x100,4);
     Cpu job=cpu;job.x[21]=task;job.x[22]=born;Cpu job_before=job;unsigned calls_before_birth=calls;
     rt_hyrulem_capture_birth(&job);assert(birth_sequence==0);
     setenv("HYRULEM_NATIVE_BIRTH_TRACE","1",1);rt_hyrulem_capture_birth(&job);

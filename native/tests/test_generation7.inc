@@ -12,7 +12,9 @@
     ST32(weapon+0x60,9);ST64(weapon+0x68,weak);ST32(weak+0x40,9);ST64(weak+0x48,weapon);
     ST64(weapon+0x938,ownership);ST32(weapon+0x940,3);ST32(ownership+0x40,3);ST64(ownership+0x48,owner);
     Cpu drop_cpu=cpu;drop_cpu.x[0]=weapon;Cpu drop_before=drop_cpu;calls_before=calls;
-    rt_hyrulem_capture_drop(&drop_cpu);assert(native_drops[0].active&&native_drop_sequence==1&&calls==calls_before&&!memcmp(&drop_cpu,&drop_before,sizeof drop_cpu));
+    strcpy(ground_mode.scene,"MainField");
+    rt_hyrulem_capture_drop(&drop_cpu);assert(!strcmp(native_drops[0].source.scene,"MainField"));ground_mode.scene[0]=0;
+    assert(native_drops[0].active&&native_drop_sequence==1&&calls==calls_before&&!memcmp(&drop_cpu,&drop_before,sizeof drop_cpu));
     ST64(accessor+8,weapon);ST64(safe+8,weapon+0x1600);
     assert(!rt_hyrulem_item_pickup(&pickup)&&!native_drops[0].active); // before export remains wholly local
     ground_status(0,NULL,&r);assert(!native_drops[0].exported);

@@ -37,7 +37,9 @@ func (e EnemyHealth) Valid() bool {
 	return true
 }
 func (e EnemyHealth) key() string {
-	return e.Scene + ":" + fmt.Sprintf("%08x:%s:%.2f:%.2f:%.2f", e.Hash, e.Actor, e.Spawn.X, e.Spawn.Y, e.Spawn.Z)
+	// Native JSON emits three decimals; match the binary actor frame directly.
+	// Rounding again to two decimals can split one identity at a half-centimetre.
+	return e.Scene + ":" + fmt.Sprintf("%08x:%s:%.3f:%.3f:%.3f", e.Hash, e.Actor, e.Spawn.X, e.Spawn.Y, e.Spawn.Z)
 }
 func mergeEnemyHealth(registry map[string]EnemyHealth, records []EnemyHealth, local Pose) error {
 	if len(records) > MaxEnemyObservations || !local.Ready {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -123,40 +124,47 @@ func TestBidirectionalDamageIsAdditiveAndIdempotent(t *testing.T) {
 }
 
 func TestOrdinaryWeaponTransferConditionAndDestruction(t *testing.T) {
-	s := groundServer(t)
-	a, b := testClient(t, s, "Host"), testClient(t, s, "Guest")
-	p := Pose{Ready: true, Position: s.cfg.Spawn}
-	_ = a.Publish(p)
-	_ = b.Publish(p)
-	g := GroundSource{Local: 0x200000001, NativeDrop: true, Drop: true, Origin: "0123456789abcdef", Actor: "Weapon_Sword_001", Value: 900, Modifier: 8, ModifierValue: 7, Position: p.Position, Spawn: p.Position}
-	if err := b.PublishGround([]GroundSource{g}); err != nil {
-		t.Fatal(err)
+	for _, dedicated := range []bool{false, true} {
+		t.Run(fmt.Sprint("dedicated=", dedicated), func(t *testing.T) {
+			s, err := Listen("127.0.0.1:0", ServerConfig{DedicatedWorld: dedicated, SharedItems: true, Spawn: Vec3{3437.5, 235.9, 2101.5}, Tick: 20 * time.Millisecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			a, b := testClient(t, s, "Host"), testClient(t, s, "Guest")
+			p := Pose{Ready: true, Scene: "MainField", Position: s.cfg.Spawn}
+			_ = a.Publish(p)
+			_ = b.Publish(p)
+			g := GroundSource{Scene: "MainField", Local: 0x200000001, NativeDrop: true, Drop: true, Origin: "0123456789abcdef", Actor: "Weapon_Sword_001", Value: 900, Modifier: 8, ModifierValue: 7, Position: p.Position, Spawn: p.Position}
+			if err := b.PublishGround([]GroundSource{g}); err != nil {
+				t.Fatal(err)
+			}
+			eventually(t, func() bool { return len(a.Ground().Items) == 1 })
+			item := a.Ground().Items[0]
+			if item.Source != g || item.Owner != b.Welcome().ID {
+				t.Fatal("guest weapon lost metadata", item)
+			}
+			forged := g
+			forged.Value++
+			_ = a.ClaimGround(GroundClaim{Request: 1, Item: item.ID, Source: forged})
+			eventually(t, func() bool { return len(a.Ground().Claims) == 1 })
+			if a.Ground().Claims[0].Status != "denied" {
+				t.Fatal("durability was invented")
+			}
+			_ = a.ClaimGround(GroundClaim{Request: 2, Item: item.ID, Source: g})
+			eventually(t, func() bool { return len(a.Ground().Claims) == 2 && a.Ground().Claims[1].Status == "granted" })
+			_ = b.DestroyGround([]uint64{item.ID}) // reserved pickup wins over late break
+			_ = a.ReceiptGround(GroundReceipt{Request: 2, Item: item.ID, Applied: true})
+			eventually(t, func() bool { return b.Ground().Items[0].State == "taken" })
+			g.Local++
+			_ = b.PublishGround([]GroundSource{g})
+			eventually(t, func() bool { return len(a.Ground().Items) == 2 })
+			_ = a.DestroyGround([]uint64{2}) // only its owner may destroy a weapon
+			_ = b.DestroyGround([]uint64{2})
+			eventually(t, func() bool { return a.Ground().Items[1].State == "cancelled" })
+		})
 	}
-	eventually(t, func() bool { return len(a.Ground().Items) == 1 })
-	item := a.Ground().Items[0]
-	if item.Source != g || item.Owner != b.Welcome().ID {
-		t.Fatal("guest weapon lost metadata", item)
-	}
-	forged := g
-	forged.Value++
-	_ = a.ClaimGround(GroundClaim{Request: 1, Item: item.ID, Source: forged})
-	eventually(t, func() bool { return len(a.Ground().Claims) == 1 })
-	if a.Ground().Claims[0].Status != "denied" {
-		t.Fatal("durability was invented")
-	}
-	_ = a.ClaimGround(GroundClaim{Request: 2, Item: item.ID, Source: g})
-	eventually(t, func() bool { return len(a.Ground().Claims) == 2 && a.Ground().Claims[1].Status == "granted" })
-	_ = b.DestroyGround([]uint64{item.ID}) // reserved pickup wins over late break
-	_ = a.ReceiptGround(GroundReceipt{Request: 2, Item: item.ID, Applied: true})
-	eventually(t, func() bool { return b.Ground().Items[0].State == "taken" })
-	g.Local++
-	_ = b.PublishGround([]GroundSource{g})
-	eventually(t, func() bool { return len(a.Ground().Items) == 2 })
-	_ = a.DestroyGround([]uint64{2}) // only its owner may destroy a weapon
-	_ = b.DestroyGround([]uint64{2})
-	eventually(t, func() bool { return a.Ground().Items[1].State == "cancelled" })
 }
-
 func TestNativeDropCapacityRejectionPreservesLocalIdentity(t *testing.T) {
 	s := groundServer(t)
 	s.mu.Lock()

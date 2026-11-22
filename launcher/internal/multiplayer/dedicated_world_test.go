@@ -101,6 +101,9 @@ func TestDedicatedTerminalEnemyLeavesMovementSnapshot(t *testing.T) {
 	now := time.Now()
 	a := testWorldActor(1, "Enemy_Bokoblin_Junior", 3434)
 	a.Scene = "MainField"
+	// Binary actor coordinates and three-decimal native JSON describe the same
+	// placement. A second rounding to two decimals must not split its health.
+	a.Spawn.X = float64(float32(1.065))
 	s := &Server{entities: map[string]*worldEntity{a.key(): {State: a, Owner: "simulator", At: now, Settled: true}}, enemies: map[string]EnemyHealth{}, worldLease: 1}
 	p := &serverPeer{player: Player{ID: "observer", Pose: Pose{Ready: true, Scene: a.Scene, Position: a.position()}}}
 	rows, err := decodeWorldActors(s.dedicatedWorldSnapshot(p, 1, now).Actors)
@@ -108,6 +111,7 @@ func TestDedicatedTerminalEnemyLeavesMovementSnapshot(t *testing.T) {
 		t.Fatal("living actor absent", rows, err)
 	}
 	e := EnemyHealth{Scene: a.Scene, Hash: a.Hash, Actor: a.Actor, Spawn: a.Spawn, Health: 0}
+	e.Spawn.X = 1.065
 	s.enemies[e.key()] = e
 	rows, err = decodeWorldActors(s.dedicatedWorldSnapshot(p, 2, now.Add(101*time.Millisecond)).Actors)
 	if err != nil || len(rows) != 0 {

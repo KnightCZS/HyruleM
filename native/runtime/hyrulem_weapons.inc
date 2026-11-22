@@ -22,7 +22,7 @@ void rt_hyrulem_capture_drop(Cpu *c){
     pthread_mutex_lock(&ground_mutex);
     if(!ground_origin[0]||!ground_mode.heartbeat||now_ms()-ground_mode.heartbeat>=2500||!ground_in_zone(source.pos,&ground_mode,90)){pthread_mutex_unlock(&ground_mutex);return;}
     int at=-1;for(int i=0;i<NATIVE_DROPS;i++){if(native_drop_live(&native_drops[i],a)){pthread_mutex_unlock(&ground_mutex);return;}if(!native_drops[i].active&&at<0)at=i;}
-    if(at>=0){NativeDrop *d=&native_drops[at];memset(d,0,sizeof *d);d->active=true;d->actor=a;d->block=block;d->generation=generation;source.drop=source.native_drop=true;source.local=UINT64_C(0x200000000)+ ++native_drop_sequence;snprintf(source.origin,17,"%s",ground_origin);d->source=source;}
+    if(at>=0){NativeDrop *d=&native_drops[at];memset(d,0,sizeof *d);d->active=true;d->actor=a;d->block=block;d->generation=generation;source.drop=source.native_drop=true;snprintf(source.scene,sizeof source.scene,"%s",ground_mode.scene);source.local=UINT64_C(0x200000000)+ ++native_drop_sequence;snprintf(source.origin,17,"%s",ground_origin);d->source=source;}
     pthread_mutex_unlock(&ground_mutex);
 }
 static void ground_destroy_queue(uint64_t id){if(!id)return;for(unsigned i=0;i<ground_destroyed_count;i++)if(ground_destroyed[i]==id)return;if(ground_destroyed_count<GROUND_MAX)ground_destroyed[ground_destroyed_count++]=id;}
