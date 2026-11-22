@@ -63,12 +63,23 @@ try {
     if (-not (Test-InstalledFiles)) { throw 'A copia instalada nao corresponde ao pacote. Restaurando o backup.' }
     # This entry point exits before graphics or game initialization. It proves
     # that the user's existing runtime DLLs can load the new executable.
-    $check = Start-Process -FilePath $exe -ArgumentList '--update-health' -WorkingDirectory $RuntimeDir -WindowStyle Hidden -PassThru
-    if (-not $check.WaitForExit(15000)) {
-        Stop-Process -Id $check.Id -Force
-        throw 'O teste do runtime excedeu 15 segundos. Restaurando o backup.'
-    }
-    if ($check.ExitCode -ne 73) { throw "O runtime nao carregou suas dependencias (codigo $($check.ExitCode)). Restaurando o backup." }
+    # Own the process handle before starting: Start-Process -PassThru can lose
+    # the real exit code of a fast process in Windows PowerShell 5.1.
+    $check = New-Object System.Diagnostics.Process
+    $check.StartInfo.FileName = $exe
+    $check.StartInfo.Arguments = '--update-health'
+    $check.StartInfo.WorkingDirectory = $RuntimeDir
+    $check.StartInfo.UseShellExecute = $false
+    $check.StartInfo.CreateNoWindow = $true
+    try {
+        if (-not $check.Start()) { throw 'Nao foi possivel iniciar o teste do runtime.' }
+        if (-not $check.WaitForExit(15000)) {
+            $check.Kill()
+            $check.WaitForExit()
+            throw 'O teste do runtime excedeu 15 segundos. Restaurando o backup.'
+        }
+        if ($check.ExitCode -ne 73) { throw "O runtime nao carregou suas dependencias (codigo $($check.ExitCode)). Restaurando o backup." }
+    } finally { $check.Dispose() }
 } catch {
     foreach ($name in $installed) {
         $target = Join-Path $RuntimeDir $name

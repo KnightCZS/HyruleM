@@ -67,7 +67,10 @@
     // A detached asynchronous creation keeps copied ancestry after the weak
     // parent dies. Reused requests, nested jobs and resets cannot inherit it.
     uint64_t request_task=HEAP_BASE+0xf7400,request_desc=HEAP_BASE+0xf7000;
-    ST64(request_desc+0x18,request_desc+0x200);strcpy((char *)(uintptr_t)(request_desc+0x200),"Item_Material_04");
+    // The request copier reads the actor's SafeString at +0/+8. The next
+    // SafeString (+0x10/+0x18) is a separate creation parameter, often empty.
+    ST64(request_desc+8,request_desc+0x200);strcpy((char *)(uintptr_t)(request_desc+0x200),"Item_Material_04");
+    ST64(request_desc+0x18,request_desc+0x280);strcpy((char *)(uintptr_t)(request_desc+0x280),"");
     Cpu enqueue=cpu;enqueue.x[0]=request_task;enqueue.x[1]=request_desc;Cpu enqueue_before=enqueue;
     ST64(job.x[21]+0x48,0);ST32(parent+0x900,0);ST32(birth_weak+0x140,6);
     for(unsigned i=0;i<NATIVE_DROPS;i++)native_drops[i].active=false;

@@ -27,7 +27,9 @@ uint64_t rt_hyrulem_loot_job_begin(uint64_t a){
 void rt_hyrulem_loot_job_end(uint64_t token){loot_thread_boot();if((uint32_t)(token>>32)==loot_thread.boot&&(uint32_t)token==loot_thread.jobs&&loot_thread.jobs)loot_thread.jobs--;}
 void rt_hyrulem_loot_request(Cpu *c){
     if(!supported()||!range(c->x[0],0x1d8))return;
-    LootRequest next={.task=c->x[0],.at=now_ms()};uint64_t desc=c->x[1],text=range(desc,0x60)?LD64(desc+0x18):0;
+    // The copier stores request SafeString.data (+8) at task+0xc0. The
+    // SafeString at +0x10 is an independent parameter, not the actor name.
+    LootRequest next={.task=c->x[0],.at=now_ms()};uint64_t desc=c->x[1],text=range(desc,0x60)?LD64(desc+8):0;
     if(range(text,64)&&memchr((void *)(uintptr_t)text,0,64)&&clip_name((char *)(uintptr_t)text))snprintf(next.name,64,"%s",(char *)(uintptr_t)text);
     loot_thread_boot();
     if(next.name[0]&&loot_thread.jobs&&loot_thread.jobs<=LOOT_DEPTH){
