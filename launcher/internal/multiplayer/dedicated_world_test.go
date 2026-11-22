@@ -9,6 +9,59 @@ import (
 	"time"
 )
 
+func TestDedicatedAuthorityDoesNotOscillateAtEqualDistance(t *testing.T) {
+	now := time.Now()
+	row := testWorldActor(1, "Enemy_Bokoblin_Junior", 3434)
+	row.Scene = "MainField"
+	peer := func(id string, dx float64) *serverPeer {
+		return &serverPeer{player: Player{ID: id, Pose: Pose{Ready: true, Scene: row.Scene, Position: row.position().Add(Vec3{dx, 0, 0})}}, poseAt: now,
+			worldObserved: map[string]worldObservation{row.key(): {State: row, At: now}}}
+	}
+	a, b := peer("a", -5), peer("b", 5)
+	entity := &worldEntity{State: row, Owner: "a", Settled: true, At: now}
+	s := &Server{entities: map[string]*worldEntity{row.key(): entity}, peers: map[string]*serverPeer{"a": a, "b": b}, worldLease: 1}
+	for i := 0; i < 20; i++ {
+		b.player.Pose.Position.X = row.position().X + 4.9 + float64(i%2)*.2
+		s.reconcileWorldLocked(now)
+		if entity.Owner != "a" || s.worldLease != 1 || !entity.Settled {
+			t.Fatal("small distance changes reset simulation", entity.Owner, s.worldLease)
+		}
+	}
+	b.player.Pose.Position = row.position()
+	s.reconcileWorldLocked(now)
+	if entity.Owner != "b" || s.worldLease != 2 || entity.Settled {
+		t.Fatal("clearly nearer player did not acquire fenced authority", entity.Owner, s.worldLease)
+	}
+	// A paused, stale, unloaded or disconnected owner cannot retain authority
+	// through the distance margin. A target in another scene is never eligible.
+	for _, unavailable := range []string{"paused", "stale pose", "stale actor", "unloaded", "other scene", "disconnected"} {
+		t.Run(unavailable, func(t *testing.T) {
+			a, b := peer("a", -5), peer("b", 5.1)
+			s.peers = map[string]*serverPeer{"a": a, "b": b}
+			entity.Owner = "a"
+			s.worldLease = 1
+			switch unavailable {
+			case "paused":
+				a.worldPaused = true
+			case "stale pose":
+				a.poseAt = now.Add(-3 * time.Second)
+			case "stale actor":
+				a.worldObserved[row.key()] = worldObservation{State: row, At: now.Add(-2 * time.Second)}
+			case "unloaded":
+				delete(a.worldObserved, row.key())
+			case "other scene":
+				a.player.Pose.Scene = "MainFieldDungeon"
+			case "disconnected":
+				delete(s.peers, "a")
+			}
+			s.reconcileWorldLocked(now)
+			if entity.Owner != "b" || s.worldLease != 2 {
+				t.Fatal("unavailable owner retained authority", entity.Owner, s.worldLease)
+			}
+		})
+	}
+}
+
 func TestMissingEnemyReceivesCanonicalHealthWithoutLocalObservation(t *testing.T) {
 	s, err := Listen("127.0.0.1:0", ServerConfig{DedicatedWorld: true})
 	if err != nil {

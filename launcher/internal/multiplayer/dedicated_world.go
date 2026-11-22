@@ -11,6 +11,10 @@ import (
 const serverAuthority = "server"
 const maxWorldEntities = 32768
 
+// Keep the current simulator through small movement/measurement differences.
+// This chooses who runs native AI; it does not choose the enemy's target.
+const worldAuthorityMargin = 2.0
+
 type worldEntity struct {
 	Settled bool
 	State   WorldActor
@@ -85,6 +89,7 @@ func (s *Server) reconcileWorldLocked(now time.Time) {
 	for key, entity := range s.entities {
 		owner := ""
 		best := math.Inf(1)
+		incumbent := math.Inf(1)
 		for id, p := range s.peers {
 			observation, ok := p.worldObserved[key]
 			if !ok || p.player.Pose.Scene != entity.State.Scene || now.Sub(observation.At) > 1500*time.Millisecond || !p.player.Pose.Ready ||
@@ -92,10 +97,16 @@ func (s *Server) reconcileWorldLocked(now time.Time) {
 				continue
 			}
 			distance := p.player.Pose.Position.Sub(entity.State.position()).Len()
+			if id == entity.Owner {
+				incumbent = distance
+			}
 			if distance < best || distance == best && (id == entity.Owner || owner != entity.Owner && id < owner) {
 				best = distance
 				owner = id
 			}
+		}
+		if owner != entity.Owner && !math.IsInf(incumbent, 1) && incumbent-best <= worldAuthorityMargin {
+			owner = entity.Owner
 		}
 		if owner != entity.Owner {
 			entity.Owner = owner
